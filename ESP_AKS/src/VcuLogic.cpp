@@ -165,6 +165,8 @@ void setTelemetryData(const TelemetryData& TEL_data) {
 // ---------------------------------------------------------------------------
 // State handlers
 // ---------------------------------------------------------------------------
+// belki bir düğmeye bastığında driverdana idle a alabilirsin
+
 static void handleIdle() {
     // All relays off — safe resting state
     // Waiting for START_REQUEST from LoRa/UKS

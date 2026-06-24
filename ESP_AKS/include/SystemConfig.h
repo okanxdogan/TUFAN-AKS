@@ -59,7 +59,7 @@
 #define RELAY_SPI_MOSI GPIO_NUM_23
 #define RELAY_SPI_MISO GPIO_NUM_19
 #define RELAY_SPI_CLK GPIO_NUM_18
-#define RELAY_SPI_CS GPIO_NUM_15
+#define RELAY_SPI_CS GPIO_NUM_14
 
 // --- MCP23S17 Relay Channel Assignments ---
 // All relay outputs are active-low and currently reserved for the positive
