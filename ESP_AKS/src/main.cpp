@@ -1,3 +1,4 @@
+#include "esp_system.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -333,8 +334,9 @@ extern "C" void app_main() {
 
   // 1. Initialize relay hardware (SPI + MCP23S17)
   if (!RelayManager::instance().begin()) {
-    ESP_LOGE(TAG, "RelayManager init failed — HALTING");
-    return;
+    ESP_LOGE(TAG, "RelayManager init failed — RESTARTING...");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
   }
 
   // 2. Initialize VCU state machine (event queue, safety allOff, INIT→IDLE)
@@ -343,8 +345,9 @@ extern "C" void app_main() {
   // 3. Create sensor data queue for inter-task communication
   TEL_sensorDataQueue = xQueueCreate(1, sizeof(TelemetryData));
   if (TEL_sensorDataQueue == nullptr) {
-    ESP_LOGE(TAG, "Failed to create TEL_sensorDataQueue");
-    return;
+    ESP_LOGE(TAG, "Failed to create TEL_sensorDataQueue — RESTARTING...");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
   }
 
   ESP_LOGI(TAG, "All subsystems initialized — starting tasks");
