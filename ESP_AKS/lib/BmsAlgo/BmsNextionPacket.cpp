@@ -66,7 +66,7 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
     // Özet alanlar
     emitNumeric(emit, ctx, "delta", comp.cellDeltaMv);
     emitNumeric(emit, ctx, "soc", comp.socPercent);
-    emitNumeric(emit, ctx, "packv", comp.packVoltageMv);
+    emitNumeric(emit, ctx, "packv", comp.packVoltageMv / 100);  // mV -> deciV (motor tarafıyla tutarlı birim)
     emitNumeric(emit, ctx, "cellmax", comp.cellMaxMv);
     emitNumeric(emit, ctx, "cellmin", comp.cellMinMv);
     emitNumeric(emit, ctx, "tmax", comp.tempMaxC);
