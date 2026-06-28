@@ -12,6 +12,16 @@
 #include "Telemetry.h"
 #include "VcuLogic.h"
 
+// --- 24 hücreli BMS gösterge zinciri ---
+// Veri akışı: [Yalancı Veri (Sim)] -> ICellDataSource (HAL) -> computePack()
+// -> Nextion komutları -> HMI UART. Gerçek BMS gelince SimCellDataSource yerine
+// RealCellDataSource kullanılır; arayüz aynı kaldığından tüketici kod değişmez.
+#include "BmsModel.h"
+#include "SimCellDataSource.h"
+#include "BmsAlgo.h"
+#include "BmsNextionPacket.h"
+#include "HMIHelpers.h"  // HMI_sendEndBytes
+
 static constexpr const char *TAG = "APP_MAIN";
 
 // Stack high-water-mark logging interval (ticks)
@@ -36,6 +46,16 @@ static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
   default:
     return HMI_VcuState::FAULT;
   }
+}
+
+// 24-hücre BMS Nextion komutlarını HMI UART'ına yazan emit callback'i.
+// buildBmsNextionCommands her tam komut için bunu çağırır; biz komut gövdesini
+// yazıp ardından Nextion end-byte'larını (0xFF 0xFF 0xFF) ekleriz.
+static void BMS_emitNextionCommand(const char* BMS_cmd, size_t BMS_len,
+                                   void* BMS_ctx) {
+  (void)BMS_ctx;
+  uart_write_bytes(HMI_UART_NUM, BMS_cmd, BMS_len);
+  HMI_sendEndBytes();
 }
 
 static bool HMI_areAllContactorsClosed() {
@@ -164,6 +184,11 @@ void vTask_HMI_Display(void *pvParameters) {
 
   uint8_t HMI_incomingCommand = 0;
 
+  // 24-hücre yalancı veri kaynağı (HAL). Gerçek BMS gelince yalnızca bu satır
+  // RealCellDataSource ile değişir; aşağıdaki döngü aynı kalır.
+  SimCellDataSource BMS_cellSource(SimScenario::NORMAL);
+  BMS_cellSource.begin();
+
   while (true) {
     esp_task_wdt_reset();
 
@@ -193,6 +218,16 @@ void vTask_HMI_Display(void *pvParameters) {
     HMI_screenData.HMI_contactorClosed = HMI_areAllContactorsClosed();
 
     HMI_display.updateScreen(HMI_screenData);
+
+    // 24-hücre BMS verisini oku, yorumla ve aynı HMI UART'ından Nextion'a
+    // gönder. updateScreen ile aynı task içinde olduğundan UART'ta tek yazıcı
+    // vardır (eşzamanlı erişim/karışma olmaz).
+    BmsPackData BMS_raw = {};
+    if (BMS_cellSource.read(BMS_raw) && BMS_raw.isValid) {
+      const BmsComputed BMS_comp = computePack(BMS_raw);
+      buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand,
+                              nullptr);
+    }
 
     if (HMI_display.readTouchCommand(HMI_incomingCommand)) {
         switch (HMI_incomingCommand) {
