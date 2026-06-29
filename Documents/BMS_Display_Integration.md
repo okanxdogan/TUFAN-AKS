@@ -1,5 +1,11 @@
 # BMS Display Integration Plan
 
+> **NOT (karar):** 24 hücreli gösterge zinciri **yalnızca simülasyon/demo** olarak
+> bırakılmıştır. Gerçek Solion SK BMS, CAN 0x111/0x112 üzerinden 24 ayrı hücre
+> DEĞİL yalnızca max/min özeti gönderir; gerçek BMS verisi `TelemetryData` ->
+> `updateScreen` yolundan gösterilir. Bu nedenle aşağıdaki "Seçenek A/B"
+> entegrasyonu UYGULANMAMIŞTIR ve `RealCellDataSource` bir stub olarak durur.
+
 Rol 3 (Sistem Entegratörü) tarafından üretilmiştir. 24 hücreli batarya gösterge
 arayüzünün firmware-tarafı entegrasyon planı. Bu doküman SADECE plan ve
 sözleşmedir; `main.cpp`, `platformio.ini`, `SystemConfig.h` değiştirilmemiştir —
@@ -112,13 +118,14 @@ birebir eşleşir (komut gövdesi; 0xFF 0xFF 0xFF end-byte'lar firmware ekler).
 
 | Nextion Object | Type | Firmware Command | Kaynak (BmsComputed) |
 | --- | --- | --- | --- |
-| `cell0` .. `cell23` | numeric | `cellN.val=<mV>` | `raw.cellVoltageMv[N]` |
+| `cell0` .. `cell23` | numeric | `cellN.val=<mV>` | `raw.cellVoltageMv[N]` (demo) |
+| `j0` .. `j23` | progress bar | `jN.val=<0..100>` | `raw.cellVoltageMv[N]` -> doluluk (demo) |
 | `bal0` .. `bal23` | numeric (0/1) | `balN.val=<0\|1>` | `comp.balanceFlag[N]` |
 | `delta` | numeric | `delta.val=<mV>` | `comp.cellDeltaMv` |
 | `soc` | numeric | `soc.val=<%>` | `comp.socPercent` (0..100) |
-| `packv` | numeric | `packv.val=<V veya deciV>` | `comp.packVoltageMv` (**bkz. R1 taşma**) |
-| `cellmax` | numeric | `cellmax.val=<mV>` | `comp.cellMaxMv` |
-| `cellmin` | numeric | `cellmin.val=<mV>` | `comp.cellMinMv` |
+| `bmspackv` | numeric | `bmspackv.val=<deciV>` | `comp.packVoltageMv / 100` (demo nesnesi; gerçek `packv` updateScreen'e ait, çakışma önlendi) |
+| `cellmax` | numeric | `cellmax.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMaxMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMaxDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
+| `cellmin` | numeric | `cellmin.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMinMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMinDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
 | `tmax` | numeric | `tmax.val=<°C>` | `comp.tempMaxC` |
 | `tmin` | numeric | `tmin.val=<°C>` | `comp.tempMinC` |
 | `warn` | numeric | `warn.val=<0\|1\|2>` | `comp.warningLevel` |

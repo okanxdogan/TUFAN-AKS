@@ -17,6 +17,8 @@ struct HMI_DisplayData {
     bool HMI_motorTimeoutActive;
     int16_t HMI_bmsTemperatureC;
     uint16_t HMI_bmsPackVoltageDeciV;
+    uint16_t HMI_bmsCellVoltageMaxMv;  // gerçek BMS max hücre gerilimi, mV
+    uint16_t HMI_bmsCellVoltageMinMv;  // gerçek BMS min hücre gerilimi, mV
     bool HMI_contactorClosed;
     HMI_VcuState HMI_vcuState;
 };

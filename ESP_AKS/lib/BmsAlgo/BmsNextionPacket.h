@@ -48,12 +48,18 @@ const char* bmsWarningText(uint8_t warningLevel);
 
 // BmsComputed + ham BmsPackData'dan tüm Nextion komutlarını üretir ve sırayla
 // `emit` callback'ine verir. Üretilen komutlar (gövde, end-byte HARİÇ):
-//   - cell0.val=<mV> .. cell23.val=<mV>     (her hücre gerilimi)
+//   - cell0.val=<mV> .. cell23.val=<mV>     (her hücre gerilimi, number)
+//   - j0.val=<0..100> .. j23.val=<0..100>   (her hücre bar doluluğu, progress bar)
 //   - bal0.val=<0|1> .. bal23.val=<0|1>     (dengeleme bayrakları)
 //   - delta.val=<mV>                        (max-min gerilim farkı)
 //   - soc.val=<%>                           (şarj durumu 0..100)
-//   - packv.val=<mV doygunlukla>            (paket toplam gerilimi)
-//   - cellmax.val / cellmin.val             (uç hücre gerilimleri)
+//   - bmspackv.val=<deciV>                  (paket toplam gerilimi; demo nesnesi,
+//                                            gerçek "packv" updateScreen'e ait)
+//   - cellmax.val / cellmin.val             (uç hücre gerilimleri; ŞİMDİLİK DEMO/
+//                                            sim. Gerçek zamanlıya geçişte bu iki
+//                                            emit kaldırılır, cellmax/cellmin
+//                                            updateScreen'den (BMS_USE_REALTIME_
+//                                            MINMAX) gerçek BMS verisiyle sürülür)
 //   - tmax.val / tmin.val                   (uç sıcaklıklar)
 //   - warn.val=<0|1|2>                      (uyarı seviyesi, sayısal)
 //   - warntxt.txt="OK|WARN|CRIT"            (uyarı metni)

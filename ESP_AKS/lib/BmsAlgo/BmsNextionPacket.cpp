@@ -46,6 +46,18 @@ void emitText(BmsNextionEmit emit, void* ctx, const char* comp,
     emit(cmd, static_cast<size_t>(len), ctx);
 }
 
+// Hücre gerilimini (mV) progress bar doluluğuna (0..100) çevirir. Aralık
+// 3000..4200 mV; dışı 0/100'e clamp'lenir.
+uint8_t cellBarFill(uint16_t mv) {
+    constexpr uint16_t kBarEmptyMv = 3000;
+    constexpr uint16_t kBarFullMv = 4200;
+    if (mv <= kBarEmptyMv) return 0;
+    if (mv >= kBarFullMv) return 100;
+    return static_cast<uint8_t>(
+        (static_cast<uint32_t>(mv - kBarEmptyMv) * 100u) /
+        (kBarFullMv - kBarEmptyMv));
+}
+
 }  // namespace
 
 void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
@@ -58,6 +70,11 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
                            static_cast<int32_t>(raw.cellVoltageMv[i]));
     }
 
+    // Hücre bar doluluğu: j0..j23 (0..100) — number cell0.. ile aynı veriden.
+    for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+        emitIndexedNumeric(emit, ctx, "j", i, cellBarFill(raw.cellVoltageMv[i]));
+    }
+
     // Dengeleme bayrakları: bal0..bal23  (0/1)
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         emitIndexedNumeric(emit, ctx, "bal", i, comp.balanceFlag[i] ? 1 : 0);
@@ -66,7 +83,9 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
     // Özet alanlar
     emitNumeric(emit, ctx, "delta", comp.cellDeltaMv);
     emitNumeric(emit, ctx, "soc", comp.socPercent);
-    emitNumeric(emit, ctx, "packv", comp.packVoltageMv / 100);  // mV -> deciV (motor tarafıyla tutarlı birim)
+    // Demo nesnesi "bmspackv": gerçek "packv" alanı updateScreen'e (TelemetryData)
+    // aittir; aynı isme yazmamak için demo kendi nesnesini kullanır.
+    emitNumeric(emit, ctx, "bmspackv", comp.packVoltageMv / 100);  // mV -> deciV
     emitNumeric(emit, ctx, "cellmax", comp.cellMaxMv);
     emitNumeric(emit, ctx, "cellmin", comp.cellMinMv);
     emitNumeric(emit, ctx, "tmax", comp.tempMaxC);

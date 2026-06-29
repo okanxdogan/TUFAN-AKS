@@ -12,10 +12,14 @@
 #include "Telemetry.h"
 #include "VcuLogic.h"
 
-// --- 24 hücreli BMS gösterge zinciri ---
+// --- 24 hücreli BMS gösterge zinciri (YALNIZCA SİMÜLASYON / DEMO) ---
 // Veri akışı: [Yalancı Veri (Sim)] -> ICellDataSource (HAL) -> computePack()
-// -> Nextion komutları -> HMI UART. Gerçek BMS gelince SimCellDataSource yerine
-// RealCellDataSource kullanılır; arayüz aynı kaldığından tüketici kod değişmez.
+// -> Nextion komutları -> HMI UART.
+// ÖNEMLİ: Bu zincir DEMO amaçlıdır ve gerçek BMS ile BESLENMEZ. Gerçek Solion
+// SK BMS, CAN 0x111/0x112 üzerinden 24 ayrı hücre DEĞİL yalnızca max/min özeti
+// gönderir; gerçek BMS verisi TelemetryData -> updateScreen yolundan gösterilir
+// (yukarıdaki HMI_screenData alanları). RealCellDataSource bu nedenle yalnızca
+// bir stub olarak durur; bu 24-hücre görseli sahte veriyle çalışır.
 #include "BmsModel.h"
 #include "SimCellDataSource.h"
 #include "BmsAlgo.h"
@@ -184,8 +188,9 @@ void vTask_HMI_Display(void *pvParameters) {
 
   uint8_t HMI_incomingCommand = 0;
 
-  // 24-hücre yalancı veri kaynağı (HAL). Gerçek BMS gelince yalnızca bu satır
-  // RealCellDataSource ile değişir; aşağıdaki döngü aynı kalır.
+  // 24-hücre yalancı (sahte) veri kaynağı — DEMO. Gerçek BMS 24 ayrı hücre
+  // vermediğinden bu kaynak RealCellDataSource ile değiştirilmez; gerçek veri
+  // TelemetryData/updateScreen yolundan gelir.
   SimCellDataSource BMS_cellSource(SimScenario::NORMAL);
   BMS_cellSource.begin();
 
@@ -211,6 +216,15 @@ void vTask_HMI_Display(void *pvParameters) {
                 TEL_data.TEL_bmsTempHighestC;
             HMI_screenData.HMI_bmsPackVoltageDeciV =
                 TEL_data.TEL_bmsPackVoltageDeciV;
+            // Gerçek BMS max/min hücre gerilimi: TEL_* ×0.1 mV -> ekranda mV.
+            // UYKUDA (BMS_USE_REALTIME_MINMAX): demo şu an cellmax/cellmin'i sim
+            // veriyle gösteriyor; geçişte bu blok ve updateScreen emit'i açılır.
+#ifdef BMS_USE_REALTIME_MINMAX
+            HMI_screenData.HMI_bmsCellVoltageMaxMv =
+                static_cast<uint16_t>(TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10);
+            HMI_screenData.HMI_bmsCellVoltageMinMv =
+                static_cast<uint16_t>(TEL_data.TEL_bmsCellVoltageMinDeciMv / 10);
+#endif
         }
     }
 

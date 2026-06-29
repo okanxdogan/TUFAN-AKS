@@ -97,6 +97,18 @@ void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
     HMI_sendNumericIfChanged("packv", HMI_data.HMI_bmsPackVoltageDeciV,
                              HMI_lastScreenData.HMI_bmsPackVoltageDeciV,
                              HMI_forceRefresh);
+    // Gerçek zamanlı max/min hücre gerilimi (mV). Şimdilik UYKUDA: demo,
+    // cellmax/cellmin'i sim veriyle gösteriyor. Gerçek zamanlıya geçişte
+    // BMS_USE_REALTIME_MINMAX tanımlanır VE demo'nun sim cellmax/cellmin emit'i
+    // (BmsNextionPacket.cpp) kaldırılır — böylece çakışma olmaz.
+#ifdef BMS_USE_REALTIME_MINMAX
+    HMI_sendNumericIfChanged("cellmax", HMI_data.HMI_bmsCellVoltageMaxMv,
+                             HMI_lastScreenData.HMI_bmsCellVoltageMaxMv,
+                             HMI_forceRefresh);
+    HMI_sendNumericIfChanged("cellmin", HMI_data.HMI_bmsCellVoltageMinMv,
+                             HMI_lastScreenData.HMI_bmsCellVoltageMinMv,
+                             HMI_forceRefresh);
+#endif
 
     HMI_sendTextIfChanged("state", HMI_getStateText(HMI_data.HMI_vcuState),
                           HMI_getStateText(HMI_lastScreenData.HMI_vcuState),
