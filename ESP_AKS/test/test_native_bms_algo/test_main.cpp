@@ -30,7 +30,6 @@ extern void test_invalid_input_safe_critical(void);
 extern void test_packet_null_emit_is_noop(void);
 extern void test_packet_command_count(void);
 extern void test_packet_cell_voltage_command(void);
-extern void test_packet_soc_and_delta_commands(void);
 extern void test_packet_balance_flag_commands(void);
 extern void test_packet_warning_text_command(void);
 extern void test_packet_warning_text_mapping(void);
@@ -65,7 +64,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_packet_null_emit_is_noop);
     RUN_TEST(test_packet_command_count);
     RUN_TEST(test_packet_cell_voltage_command);
-    RUN_TEST(test_packet_soc_and_delta_commands);
     RUN_TEST(test_packet_balance_flag_commands);
     RUN_TEST(test_packet_warning_text_command);
     RUN_TEST(test_packet_warning_text_mapping);

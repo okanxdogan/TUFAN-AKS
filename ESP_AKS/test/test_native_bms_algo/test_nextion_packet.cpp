@@ -34,14 +34,14 @@ void test_packet_null_emit_is_noop(void) {
     TEST_PASS();  // çökmediği için geçer
 }
 
-// Komut sayısı: 24 cell + 24 j (bar) + 24 bal + 7 özet (delta,soc,bmspackv,
-// cellmax,cellmin,tmax,tmin) + 1 warn + 1 warntxt = 81.
+// Komut sayısı: 24 cell + 24 j (bar) + 24 bal + 2 özet (cellmax,cellmin)
+// + 1 warn + 1 warntxt = 76.
 void test_packet_command_count(void) {
     BmsPackData p = makeUniformPack(3700);
     BmsComputed c = computePack(p);
     CmdCollector col;
     buildBmsNextionCommands(c, p, collect, &col);
-    TEST_ASSERT_EQUAL_INT(81, col.count);
+    TEST_ASSERT_EQUAL_INT(76, col.count);
 }
 
 // Bilinen hücre gerilimi doğru cellN.val komutuna dönüşmeli.
@@ -59,18 +59,6 @@ void test_packet_cell_voltage_command(void) {
     // Bar doluluğu: 3812 mV -> (812*100)/1200 = 67; 3700 mV -> 58.
     TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "j5.val=67;"));
     TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "j0.val=58;"));
-}
-
-// SoC ve delta özet komutları beklenen değerlerle üretilmeli.
-// Uniform 3600 mV => soc 50, delta 0.
-void test_packet_soc_and_delta_commands(void) {
-    BmsPackData p = makeUniformPack(3600);
-    BmsComputed c = computePack(p);
-    CmdCollector col;
-    buildBmsNextionCommands(c, p, collect, &col);
-
-    TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "soc.val=50;"));
-    TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "delta.val=0;"));
 }
 
 // Dengeleme bayrağı balN.val=1/0 olarak çıkmalı.

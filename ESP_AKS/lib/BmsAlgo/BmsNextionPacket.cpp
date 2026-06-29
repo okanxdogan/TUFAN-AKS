@@ -80,16 +80,12 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
         emitIndexedNumeric(emit, ctx, "bal", i, comp.balanceFlag[i] ? 1 : 0);
     }
 
-    // Özet alanlar
-    emitNumeric(emit, ctx, "delta", comp.cellDeltaMv);
-    emitNumeric(emit, ctx, "soc", comp.socPercent);
-    // Demo nesnesi "bmspackv": gerçek "packv" alanı updateScreen'e (TelemetryData)
-    // aittir; aynı isme yazmamak için demo kendi nesnesini kullanır.
-    emitNumeric(emit, ctx, "bmspackv", comp.packVoltageMv / 100);  // mV -> deciV
+    // Özet alanlar (uç hücre gerilimleri). delta/soc/bmspackv/tmax/tmin demo'dan
+    // ÇIKARILDI: bunlar ana ekranda gerçek veriyle (bat/packv/temp) zaten var ya
+    // da demoya özel ve gereksiz. computePack bu değerleri hesaplamaya devam eder,
+    // yalnızca ekrana gönderilmez.
     emitNumeric(emit, ctx, "cellmax", comp.cellMaxMv);
     emitNumeric(emit, ctx, "cellmin", comp.cellMinMv);
-    emitNumeric(emit, ctx, "tmax", comp.tempMaxC);
-    emitNumeric(emit, ctx, "tmin", comp.tempMinC);
 
     // Uyarı: hem sayısal (renk/animasyon için) hem metin
     emitNumeric(emit, ctx, "warn", comp.warningLevel);

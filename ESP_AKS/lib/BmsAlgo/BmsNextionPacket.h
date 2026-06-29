@@ -51,16 +51,11 @@ const char* bmsWarningText(uint8_t warningLevel);
 //   - cell0.val=<mV> .. cell23.val=<mV>     (her hücre gerilimi, number)
 //   - j0.val=<0..100> .. j23.val=<0..100>   (her hücre bar doluluğu, progress bar)
 //   - bal0.val=<0|1> .. bal23.val=<0|1>     (dengeleme bayrakları)
-//   - delta.val=<mV>                        (max-min gerilim farkı)
-//   - soc.val=<%>                           (şarj durumu 0..100)
-//   - bmspackv.val=<deciV>                  (paket toplam gerilimi; demo nesnesi,
-//                                            gerçek "packv" updateScreen'e ait)
 //   - cellmax.val / cellmin.val             (uç hücre gerilimleri; ŞİMDİLİK DEMO/
 //                                            sim. Gerçek zamanlıya geçişte bu iki
 //                                            emit kaldırılır, cellmax/cellmin
 //                                            updateScreen'den (BMS_USE_REALTIME_
 //                                            MINMAX) gerçek BMS verisiyle sürülür)
-//   - tmax.val / tmin.val                   (uç sıcaklıklar)
 //   - warn.val=<0|1|2>                      (uyarı seviyesi, sayısal)
 //   - warntxt.txt="OK|WARN|CRIT"            (uyarı metni)
 // emit nullptr ise hiçbir şey yapılmaz.

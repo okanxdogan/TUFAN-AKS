@@ -121,13 +121,8 @@ birebir eşleşir (komut gövdesi; 0xFF 0xFF 0xFF end-byte'lar firmware ekler).
 | `cell0` .. `cell23` | numeric | `cellN.val=<mV>` | `raw.cellVoltageMv[N]` (demo) |
 | `j0` .. `j23` | progress bar | `jN.val=<0..100>` | `raw.cellVoltageMv[N]` -> doluluk (demo) |
 | `bal0` .. `bal23` | numeric (0/1) | `balN.val=<0\|1>` | `comp.balanceFlag[N]` |
-| `delta` | numeric | `delta.val=<mV>` | `comp.cellDeltaMv` |
-| `soc` | numeric | `soc.val=<%>` | `comp.socPercent` (0..100) |
-| `bmspackv` | numeric | `bmspackv.val=<deciV>` | `comp.packVoltageMv / 100` (demo nesnesi; gerçek `packv` updateScreen'e ait, çakışma önlendi) |
 | `cellmax` | numeric | `cellmax.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMaxMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMaxDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
 | `cellmin` | numeric | `cellmin.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMinMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMinDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
-| `tmax` | numeric | `tmax.val=<°C>` | `comp.tempMaxC` |
-| `tmin` | numeric | `tmin.val=<°C>` | `comp.tempMinC` |
 | `warn` | numeric | `warn.val=<0\|1\|2>` | `comp.warningLevel` |
 | `warntxt` | text | `warntxt.txt="OK\|WARN\|CRIT"` | `bmsWarningText(warningLevel)` |
 
