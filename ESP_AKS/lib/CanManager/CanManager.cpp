@@ -296,6 +296,10 @@ void CanManager::updateBmsValidity() {
 
     if (!CAN_bmsConfigValid || !CAN_bmsLiveValid) {
         s_telemetryData.TEL_bmsDataValid = false;
+        // TODO(ekip-karari): BMS timeout'ta allOff tetiklensin mi?
+        // Motor timeout'u TEL_motorTimeoutActive -> VcuLogic FAULT yoluyla allOff
+        // tetikliyor (motor kontrolsuz kalabilir). BMS verisi bayatladiginda
+        // arac gucunu kesmek gerekli olabilir — ekip ve danismanla karara baglanmali.
         if ((CAN_hasSeen_BmsConfig || CAN_hasSeen_BmsLive) &&
             !CAN_bmsTimeoutLogged) {
             CAN_shouldLogTimeout = true;

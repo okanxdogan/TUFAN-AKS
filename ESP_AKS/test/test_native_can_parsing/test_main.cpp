@@ -47,6 +47,13 @@ extern void test_timeout_just_received(void);
 extern void test_timeout_tick_wraparound_within_window(void);
 extern void test_timeout_tick_wraparound_at_threshold(void);
 
+// BMS timeout
+extern void test_bms_timeout_not_seen_yet(void);
+extern void test_bms_timeout_already_invalidated(void);
+extern void test_bms_timeout_within_window(void);
+extern void test_bms_timeout_at_threshold(void);
+extern void test_bms_timeout_past_threshold(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -95,6 +102,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_timeout_just_received);
     RUN_TEST(test_timeout_tick_wraparound_within_window);
     RUN_TEST(test_timeout_tick_wraparound_at_threshold);
+
+    // BMS timeout
+    RUN_TEST(test_bms_timeout_not_seen_yet);
+    RUN_TEST(test_bms_timeout_already_invalidated);
+    RUN_TEST(test_bms_timeout_within_window);
+    RUN_TEST(test_bms_timeout_at_threshold);
+    RUN_TEST(test_bms_timeout_past_threshold);
 
     return UNITY_END();
 }
