@@ -32,7 +32,6 @@ extern void test_packet_command_count(void);
 extern void test_packet_cell_voltage_command(void);
 extern void test_packet_balance_flag_commands(void);
 extern void test_packet_warning_text_command(void);
-extern void test_packet_warning_text_mapping(void);
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -66,7 +65,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_packet_cell_voltage_command);
     RUN_TEST(test_packet_balance_flag_commands);
     RUN_TEST(test_packet_warning_text_command);
-    RUN_TEST(test_packet_warning_text_mapping);
 
     return UNITY_END();
 }

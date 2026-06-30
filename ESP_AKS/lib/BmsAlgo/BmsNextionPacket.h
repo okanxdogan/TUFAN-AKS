@@ -42,10 +42,6 @@
 // `ctx` çağırana ait opak işaretçi (test buffer'ı, UART numarası vb.).
 using BmsNextionEmit = void (*)(const char* cmd, size_t len, void* ctx);
 
-// Tehlike/uyarı metni (state.txt benzeri). warningLevel -> kısa etiket.
-// "OK" / "WARN" / "CRIT". Bilinmeyen seviye => "UNK".
-const char* bmsWarningText(uint8_t warningLevel);
-
 // BmsComputed + ham BmsPackData'dan tüm Nextion komutlarını üretir ve sırayla
 // `emit` callback'ine verir. Üretilen komutlar (gövde, end-byte HARİÇ):
 //   - cell0.val=<mV> .. cell23.val=<mV>     (her hücre gerilimi, number)
@@ -57,7 +53,6 @@ const char* bmsWarningText(uint8_t warningLevel);
 //                                            updateScreen'den (BMS_USE_REALTIME_
 //                                            MINMAX) gerçek BMS verisiyle sürülür)
 //   - warn.val=<0|1|2>                      (uyarı seviyesi, sayısal)
-//   - warntxt.txt="OK|WARN|CRIT"            (uyarı metni)
 // emit nullptr ise hiçbir şey yapılmaz.
 void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
                              BmsNextionEmit emit, void* ctx);

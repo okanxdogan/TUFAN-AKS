@@ -75,7 +75,7 @@ oluşturuluyor.
 
 ### Timeout / stale koruması (R4)
 Motor tarafındaki `TEL_motorTimeoutActive` kalıbına benzer: son geçerli
-`read()` üzerinden geçen tick sayılır; eşik aşılınca `warntxt.txt="TIMEOUT"` ve
+`read()` üzerinden geçen tick sayılır; eşik aşılınca `bmsvalid.txt="TIMEOUT"` ve
 hücre barları "stale" göstergesine alınır.
 
 ## 4. platformio.ini — Native Test Env Include'ları
@@ -124,7 +124,6 @@ birebir eşleşir (komut gövdesi; 0xFF 0xFF 0xFF end-byte'lar firmware ekler).
 | `cellmax` | numeric | `cellmax.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMaxMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMaxDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
 | `cellmin` | numeric | `cellmin.val=<mV>` | **ŞİMDİLİK DEMO:** `comp.cellMinMv`. Gerçek zamanlıya geçişte `TEL_bmsCellVoltageMinDeciMv/10` (updateScreen, `BMS_USE_REALTIME_MINMAX`) |
 | `warn` | numeric | `warn.val=<0\|1\|2>` | `comp.warningLevel` |
-| `warntxt` | text | `warntxt.txt="OK\|WARN\|CRIT"` | `bmsWarningText(warningLevel)` |
 
 ### 24 Hücre Bar Önerisi
 - 24 ayrı progress bar (`j0`..`j23`) veya `cellN.val` numeric alan + bar.
@@ -132,7 +131,8 @@ birebir eşleşir (komut gövdesi; 0xFF 0xFF 0xFF end-byte'lar firmware ekler).
 - `balN`=1 olan hücre barı vurgulanır (renk/ikon) — dengeleme aktif göstergesi.
 
 ### Uyarı / Tehlike Alanı
-- `warntxt`: OK (yeşil) / WARN (sarı) / CRIT (kırmızı).
+- `warn`: 0=OK (yeşil) / 1=WARN (sarı) / 2=CRIT (kırmızı) — renk/animasyon
+  Nextion tarafında `warn.val` seviyesine göre sürülür.
 - `isValid=false` veya timeout: ayrı `bmsvalid.txt="INVALID"/"TIMEOUT"` alanı
   (motor tarafındaki `valid` kalıbının BMS karşılığı).
 

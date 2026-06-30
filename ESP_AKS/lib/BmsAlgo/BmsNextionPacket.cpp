@@ -4,15 +4,6 @@
 
 // Saf C++; snprintf dışında bağımlılık yok. UART çağrısı YAPMAZ.
 
-const char* bmsWarningText(uint8_t warningLevel) {
-    switch (warningLevel) {
-        case BMS_WARN_OK:       return "OK";
-        case BMS_WARN_WARNING:  return "WARN";
-        case BMS_WARN_CRITICAL: return "CRIT";
-        default:                return "UNK";
-    }
-}
-
 namespace {
 
 // "<comp>.val=<value>" komutunu formatla ve emit et. Sayısal Nextion alanı.
@@ -32,16 +23,6 @@ void emitIndexedNumeric(BmsNextionEmit emit, void* ctx, const char* comp,
     const int len = snprintf(cmd, sizeof(cmd), "%s%u.val=%ld", comp,
                              static_cast<unsigned>(index),
                              static_cast<long>(value));
-    if (len <= 0) return;
-    emit(cmd, static_cast<size_t>(len), ctx);
-}
-
-// "<comp>.txt=\"<value>\"" — metin alanı.
-void emitText(BmsNextionEmit emit, void* ctx, const char* comp,
-              const char* value) {
-    char cmd[48];
-    const int len =
-        snprintf(cmd, sizeof(cmd), "%s.txt=\"%s\"", comp, value);
     if (len <= 0) return;
     emit(cmd, static_cast<size_t>(len), ctx);
 }
@@ -87,7 +68,6 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
     emitNumeric(emit, ctx, "cellmax", comp.cellMaxMv);
     emitNumeric(emit, ctx, "cellmin", comp.cellMinMv);
 
-    // Uyarı: hem sayısal (renk/animasyon için) hem metin
+    // Uyarı: sayısal seviye (renk/animasyon için)
     emitNumeric(emit, ctx, "warn", comp.warningLevel);
-    emitText(emit, ctx, "warntxt", bmsWarningText(comp.warningLevel));
 }

@@ -35,13 +35,13 @@ void test_packet_null_emit_is_noop(void) {
 }
 
 // Komut sayısı: 24 cell + 24 j (bar) + 24 bal + 2 özet (cellmax,cellmin)
-// + 1 warn + 1 warntxt = 76.
+// + 1 warn = 75.
 void test_packet_command_count(void) {
     BmsPackData p = makeUniformPack(3700);
     BmsComputed c = computePack(p);
     CmdCollector col;
     buildBmsNextionCommands(c, p, collect, &col);
-    TEST_ASSERT_EQUAL_INT(76, col.count);
+    TEST_ASSERT_EQUAL_INT(75, col.count);
 }
 
 // Bilinen hücre gerilimi doğru cellN.val komutuna dönüşmeli.
@@ -73,7 +73,7 @@ void test_packet_balance_flag_commands(void) {
     TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "bal0.val=0;"));
 }
 
-// Uyarı metni: warntxt.txt="CRIT" ve warn.val=2 (undervoltage senaryosu).
+// Uyarı seviyesi: warn.val=2 (undervoltage senaryosu).
 void test_packet_warning_text_command(void) {
     BmsPackData p = makeUniformPack(3700);
     p.cellVoltageMv[0] = 2900;  // CRITICAL
@@ -82,13 +82,4 @@ void test_packet_warning_text_command(void) {
     buildBmsNextionCommands(c, p, collect, &col);
 
     TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "warn.val=2;"));
-    TEST_ASSERT_NOT_NULL(strstr(col.all.c_str(), "warntxt.txt=\"CRIT\";"));
-}
-
-// bmsWarningText haritalaması.
-void test_packet_warning_text_mapping(void) {
-    TEST_ASSERT_EQUAL_STRING("OK", bmsWarningText(BMS_WARN_OK));
-    TEST_ASSERT_EQUAL_STRING("WARN", bmsWarningText(BMS_WARN_WARNING));
-    TEST_ASSERT_EQUAL_STRING("CRIT", bmsWarningText(BMS_WARN_CRITICAL));
-    TEST_ASSERT_EQUAL_STRING("UNK", bmsWarningText(99));
 }
