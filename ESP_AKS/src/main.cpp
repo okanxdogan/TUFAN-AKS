@@ -12,6 +12,12 @@
 #include "Telemetry.h"
 #include "VcuLogic.h"
 
+// 24 hücreli BMS gösterge altyapısı (Gerçek veri ile)
+#include "BmsModel.h"
+#include "BmsAlgo.h"
+#include "BmsNextionPacket.h"
+#include "HMIHelpers.h"
+
 static constexpr const char *TAG = "APP_MAIN";
 
 // Stack high-water-mark logging interval (ticks)
@@ -36,6 +42,14 @@ static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
   default:
     return HMI_VcuState::FAULT;
   }
+}
+
+// 24-hücre BMS Nextion komutlarını HMI UART'ına yazan emit callback'i.
+static void BMS_emitNextionCommand(const char* BMS_cmd, size_t BMS_len,
+                                   void* BMS_ctx) {
+  (void)BMS_ctx;
+  uart_write_bytes(HMI_UART_NUM, BMS_cmd, BMS_len);
+  HMI_sendEndBytes();
 }
 
 static bool HMI_areAllContactorsClosed() {
@@ -193,6 +207,41 @@ void vTask_HMI_Display(void *pvParameters) {
     HMI_screenData.HMI_contactorClosed = HMI_areAllContactorsClosed();
 
     HMI_display.updateScreen(HMI_screenData);
+
+    // 24-hücre BMS verisini Nextion'a gönder
+    if (TEL_sensorDataQueue != nullptr) {
+        TelemetryData TEL_data = {};
+        if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
+            if (TEL_data.TEL_bmsDataValid) {
+                BmsPackData BMS_raw = {};
+                BMS_raw.isValid = true;
+                BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa * 10;
+                
+                // Gerçek Solion BMS 24 hücre verisini ayrı ayrı göndermez, sadece max/min gönderir.
+                // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
+                // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
+                uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
+                for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                    BMS_raw.cellVoltageMv[i] = avgCellMv;
+                    BMS_raw.cellTempC[i] = TEL_data.TEL_bmsTempHighestC;
+                }
+
+                // İlk iki hücreye gerçek max ve min değerini yazarak algoritmanın
+                // uyarı seviyesini doğru hesaplamasını sağlıyoruz.
+                BMS_raw.cellVoltageMv[0] = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
+                BMS_raw.cellVoltageMv[1] = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
+
+                BmsComputed BMS_comp = computePack(BMS_raw);
+
+                // Algoritma hesapladıktan sonra ekrana gönderilecek max/min değerlerini
+                // her ihtimale karşı doğrudan gerçek CAN verisinden eziyoruz.
+                BMS_comp.cellMaxMv = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
+                BMS_comp.cellMinMv = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
+
+                buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr);
+            }
+        }
+    }
 
     if (HMI_display.readTouchCommand(HMI_incomingCommand)) {
         switch (HMI_incomingCommand) {
