@@ -48,7 +48,7 @@ bool CanManager::begin() {
     return true;
 }
 
-bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
+/* bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
     if (!isInitialized)
         return false;
 
@@ -66,6 +66,7 @@ bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
     }
     return true;
 }
+*/
 
 void CanManager::processRxMessages() {
     if (!isInitialized)
@@ -107,6 +108,7 @@ void CanManager::processRxMessages() {
     }
 
     updateMotorStatusValidity();
+    updateBmsValidity();
 }
 
 MotorStatus CanManager::getMotorStatus() const {
@@ -154,7 +156,7 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
     CAN_motorTimeoutLogged = false;
 
     s_telemetryData.TEL_motorRpm = s_motorStatus.rpm;
-    s_telemetryData.TEL_motorTorqueFeedback = s_motorStatus.torqueFeedback;
+   // s_telemetryData.TEL_motorTorqueFeedback = s_motorStatus.torqueFeedback;
     s_telemetryData.TEL_motorErrorFlags = s_motorStatus.errorFlags;
     s_telemetryData.TEL_motorDataValid = s_motorStatus.isValid;
     s_telemetryData.TEL_motorTimeoutActive = false;
@@ -164,8 +166,8 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
     notifyFaultIfNeeded(CAN_previousMotorErrorFlags, s_motorStatus.errorFlags,
                         "Motor");
 
-    ESP_LOGD(TAG, "Motor: RPM=%d, Torque=%d", s_motorStatus.rpm,
-             s_motorStatus.torqueFeedback);
+ //   ESP_LOGD(TAG, "Motor: RPM=%d, Torque=%d", s_motorStatus.rpm,
+  //           s_motorStatus.torqueFeedback);
 }
 
 void CanManager::handleSolionBmsA(const twai_message_t& msg) {
@@ -191,8 +193,12 @@ void CanManager::handleSolionBmsA(const twai_message_t& msg) {
     s_telemetryData.TEL_bmsTempHighestC = parsed.TEL_bmsTempHighestC;
     s_telemetryData.TEL_bmsTempLowestC  = parsed.TEL_bmsTempLowestC;
     s_telemetryData.TEL_bmsSystemState  = parsed.TEL_bmsSystemState;
-    s_telemetryData.TEL_bmsDataValid    = true;
     CAN_prevBmsSystemState = parsed.TEL_bmsSystemState;
+    CAN_lastBmsConfigTick = xTaskGetTickCount();
+    CAN_hasSeen_BmsConfig = true;
+    CAN_bmsConfigValid = true;
+    CAN_bmsTimeoutLogged = false;
+    s_telemetryData.TEL_bmsDataValid = CAN_bmsConfigValid && CAN_bmsLiveValid;
 
     xSemaphoreGive(s_mutex);
 
@@ -225,7 +231,11 @@ void CanManager::handleSolionBmsB(const twai_message_t& msg) {
     s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
     s_telemetryData.TEL_bmsCurrentCentiMa   = parsed.TEL_bmsCurrentCentiMa;
     s_telemetryData.TEL_bmsSocHundredths    = parsed.TEL_bmsSocHundredths;
-    s_telemetryData.TEL_bmsDataValid        = true;
+    CAN_lastBmsLiveTick = xTaskGetTickCount();
+    CAN_hasSeen_BmsLive = true;
+    CAN_bmsLiveValid = true;
+    CAN_bmsTimeoutLogged = false;
+    s_telemetryData.TEL_bmsDataValid = CAN_bmsConfigValid && CAN_bmsLiveValid;
 
     xSemaphoreGive(s_mutex);
 
@@ -259,6 +269,44 @@ void CanManager::updateMotorStatusValidity() {
     if (CAN_shouldLogTimeout) {
         ESP_LOGW(TAG, "Motor status timeout after %d ms",
                  CAN_MOTOR_STATUS_TIMEOUT_MS);
+    }
+}
+
+void CanManager::updateBmsValidity() {
+    if (s_mutex == nullptr)
+        return;
+
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+    const TickType_t CAN_timeoutTicks = pdMS_TO_TICKS(CAN_BMS_STATUS_TIMEOUT_MS);
+    bool CAN_shouldLogTimeout = false;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsConfig, CAN_bmsConfigValid,
+                                      CAN_nowTick, CAN_lastBmsConfigTick,
+                                      CAN_timeoutTicks)) {
+        CAN_bmsConfigValid = false;
+    }
+
+    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsLive, CAN_bmsLiveValid,
+                                      CAN_nowTick, CAN_lastBmsLiveTick,
+                                      CAN_timeoutTicks)) {
+        CAN_bmsLiveValid = false;
+    }
+
+    if (!CAN_bmsConfigValid || !CAN_bmsLiveValid) {
+        s_telemetryData.TEL_bmsDataValid = false;
+        if ((CAN_hasSeen_BmsConfig || CAN_hasSeen_BmsLive) &&
+            !CAN_bmsTimeoutLogged) {
+            CAN_shouldLogTimeout = true;
+            CAN_bmsTimeoutLogged = true;
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (CAN_shouldLogTimeout) {
+        ESP_LOGW(TAG, "BMS status timeout after %d ms", CAN_BMS_STATUS_TIMEOUT_MS);
     }
 }
 

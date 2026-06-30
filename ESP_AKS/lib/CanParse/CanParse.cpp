@@ -56,4 +56,14 @@ bool isMotorStatusTimedOut(bool hasSeen,
     return static_cast<TickType_t>(now - lastTick) >= timeoutTicks;
 }
 
+bool isBmsStatusTimedOut(bool hasSeen,
+                         bool lastValid,
+                         TickType_t now,
+                         TickType_t lastTick,
+                         TickType_t timeoutTicks) {
+    if (!hasSeen || !lastValid)
+        return false;
+    return static_cast<TickType_t>(now - lastTick) >= timeoutTicks;
+}
+
 }  // namespace CanParse
