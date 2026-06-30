@@ -11,7 +11,7 @@
 #include "driver/uart.h"
 
 // --- CAN Message IDs ---
-#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
+//#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
 #define CAN_ID_MOTOR_STATUS 0x200  // Motor Driver → AKS
 #define CAN_ID_BMS_STATUS 0x300    // Legacy (unused)
 // Solion SK Serisi BMS — 29-bit Extended ID, Big Endian, 125kbps
@@ -50,10 +50,20 @@
 #define LORA_MODE_NORMAL_M1_LEVEL 0
 #define LORA_AUX_READY_LEVEL 1
 #define LORA_PROTOCOL_VERSION 1
-// Planned startup mode for E32:
-// M0 = 0, M1 = 0 -> normal transparent UART mode.
-// AUX should be used as a readiness gate before TX once the GPIO init
-// sequence is added in the LoRa task startup path.
+
+// --- E32 Register Values (UKS lora.h ile eşleştirilmiş) ---
+// SPED: bits[7:6]=00(8N1) | bits[5:3]=011(9600 baud) | bits[2:0]=010(2.4kbps air)
+// Not: UART baud (bits[5:3]) MCU↔E32 yerel hızdır; air rate (bits[2:0]) RF hava hızıdır.
+// Her iki taraf da 9600 UART kullandığından 0x1A her iki uç için tutarlıdır.
+#define LORA_CFG_ADDH   0x00U
+#define LORA_CFG_ADDL   0x00U
+#define LORA_CFG_SPED   0x1AU
+#define LORA_CFG_CHAN   0x17U  // kanal 23 -> 433 MHz
+#define LORA_CFG_OPTION 0x47U  // transparent | push-pull | 250ms wake | FEC on | 30dBm
+
+// --- E32 Config Modu Zaman Aşımları ---
+#define LORA_AUX_MODE_TIMEOUT_MS  500   // M0/M1=1 sonrası AUX HIGH bekleme (ms)
+#define LORA_AUX_CFG_TIMEOUT_MS   2000  // Config yazımı sonrası flash tamamlanma (ms)
 
 // --- MCP23S17 I/O Expander (SPI) → Relays ---
 #define RELAY_SPI_HOST SPI2_HOST
@@ -124,5 +134,6 @@
 
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
+#define CAN_BMS_STATUS_TIMEOUT_MS   500
 
 #endif  // SYSTEM_CONFIG_H
