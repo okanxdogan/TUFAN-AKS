@@ -1,3 +1,5 @@
+#include <atomic>
+
 #include "VcuLogic.h"
 #include "SystemConfig.h"
 #include "RelayManager.h"
@@ -20,6 +22,9 @@ static uint32_t s_stateTimer = 0;
 static TelemetryData s_TEL_latestData = {};
 static bool s_VCU_warningLogged = false;
 static SemaphoreHandle_t s_TEL_dataMutex = nullptr;
+// E-STOP bypass: set atomically in postEvent so queue saturation
+// cannot swallow an emergency stop command.
+static std::atomic<bool> s_eStopPending{false};
 
 // ---------------------------------------------------------------------------
 // Forward declarations
@@ -61,6 +66,15 @@ void init() {
 
 void run() {
     s_stateTimer += TASK_PERIOD_MS;
+
+    if (s_eStopPending.exchange(false, std::memory_order_acquire)) {
+        if (s_state != VcuState::EMERGENCY_STOP) {
+            transitionTo(VcuState::EMERGENCY_STOP);
+            return;
+        }
+        // Already in EMERGENCY_STOP — clear flag but let run() continue
+        // so handleEmergencyStop() keeps executing (timer must not reset).
+    }
 
     if ((s_state == VcuState::IDLE || s_state == VcuState::READY ||
          s_state == VcuState::DRIVE) &&
@@ -143,6 +157,12 @@ void run() {
 void postEvent(VcuEvent event) {
     if (s_eventQueue == nullptr)
         return;
+    if (event == VcuEvent::EMERGENCY_STOP) {
+        // Bypass the queue so a full queue cannot swallow an E-STOP.
+        // The flag is checked at the top of run() before any queue drain.
+        s_eStopPending.store(true, std::memory_order_release);
+        return;
+    }
     if (xQueueSend(s_eventQueue, &event, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Event queue full, dropped event %d",
                  static_cast<int>(event));
@@ -268,6 +288,7 @@ void resetForTest() {
     s_stateTimer = 0;
     s_TEL_latestData = {};
     s_VCU_warningLogged = false;
+    s_eStopPending.store(false, std::memory_order_relaxed);
 
     // Olay queue'sunu boşalt — kalıntı event'lerin sonraki teste sızmaması için.
     if (s_eventQueue != nullptr) {
