@@ -71,6 +71,49 @@ UKS parser requirements:
 - Track `sequence` to detect dropped packets.
 - Treat repeated `sequence` values as duplicate or stale samples.
 
+## Alan Aralıkları ve AKS Tarafı Sanitizasyon (v2, 19 alan)
+
+> **NOT — bu bölüm günceldir, yukarıdaki "AKS -> UKS Telemetry Format"
+> tablosu ise eski v1 (15 alan) protokolünü anlatır ve güncel değildir.**
+> Güncel format `ESP_AKS/lib/Telemetry/Telemetry.cpp::sendStatus()` ve
+> `TUFAN-UKS-TELEMETRY/Core/Src/telemetry.c::Decode_Line()` ile birebir
+> doğrulanmıştır: toplam **19 token** (ilk token literal `"TEL"`, ardından
+> 18 sayısal alan), sıra: `ver,seq,rpm,torque,motorErr,motorValid,
+> motorTimeout,cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
+> bmsValid,ts_ms,spd_x10`.
+
+UKS `Decode_Line`, her alanı `Parse_Int` ile ayrı ayrı sert aralık
+kontrolünden geçirir. **Alanlardan TEK BİRİ aralık dışıysa UKS tüm
+frame'i reddeder** (`parse_fail`) — yani o anki RPM, gerilim, akım,
+sıcaklık gibi diğer tüm geçerli alanlar da birlikte kaybolur. Şartname
+9.2.b/9.2.d telemetri akışının sürekliliğini zorunlu kıldığından, AKS
+UKS'in kabul aralığı dışına kesinlikle çıkmayan değerler üretmelidir.
+
+| Alan | UKS kabul aralığı | AKS garantisi | Nasıl |
+| --- | --- | --- | --- |
+| `sysState` | `1..4` | Garantili | `CanManager::getTelemetryData()` içinde `TelemetrySanitize::sanitizeSystemState()` — aralık dışı değer `4` (FAULT) yapılır |
+| `soc` | `0..10000` | Garantili | `TelemetrySanitize::sanitizeSoc()` — `10000`'e clamp edilir |
+| `current` | `-2147483647..2147483647` (tam `int32_t` değil, `INT32_MIN` hariç) | Garantili | `TelemetrySanitize::sanitizeCurrent()` — tam `INT32_MIN` görülürse `INT32_MIN+1`'e kaydırılır |
+| `spd_x10` | `0..3000` | Garantili | `rpmToSpeedKmhX10()` içindeki clamp `TEL_SPD_X10_MAX` (=3000) sabitine göre yapılır (`Telemetry.h`) |
+| `cellVMax`/`cellVMin`, `packV` | `0..65535` (`uint16_t` tip sınırı) | Garantili (tip sınırı = kabul aralığı) | Ek işlem gerekmez |
+| `tempH`/`tempL` | `-128..127` (`int8_t` tip sınırı) | Garantili (tip sınırı = kabul aralığı) | Ek işlem gerekmez |
+| `ts_ms` | `0..2147483647` | **GARANTİ EDİLMİYOR** | Bilinen açık sorun: `esp_timer_get_time()/1000` tabanlı 32-bit boot-ms sayaç ~24.8 günden sonra bu sınırı aşar (sarma noktası ~49.7 gün). **Bu ayrı bir iş kalemi olarak UKS tarafında ele alınacaktır — bkz. "DOĞRULANACAK" listesi altında değil, ayrı takip.** |
+| `seq` | `0..2147483647` | Pratikte garantili (uzun vadeli, düşük öncelik) | `TEL_sequenceCounter` `uint32_t`, teorik olarak ~2.1 milyar paketten sonra bu sınırı aşabilir |
+
+### DOĞRULANACAK
+
+- **`sysState` eşlemesi (1=Discharge, 2=IDLE, 3=Charge, 4=FAULT) Solion SK
+  BMS datasheet'i ile HENÜZ doğrulanmadı.** `CanManager::handleSolionBmsA`
+  / `CanParse::parseSolionBmsA`, Solion'un CAN 0x111 frame'indeki system
+  state byte'ını (`data[6]`) hiçbir çeviri tablosu olmadan doğrudan bu
+  enum'a eşit kabul ediyor. Gerçek BMS ile bench testinde bu varsayımın
+  (vendor'ın state kodlarının gerçekten 1/2/3/4 sırasıyla
+  Discharge/IDLE/Charge/FAULT olduğu) teyit edilmesi gerekiyor. Yanlış
+  çıkarsa: (a) datasheet'teki gerçek kodlarla AKS tarafında bir çeviri
+  tablosu eklenmeli, (b) `TelemetrySanitize::sanitizeSystemState()`
+  aralık-dışı durumu zaten FAULT'a çevirdiği için sistem güvenli tarafta
+  kalır, ama telemetri UKS ekranında yanlış durum gösterebilir.
+
 ## Future Extensions
 
 Planned but not implemented:

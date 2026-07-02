@@ -6,12 +6,23 @@
 #define WHEEL_DIAMETER_M 0.5f   // TODO: gerçek tekerlek çapı (m)
 #define GEAR_RATIO       1.0f   // TODO: gerçek dişli oranı
 
+#define TEL_SPD_X10_MAX 3000  // UKS telemetry.c sanity siniri ile senkron
+                              // — degistirilecekse iki tarafta birlikte
+                              // degistirilmeli
+
 // km/h = rpm * PI * D * 60 / (GEAR_RATIO * 1000)   →   x10 hassasiyet
+//
+// NOT: TEL_SPD_X10_MAX'e clamp gercek hizi gizleyebilir, ama gercek
+// WHEEL_DIAMETER_M / GEAR_RATIO degerleri girildiginde 300 km/h zaten
+// fiziksel olarak erisilemez bir deger olacaktir. Mevcut placeholder
+// degerlerle (D=0.5, GR=1.0) rpm~3184 ustunde bu sinir asilir ve clamp
+// olmadan UKS Decode_Line paketin tamamini reddeder (Parse_Int f[18]
+// 0..3000 sinirini asar).
 static inline uint16_t rpmToSpeedKmhX10(uint16_t rpm) {
     const float km_h = (float)rpm * 3.14159265f * WHEEL_DIAMETER_M
                        * 60.0f / (GEAR_RATIO * 1000.0f);
     const float spd_x10 = km_h * 10.0f;
-    if (spd_x10 >= 65535.0f) return 65535u;
+    if (spd_x10 >= (float)TEL_SPD_X10_MAX) return TEL_SPD_X10_MAX;
     return (uint16_t)spd_x10;
 }
 

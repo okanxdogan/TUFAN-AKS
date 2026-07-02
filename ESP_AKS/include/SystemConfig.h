@@ -147,4 +147,9 @@
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
 
+// UKS'in aralik-disi alan sanitizasyonu (CanManager::getTelemetryData)
+// tetiklendiginde ayni durum tekrar tekrar olussa bile log spam'ini
+// onlemek icin alan basina en fazla 1 WARN / bu sure.
+#define TEL_SANITIZE_WARN_THROTTLE_MS 10000
+
 #endif  // SYSTEM_CONFIG_H

@@ -21,6 +21,20 @@ extern void test_spd_x10_is_encoded(void);
 extern void test_rpm_to_speed_zero(void);
 extern void test_rpm_to_speed_typical(void);
 extern void test_rpm_to_speed_clamp(void);
+extern void test_rpm_to_speed_clamp_at_rpm_20000(void);
+extern void test_rpm_to_speed_clamp_just_above_threshold_rpm(void);
+extern void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void);
+
+// TelemetrySanitize (UKS aralik-disi alan sanitizasyonu) birim testleri
+extern void test_sanitize_system_state_valid_passthrough(void);
+extern void test_sanitize_system_state_zero_becomes_fault(void);
+extern void test_sanitize_system_state_five_becomes_fault(void);
+extern void test_sanitize_soc_within_range_passthrough(void);
+extern void test_sanitize_soc_at_max_passthrough(void);
+extern void test_sanitize_soc_above_max_clamped(void);
+extern void test_sanitize_current_int32_min_shifted(void);
+extern void test_sanitize_current_int32_min_plus_one_unchanged(void);
+extern void test_sanitize_current_normal_passthrough(void);
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -46,6 +60,19 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_rpm_to_speed_zero);
     RUN_TEST(test_rpm_to_speed_typical);
     RUN_TEST(test_rpm_to_speed_clamp);
+    RUN_TEST(test_rpm_to_speed_clamp_at_rpm_20000);
+    RUN_TEST(test_rpm_to_speed_clamp_just_above_threshold_rpm);
+    RUN_TEST(test_rpm_to_speed_no_clamp_just_below_threshold_rpm);
+
+    RUN_TEST(test_sanitize_system_state_valid_passthrough);
+    RUN_TEST(test_sanitize_system_state_zero_becomes_fault);
+    RUN_TEST(test_sanitize_system_state_five_becomes_fault);
+    RUN_TEST(test_sanitize_soc_within_range_passthrough);
+    RUN_TEST(test_sanitize_soc_at_max_passthrough);
+    RUN_TEST(test_sanitize_soc_above_max_clamped);
+    RUN_TEST(test_sanitize_current_int32_min_shifted);
+    RUN_TEST(test_sanitize_current_int32_min_plus_one_unchanged);
+    RUN_TEST(test_sanitize_current_normal_passthrough);
 
     return UNITY_END();
 }

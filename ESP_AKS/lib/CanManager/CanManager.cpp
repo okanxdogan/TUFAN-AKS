@@ -127,9 +127,62 @@ TelemetryData CanManager::getTelemetryData() const {
         return s_telemetryData;
 
     TelemetryData CAN_telemetryCopy = {};
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+    bool CAN_shouldLogSysState = false;
+    bool CAN_shouldLogSoc = false;
+    bool CAN_shouldLogCurrent = false;
+
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     CAN_telemetryCopy = s_telemetryData;
+
+    // UKS Decode_Line, alan bazinda sert aralik kontrolu yapar ve TEK
+    // alan aralik disindaysa TUM frame'i reddeder (parse_fail) — bu
+    // yuzden UKS'e giden anlik goruntu, gonderilmeden hemen once burada
+    // sanitize edilir. Ham CAN parse (CanParse.cpp) ve ic durum
+    // (s_telemetryData) DEGISTIRILMEZ; yalnizca disariya kopyalanan
+    // deger duzeltilir.
+    const uint8_t CAN_sanitizedState =
+        TelemetrySanitize::sanitizeSystemState(CAN_telemetryCopy.TEL_bmsSystemState);
+    if (CAN_sanitizedState != CAN_telemetryCopy.TEL_bmsSystemState) {
+        CAN_telemetryCopy.TEL_bmsSystemState = CAN_sanitizedState;
+        if (static_cast<TickType_t>(CAN_nowTick - CAN_lastSysStateSanitizeWarnTick) >=
+            pdMS_TO_TICKS(TEL_SANITIZE_WARN_THROTTLE_MS)) {
+            CAN_shouldLogSysState = true;
+            CAN_lastSysStateSanitizeWarnTick = CAN_nowTick;
+        }
+    }
+
+    const uint16_t CAN_sanitizedSoc =
+        TelemetrySanitize::sanitizeSoc(CAN_telemetryCopy.TEL_bmsSocHundredths);
+    if (CAN_sanitizedSoc != CAN_telemetryCopy.TEL_bmsSocHundredths) {
+        CAN_telemetryCopy.TEL_bmsSocHundredths = CAN_sanitizedSoc;
+        if (static_cast<TickType_t>(CAN_nowTick - CAN_lastSocSanitizeWarnTick) >=
+            pdMS_TO_TICKS(TEL_SANITIZE_WARN_THROTTLE_MS)) {
+            CAN_shouldLogSoc = true;
+            CAN_lastSocSanitizeWarnTick = CAN_nowTick;
+        }
+    }
+
+    const int32_t CAN_sanitizedCurrent =
+        TelemetrySanitize::sanitizeCurrent(CAN_telemetryCopy.TEL_bmsCurrentCentiMa);
+    if (CAN_sanitizedCurrent != CAN_telemetryCopy.TEL_bmsCurrentCentiMa) {
+        CAN_telemetryCopy.TEL_bmsCurrentCentiMa = CAN_sanitizedCurrent;
+        if (static_cast<TickType_t>(CAN_nowTick - CAN_lastCurrentSanitizeWarnTick) >=
+            pdMS_TO_TICKS(TEL_SANITIZE_WARN_THROTTLE_MS)) {
+            CAN_shouldLogCurrent = true;
+            CAN_lastCurrentSanitizeWarnTick = CAN_nowTick;
+        }
+    }
+
     xSemaphoreGive(s_mutex);
+
+    if (CAN_shouldLogSysState)
+        ESP_LOGW(TAG, "BMS sysState UKS araligi disinda (1..4) — FAULT'a sanitize edildi");
+    if (CAN_shouldLogSoc)
+        ESP_LOGW(TAG, "BMS soc UKS araligi disinda (0..10000) — clamp edildi");
+    if (CAN_shouldLogCurrent)
+        ESP_LOGW(TAG, "BMS current == INT32_MIN, UKS sinirina gore +1 kaydirildi");
+
     return CAN_telemetryCopy;
 }
 
