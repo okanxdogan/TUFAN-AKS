@@ -8,7 +8,6 @@
 
 #include "DisplayHMI.h"
 #include "CanManager.h"
-#include "LinkMonitor.h"
 #include "OfflineBuffer.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
@@ -28,13 +27,7 @@ static constexpr uint32_t STACK_LOG_INTERVAL_MS = 30000;
 
 QueueHandle_t TEL_sensorDataQueue = nullptr;
 
-// --- LoRa link monitörü (vTask_LoRa_UKS yazar, diğer task'lar okur) ---
-static volatile bool   s_linkDown        = false;
-static volatile uint64_t s_lastHeartbeatMs = 0u;  // ms; 0 = henüz heartbeat gelmedi
 
-extern "C" bool LoRa_IsLinkDown(void) {
-    return s_linkDown;
-}
 
 static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
   switch (HMI_state) {
@@ -423,7 +416,10 @@ void vTask_LoRa_UKS(void *pvParameters) {
 
   LO_telemetry.begin();
 
-  uint8_t LO_rxBuffer[4];
+  // TEKNOFEST rule: communication is strictly one-way (vehicle → UKS).
+  // UKS sends nothing to AKS — no E-Stop, no heartbeat, no commands.
+  // LoRa RX is not processed. TX uses AUX pin to decide send vs buffer.
+
   uint32_t lastStackLog = 0;
   TickType_t LO_lastTelemetryTick = 0;
   bool LO_auxNotReadyLogged = false;
@@ -431,86 +427,38 @@ void vTask_LoRa_UKS(void *pvParameters) {
   while (true) {
     esp_task_wdt_reset();
 
-    int LO_rxLength = uart_read_bytes(LORA_UART_NUM, LO_rxBuffer,
-                                      sizeof(LO_rxBuffer),
-                                      pdMS_TO_TICKS(LORA_RX_TIMEOUT_MS));
-    for (int LO_i = 0; LO_i < LO_rxLength; LO_i++) {
-      switch (LO_rxBuffer[LO_i]) {
-      case UKS_CMD_EMERGENCY_STOP:
-        VcuLogic::postEvent(VcuLogic::VcuEvent::EMERGENCY_STOP);
-        break;
-      case UKS_CMD_START:
-        VcuLogic::postEvent(VcuLogic::VcuEvent::START_REQUEST);
-        break;
-      case UKS_CMD_STOP:
-        VcuLogic::postEvent(VcuLogic::VcuEvent::RESET);
-        break;
-      case UKS_CMD_DRIVE_ENABLE:
-        ESP_LOGI(TAG, "LoRa command: DRIVE ENABLE request");
-        VcuLogic::postEvent(VcuLogic::VcuEvent::DRIVE_ENABLE);
-        break;
-      case UKS_HEARTBEAT_BYTE:
-        s_lastHeartbeatMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-        break;
-      default:
-        break;
-      }
-    }
-
-    // Link durumu kontrolü — her 10 ms döngüde çalışır
-    {
-      const uint64_t LO_nowMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-      const bool LO_timeout =
-          link_check_timeout(LO_nowMs, s_lastHeartbeatMs, LINK_TIMEOUT_MS);
-      if (LO_timeout && !s_linkDown) {
-        s_linkDown = true;
-        ESP_LOGW("LINK", "UKS heartbeat timeout — link DOWN");
-      } else if (!LO_timeout && s_linkDown && s_lastHeartbeatMs != 0u) {
-        s_linkDown = false;
-        ESP_LOGI("LINK", "Heartbeat alindi — link UP: %d paket replay edilecek",
-                 ob_count());
-      }
-    }
-
     const TickType_t LO_nowTick = xTaskGetTickCount();
     if ((LO_nowTick - LO_lastTelemetryTick) >=
         pdMS_TO_TICKS(LORA_TX_PERIOD_MS)) {
       LO_lastTelemetryTick = LO_nowTick;
 
       if (TEL_sensorDataQueue != nullptr) {
-        if (!LoRa_IsLinkDown()) {
-          // --- NORMAL MOD: önce buffer replay, sonra canlı paket ---
-          TelemetryData LO_replay = {};
-          while (ob_pop(LO_replay)) {
-            LO_telemetry.sendStatus(LO_replay);
-            esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(50));
-          }
-          TelemetryData LO_live = {};
-          if (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE) {
-            if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-              LO_telemetry.sendStatus(LO_live);
-              LO_auxNotReadyLogged = false;
-            } else {
-              if (!LO_auxNotReadyLogged) {
-                ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
-                LO_auxNotReadyLogged = true;
-              }
+        TelemetryData LO_live = {};
+        if (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE) {
+          if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
+            // AUX ready — first drain any buffered packets, then send live
+            TelemetryData LO_replay = {};
+            while (ob_pop(LO_replay)) {
+              LO_telemetry.sendStatus(LO_replay);
+              esp_task_wdt_reset();
+              vTaskDelay(pdMS_TO_TICKS(50));
             }
-          }
-        } else {
-          // --- OFFLINE MOD: canlı TX yok, buffer'a yaz ---
-          // TEL_timestampMs paket üretildiğinde (CAN task) zaten set edildi.
-          TelemetryData LO_buffered = {};
-          if (xQueuePeek(TEL_sensorDataQueue, &LO_buffered, 0) == pdTRUE) {
-            ob_push(LO_buffered);
+            LO_telemetry.sendStatus(LO_live);
+            LO_auxNotReadyLogged = false;
+          } else {
+            // AUX busy — buffer the packet for later
+            ob_push(LO_live);
+            if (!LO_auxNotReadyLogged) {
+              ESP_LOGW(TAG, "LoRa AUX not ready, buffering telemetry");
+              LO_auxNotReadyLogged = true;
+            }
           }
         }
       }
     }
 
     logStackUsage("LoRa_Task", lastStackLog);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(LORA_TX_PERIOD_MS));
   }
 }
 

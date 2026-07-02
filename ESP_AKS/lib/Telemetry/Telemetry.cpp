@@ -7,11 +7,10 @@
 
 static constexpr const char* TAG = "Telemetry";
 
-Telemetry::Telemetry() : TEL_isInitialized(false), TEL_sequenceCounter(0) {}
+Telemetry::Telemetry() : TEL_isInitialized(false) {}
 
 bool Telemetry::begin() {
     TEL_isInitialized = true;
-    TEL_sequenceCounter = 0;
     return true;
 }
 
@@ -19,31 +18,35 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
     if (!TEL_isInitialized)
         return;
 
-    // Format: TEL,ver,seq,rpm,torque,motorErr,motorValid,motorTimeout,
-    //         cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
-    //         bmsValid,tsMs,spdX10
-    char TEL_payload[192];
+    // TEKNOFEST mandatory telemetry format:
+    //   zaman_ms;hiz_kmh;T_bat_C;V_bat_C;kalan_enerji_Wh
+    // Separator: semicolon (;)
+    // Line ending: \r\n
+
+    // TODO: RPM->km/h conversion, will be added once wheel diameter is
+    // confirmed by the MS team
+    const uint16_t TEL_hizKmh = 0;
+
+    // T_bat_C: highest battery temperature in Celsius
+    const int TEL_tempBatC = static_cast<int>(TEL_data.TEL_bmsTempHighestC);
+
+    // V_bat_C: pack voltage in decivolts (raw is deciV, TEKNOFEST expects
+    // deciV integer representation — e.g. 780 for 78.0V)
+    const uint16_t TEL_vBatDeciV = TEL_data.TEL_bmsPackVoltageDeciV;
+
+    // TODO: SOC * capacity (Ah) calculation, will be added once battery
+    // capacity is confirmed
+    const uint32_t TEL_kalanEnerjiWh = 0;
+
+    char TEL_payload[128];
     const int TEL_payloadLength = snprintf(
         TEL_payload, sizeof(TEL_payload),
-        "TEL,%d,%lu,%u,%d,%u,%u,%u,%u,%u,%d,%d,%u,%u,%ld,%u,%u,%lu,%u\r\n",
-        LORA_PROTOCOL_VERSION,
-        static_cast<unsigned long>(TEL_sequenceCounter),
-        TEL_data.TEL_motorRpm,
-        static_cast<int>(TEL_data.TEL_motorTorqueFeedback),
-        TEL_data.TEL_motorErrorFlags,
-        TEL_data.TEL_motorDataValid ? 1u : 0u,
-        TEL_data.TEL_motorTimeoutActive ? 1u : 0u,
-        TEL_data.TEL_bmsCellVoltageMaxDeciMv,
-        TEL_data.TEL_bmsCellVoltageMinDeciMv,
-        static_cast<int>(TEL_data.TEL_bmsTempHighestC),
-        static_cast<int>(TEL_data.TEL_bmsTempLowestC),
-        TEL_data.TEL_bmsSystemState,
-        TEL_data.TEL_bmsPackVoltageDeciV,
-        static_cast<long>(TEL_data.TEL_bmsCurrentCentiMa),
-        TEL_data.TEL_bmsSocHundredths,
-        TEL_data.TEL_bmsDataValid ? 1u : 0u,
+        "%lu;%u;%d;%u;%lu\r\n",
         static_cast<unsigned long>(TEL_data.TEL_timestampMs),
-        TEL_data.TEL_speedKmhX10);
+        TEL_hizKmh,
+        TEL_tempBatC,
+        TEL_vBatDeciV,
+        static_cast<unsigned long>(TEL_kalanEnerjiWh));
 
     if (TEL_payloadLength <= 0)
         return;
@@ -59,6 +62,4 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
         ESP_LOGE(TAG, "Telemetry TX failed");
         return;
     }
-
-    TEL_sequenceCounter++;
 }
