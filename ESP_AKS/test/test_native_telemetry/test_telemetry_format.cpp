@@ -245,9 +245,40 @@ void test_rpm_to_speed_typical(void) {
 }
 
 // ---------------------------------------------------------------------------
-// rpmToSpeedKmhX10: uint16_t max rpm — result must not exceed 65535 (clamp).
+// rpmToSpeedKmhX10: uint16_t max rpm — sonuç TEL_SPD_X10_MAX'i (UKS sanity
+// sınırı) aşmamalı (clamp). Eskiden 65535'e clamp'liyordu; UKS Decode_Line
+// spd_x10 için 0..3000 kabul ediyor, üstünü parse_fail ile reddediyor.
 // ---------------------------------------------------------------------------
 void test_rpm_to_speed_clamp(void) {
     uint16_t result = rpmToSpeedKmhX10(65535u);
-    TEST_ASSERT_TRUE(result <= 65535u);
+    TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: TEL_RPM_MAX (UKS sanity, 20000) civarında da sonuç
+// TEL_SPD_X10_MAX'e clamp'lenmeli — placeholder geometriyle (D=0.5, GR=1.0)
+// bu rpm'de ham hesap ~18849 çıkar, clamp olmasa UKS tüm paketi reddederdi.
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_clamp_at_rpm_20000(void) {
+    uint16_t result = rpmToSpeedKmhX10(20000u);
+    TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: clamp eşiği sınırı. Placeholder geometriyle spd_x10=3000
+// eşiği rpm≈3183.1'e denk gelir; rpm=3184'te ham hesap (~3001) sınırı geçer
+// ve clamp devreye girmelidir.
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_clamp_just_above_threshold_rpm(void) {
+    uint16_t result = rpmToSpeedKmhX10(3184u);
+    TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: eşiğin hemen altında (rpm=3182) ham hesap ~2999.5 —
+// clamp devreye GİRMEMELİ, gerçek (kırpılmamış) değer dönmeli.
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void) {
+    uint16_t result = rpmToSpeedKmhX10(3182u);
+    TEST_ASSERT_TRUE(result < TEL_SPD_X10_MAX);
 }

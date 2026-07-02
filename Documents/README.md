@@ -45,18 +45,30 @@ Implemented frames:
 - `0xE000`: Lithium Balance BMS config
 - `0xE001`: Lithium Balance BMS live
 
-## LoRa / E32 Baseline
+## LoRa / E22 Baseline
 
-The selected E32 startup mode for the next implementation step is normal mode:
+The radio module is E22-400T30D-V2 (SX1268), a pin-compatible successor to
+the retired E32-433T30D. Pin assignments are unchanged; the register-based
+configuration protocol and config-mode pin levels are not (see
+`include/E22Regs.h` for the address/value contract and
+`lib/E22Config` for the pure command-build / response-parse helpers).
+
+Startup mode for normal (transparent) operation:
 
 - `M0 = 0`
 - `M1 = 0`
 
-Planned integration notes:
+Config mode (boot-time register sync against the contract):
+
+- `M0 = 0`
+- `M1 = 1`
+
+Integration notes:
 
 - Configure `LORA_M0_PIN` and `LORA_M1_PIN` before UART traffic starts.
 - Use `LORA_AUX_PIN` as a readiness gate before telemetry transmission.
-- Keep telemetry TX in transparent UART mode unless the protocol contract later requires framed configuration mode access.
+- Keep telemetry TX in transparent UART mode; radio register configuration
+  happens once at boot in `vTask_LoRa_UKS` before entering the main loop.
 
 ## Relay Mapping Status
 

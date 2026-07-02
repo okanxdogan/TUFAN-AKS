@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "CanParse.h"
 #include "Telemetry.h"
+#include "TelemetrySanitize.h"
 #include "driver/gpio.h"
 #include "driver/twai.h"
 #include "freertos/FreeRTOS.h"
@@ -65,6 +66,12 @@ class CanManager {
     bool CAN_bmsConfigValid = false;
     bool CAN_bmsLiveValid = false;
     bool CAN_bmsTimeoutLogged = false;
+
+    // UKS aralik-disi alan sanitizasyonu icin throttle'li WARN log
+    // zaman damgalari (bkz. getTelemetryData / TelemetrySanitize.h).
+    mutable TickType_t CAN_lastSysStateSanitizeWarnTick = 0;
+    mutable TickType_t CAN_lastSocSanitizeWarnTick = 0;
+    mutable TickType_t CAN_lastCurrentSanitizeWarnTick = 0;
 
     CAN_EventCallback CAN_eventCallback = nullptr;
     void* CAN_eventContext = nullptr;

@@ -9,6 +9,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "driver/uart.h"
+#include "E22Regs.h"
 
 // --- CAN Message IDs ---
 //#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
@@ -36,41 +37,35 @@
 #define HMI_CMD_EMERGENCY_STOP 3
 #define HMI_CMD_DRIVE_ENABLE 4
 
-// --- LoRa E32-433T30D (UART & Kontrol) ---
+// --- LoRa E22-400T30D-V2 (SX1268, UART & Kontrol) ---
+// Pin-uyumlu E32-433T30D yerine geçti; pin atamaları DEĞİŞMEDİ. Config
+// protokolü register-tabanlıdır (bkz. E22Regs.h) ve config-modu pin
+// seviyeleri E32'den FARKLIDIR (aşağıya bkz.).
 #define LORA_UART_NUM UART_NUM_2
 #define LORA_TX_PIN GPIO_NUM_16   // ESP TX -> Şemadaki LR_RXD (IO16)
 #define LORA_RX_PIN GPIO_NUM_17   // ESP RX <- Şemadaki LR_TXD (IO17)
 #define LORA_AUX_PIN GPIO_NUM_35  // IO35 sadece giriş; dahili pull-up YOK — harici 10k pull-up gerekli
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
-#define LORA_UART_BAUD 9600       // MCU↔E32 yerel seri hız (config modunda da aynı)
+#define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
 #define LORA_TX_PERIOD_MS 200     // 5 Hz telemetry uplink
 #define LORA_RX_TIMEOUT_MS 20
 #define LORA_MODE_NORMAL_M0_LEVEL 0
 #define LORA_MODE_NORMAL_M1_LEVEL 0
+// E22 config modu: M0=0, M1=1 (E32'nin M0=1,M1=1 config modundan FARKLI —
+// E22'de M0=1,M1=1 "derin uyku / OTA" moduna karşılık gelir, config değil).
+#define LORA_MODE_CONFIG_M0_LEVEL 0
+#define LORA_MODE_CONFIG_M1_LEVEL 1
 #define LORA_AUX_READY_LEVEL 1
 #define LORA_PROTOCOL_VERSION 2
 
-// --- E32 Register Values (UKS lora.h ile birebir eşleştirilmeli) ---
-// E32-433T30D SPED byte bit alanları (datasheet Tablo 4):
-//   bit[7:6] = UART baud : 00=1200 01=2400 10=4800 11=9600
-//   bit[5:3] = parity    : 000=8N1 001=8O1 010=8E1
-//   bit[2:0] = air rate  : 000=0.3k 001=1.2k 010=2.4k 011=4.8k 100=9.6k 101=19.2k
-//
-// SPED=0xC4 = 1100 0100 → bit[7:6]=11(9600 baud) | bit[5:3]=000(8N1) | bit[2:0]=100(9.6 kbps air)
-// 9.6 kbps air: ~78 byte v2 telemetri paketi ~65 ms havada kalır → 200 ms / 5 Hz periyoduna sığar.
-// ÖNEMLİ: UKS lora.h'de de SPED=0xC4 olmalı (eski 0xC2=2.4kbps air / 0x1A=1200 baud YANLIŞTIR).
-#define LORA_CFG_ADDH   0x00U
-#define LORA_CFG_ADDL   0x00U
-#define LORA_CFG_SPED   0xC4U
-#define LORA_CFG_CHAN   0x17U  // kanal 23 -> 433 MHz
-#define LORA_CFG_OPTION 0x44U  // transparent | push-pull | 250ms wake | FEC on | max-güç kodu (bit[1:0]=00)
-// OPTION bit[1:0] güç: 00=en yüksek, 01=orta-yüksek, 10=orta-düşük, 11=en düşük (~10 dBm).
-// T30D harici PA bu register değerini farklı yorumlar; sahada menzil testiyle doğrula.
+// E22 register sözleşmesi (adresler + değerler) E22Regs.h içindedir —
+// UKS e22_regs.h ile birebir senkron tutulmalıdır (bkz. o dosyanın başı).
 
-// --- E32 Config Modu Zaman Aşımları ---
-#define LORA_AUX_MODE_TIMEOUT_MS  500   // M0/M1=1 sonrası AUX HIGH bekleme (ms)
+// --- E22 Config Modu Zaman Aşımları ---
+#define LORA_AUX_MODE_TIMEOUT_MS  500   // M0/M1 geçişi sonrası AUX HIGH bekleme (ms)
 #define LORA_AUX_CFG_TIMEOUT_MS   2000  // Config yazımı sonrası flash tamamlanma (ms)
+#define LORA_CFG_READ_TIMEOUT_MS  500   // C1 sorgu/onay yanıtı bekleme (ms)
 
 // --- MCP23S17 I/O Expander (SPI) → Relays ---
 #define RELAY_SPI_HOST SPI2_HOST
@@ -146,5 +141,10 @@
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
+
+// UKS'in aralik-disi alan sanitizasyonu (CanManager::getTelemetryData)
+// tetiklendiginde ayni durum tekrar tekrar olussa bile log spam'ini
+// onlemek icin alan basina en fazla 1 WARN / bu sure.
+#define TEL_SANITIZE_WARN_THROTTLE_MS 10000
 
 #endif  // SYSTEM_CONFIG_H

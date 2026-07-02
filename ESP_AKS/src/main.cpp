@@ -6,8 +6,11 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <cstdio>
+
 #include "DisplayHMI.h"
 #include "CanManager.h"
+#include "E22Config.h"
 #include "OfflineBuffer.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
@@ -280,6 +283,23 @@ void vTask_HMI_Display(void *pvParameters) {
   }
 }
 
+// Bench teyidi için register bloğunu satır satır loglar. UKS ile birebir
+// eşleşmesi zorunlu format: "E22REG,0x%02X,0x%02X\r\n" (adres, değer).
+// NOT: E22REG satırları kasıtlı olarak çıplak printf ile basılır (ESP_LOGI
+// DEĞİL) — UKS aynı satırı çıplak printf ile basıyor, bench'te iki çıktı
+// satır satır diff'leniyor; ESP_LOGI'nin "I (ts) TAG:" öneki ve çift satır
+// sonu diff'i bozar. Başlık ayırıcı satırı diff kapsamı dışında, ESP_LOGI
+// kalır.
+static void E22_logHexDump(const char *label, const uint8_t *buf, int len) {
+  ESP_LOGI(TAG, "--- %s ---", label);
+  if (len < (int)(3 + E22_REG_BLOCK_LEN)) {
+    return;
+  }
+  for (uint8_t i = 0; i < E22_REG_BLOCK_LEN; i++) {
+    printf("E22REG,0x%02X,0x%02X\r\n", E22_REG_BLOCK_START + i, buf[3 + i]);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LoRa UART task — reads UKS commands and posts events to VcuLogic
 // ---------------------------------------------------------------------------
@@ -319,10 +339,11 @@ void vTask_LoRa_UKS(void *pvParameters) {
                UART_PIN_NO_CHANGE);
   uart_driver_install(LORA_UART_NUM, 256, 256, 0, nullptr, 0);
 
-  // --- E32 boot konfigürasyonu: yazma + echo doğrulama ---
-  gpio_set_level(LORA_M0_PIN, 1);
-  gpio_set_level(LORA_M1_PIN, 1);
-  ESP_LOGI(TAG, "E32: config moduna giriliyor (M0=1 M1=1)");
+  // --- E22 boot konfigürasyonu: oku + gerekirse yaz + doğrula ---
+  gpio_set_level(LORA_M0_PIN, LORA_MODE_CONFIG_M0_LEVEL);
+  gpio_set_level(LORA_M1_PIN, LORA_MODE_CONFIG_M1_LEVEL);
+  ESP_LOGI(TAG, "E22: config moduna giriliyor (M0=%d M1=%d)",
+           LORA_MODE_CONFIG_M0_LEVEL, LORA_MODE_CONFIG_M1_LEVEL);
 
   {
     // Config modunda AUX HIGH bekle
@@ -338,62 +359,102 @@ void vTask_LoRa_UKS(void *pvParameters) {
     }
 
     if (!LO_auxCfgReady) {
-      ESP_LOGE(TAG, "E32 AUX timeout (%d ms): config moduna girilemedi, "
+      ESP_LOGE(TAG, "E22 AUX timeout (%d ms): config moduna girilemedi, "
                     "normal moda devam ediliyor",
                LORA_AUX_MODE_TIMEOUT_MS);
     } else {
-      // Kalıcı yazma komutu: 0xC0 HEAD + 5 register byte
+      // 1. Mevcut bloğu oku (0xC1 <start> <len>) — bench teyidi için hex dump
       uart_flush(LORA_UART_NUM);
-      const uint8_t LO_cfgCmd[6] = {
-          0xC0,
-          LORA_CFG_ADDH, LORA_CFG_ADDL,
-          LORA_CFG_SPED, LORA_CFG_CHAN, LORA_CFG_OPTION
-      };
-      uart_write_bytes(LORA_UART_NUM, (const char*)LO_cfgCmd, sizeof(LO_cfgCmd));
+      uint8_t LO_readCmd[3];
+      const size_t LO_readCmdLen =
+          e22_buildReadAllCommand(LO_readCmd, sizeof(LO_readCmd));
+      uart_write_bytes(LORA_UART_NUM, (const char *)LO_readCmd, LO_readCmdLen);
 
-      // Flash yazımının bitmesini bekle: AUX LOW→HIGH geçişi (~200ms tipik)
-      vTaskDelay(pdMS_TO_TICKS(50));  // modülün LOW'a geçmesine zaman ver
-      const TickType_t LO_flashT0 = xTaskGetTickCount();
-      bool LO_flashDone = false;
-      while ((xTaskGetTickCount() - LO_flashT0) <
-             pdMS_TO_TICKS(LORA_AUX_CFG_TIMEOUT_MS)) {
-        if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-          LO_flashDone = true;
-          break;
+      uint8_t LO_readResp[3 + E22_REG_BLOCK_LEN] = {};
+      const int LO_readLen =
+          uart_read_bytes(LORA_UART_NUM, LO_readResp, sizeof(LO_readResp),
+                           pdMS_TO_TICKS(LORA_CFG_READ_TIMEOUT_MS));
+      E22_logHexDump("E22 mevcut config yaniti", LO_readResp,
+                      LO_readLen > 0 ? LO_readLen : 0);
+
+      bool LO_needsWrite = true;
+      if (LO_readLen > 0 &&
+          e22_isErrorResponse(LO_readResp, (size_t)LO_readLen)) {
+        ESP_LOGE(TAG, "E22 okuma reddedildi (FF FF FF) — yazma denenecek");
+      } else {
+        E22RegValues LO_current = {};
+        if (e22_parseRegResponse(LO_readResp, (size_t)LO_readLen,
+                                  LO_current)) {
+          if (e22_regsEqual(LO_current, E22_CONTRACT_REGS)) {
+            ESP_LOGI(TAG, "E22 config zaten sozlesmeyle uyumlu, yazma "
+                          "atlaniyor");
+            LO_needsWrite = false;
+          } else {
+            ESP_LOGW(TAG, "E22 mevcut config sozlesmeden farkli — yaziliyor");
+          }
+        } else {
+          ESP_LOGE(TAG, "E22 okuma yaniti eksik/hatali (%d byte) — yazma "
+                        "denenecek",
+                   LO_readLen);
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
       }
 
-      if (!LO_flashDone) {
-        ESP_LOGE(TAG, "E32 flash AUX timeout (%d ms): config yazildi ancak "
-                      "dogrulanamadi, devam ediliyor",
-                 LORA_AUX_CFG_TIMEOUT_MS);
-      } else {
-        // 6 byte echo oku ve doğrula
-        uint8_t LO_echo[6] = {};
-        const int LO_echoLen = uart_read_bytes(
-            LORA_UART_NUM, LO_echo, sizeof(LO_echo), pdMS_TO_TICKS(500));
+      // 2. Fark varsa (ya da okunamadıysa) kalıcı yazma komutu gönder
+      if (LO_needsWrite) {
+        uart_flush(LORA_UART_NUM);
+        uint8_t LO_writeCmd[3 + E22_REG_BLOCK_LEN];
+        const size_t LO_writeCmdLen = e22_buildWriteCommand(
+            E22_CONTRACT_REGS, LO_writeCmd, sizeof(LO_writeCmd));
+        uart_write_bytes(LORA_UART_NUM, (const char *)LO_writeCmd,
+                          LO_writeCmdLen);
 
-        if (LO_echoLen >= 6 &&
-            LO_echo[0] == 0xC0 &&
-            LO_echo[1] == LORA_CFG_ADDH &&
-            LO_echo[2] == LORA_CFG_ADDL &&
-            LO_echo[3] == LORA_CFG_SPED &&
-            LO_echo[4] == LORA_CFG_CHAN &&
-            LO_echo[5] == LORA_CFG_OPTION) {
-          ESP_LOGI(TAG,
-                   "E32 config dogrulandi: SPED=0x%02X CHAN=0x%02X OPTION=0x%02X",
-                   LO_echo[3], LO_echo[4], LO_echo[5]);
+        // Flash yazımının bitmesini bekle: AUX LOW→HIGH geçişi (~200ms tipik)
+        vTaskDelay(pdMS_TO_TICKS(50));  // modülün LOW'a geçmesine zaman ver
+        const TickType_t LO_flashT0 = xTaskGetTickCount();
+        bool LO_flashDone = false;
+        while ((xTaskGetTickCount() - LO_flashT0) <
+               pdMS_TO_TICKS(LORA_AUX_CFG_TIMEOUT_MS)) {
+          if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
+            LO_flashDone = true;
+            break;
+          }
+          vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
+        if (!LO_flashDone) {
+          ESP_LOGE(TAG, "E22 flash AUX timeout (%d ms): config yazildi ancak "
+                        "dogrulanamadi, devam ediliyor",
+                   LORA_AUX_CFG_TIMEOUT_MS);
         } else {
-          ESP_LOGE(TAG,
-                   "E32 config echo hatasi (%d/6 byte): "
-                   "[0]=0x%02X [3]=0x%02X [4]=0x%02X [5]=0x%02X — "
-                   "devam ediliyor",
-                   LO_echoLen,
-                   LO_echoLen > 0 ? LO_echo[0] : 0xFFu,
-                   LO_echoLen > 3 ? LO_echo[3] : 0xFFu,
-                   LO_echoLen > 4 ? LO_echo[4] : 0xFFu,
-                   LO_echoLen > 5 ? LO_echo[5] : 0xFFu);
+          // 3. Yazma sonrası onay: E22, C0 değil C1 formatıyla yanıt verir
+          uint8_t LO_confirm[3 + E22_REG_BLOCK_LEN] = {};
+          const int LO_confirmLen = uart_read_bytes(
+              LORA_UART_NUM, LO_confirm, sizeof(LO_confirm),
+              pdMS_TO_TICKS(LORA_CFG_READ_TIMEOUT_MS));
+          E22_logHexDump("E22 yazma onay yaniti", LO_confirm,
+                          LO_confirmLen > 0 ? LO_confirmLen : 0);
+
+          if (LO_confirmLen > 0 &&
+              e22_isErrorResponse(LO_confirm, (size_t)LO_confirmLen)) {
+            ESP_LOGE(TAG, "E22 config yazma reddedildi (FF FF FF) — modul "
+                          "eski config ile devam ediyor olabilir, gorevde "
+                          "kaliniyor");
+          } else {
+            E22RegValues LO_written = {};
+            if (e22_parseRegResponse(LO_confirm, (size_t)LO_confirmLen,
+                                      LO_written) &&
+                e22_regsEqual(LO_written, E22_CONTRACT_REGS)) {
+              ESP_LOGI(TAG,
+                       "E22 config dogrulandi: NETID=0x%02X REG0=0x%02X "
+                       "REG1=0x%02X REG2=0x%02X REG3=0x%02X",
+                       LO_written.netid, LO_written.reg0, LO_written.reg1,
+                       LO_written.reg2, LO_written.reg3);
+            } else {
+              ESP_LOGE(TAG, "E22 config yazma onayi uyusmuyor (%d byte) — "
+                            "gorevde kaliniyor",
+                       LO_confirmLen);
+            }
+          }
         }
       }
     }
@@ -411,7 +472,7 @@ void vTask_LoRa_UKS(void *pvParameters) {
     }
   }
   LO_auxLevel = gpio_get_level(LORA_AUX_PIN);
-  ESP_LOGI(TAG, "E32: normal mod (M0=%d M1=%d AUX=%d)",
+  ESP_LOGI(TAG, "E22: normal mod (M0=%d M1=%d AUX=%d)",
            LORA_MODE_NORMAL_M0_LEVEL, LORA_MODE_NORMAL_M1_LEVEL, LO_auxLevel);
 
   LO_telemetry.begin();
@@ -465,7 +526,7 @@ void vTask_LoRa_UKS(void *pvParameters) {
 // ---------------------------------------------------------------------------
 // Main application entry point
 // ---------------------------------------------------------------------------
-#ifndef E32_DIAGNOSTIC_MODE
+#ifndef E22_DIAGNOSTIC_MODE
 extern "C" void app_main() {
   // --- Hardware initialization (before any tasks) ---
 
@@ -497,4 +558,4 @@ extern "C" void app_main() {
   xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr, 8,
                           nullptr, 0);
 }
-#endif  // E32_DIAGNOSTIC_MODE
+#endif  // E22_DIAGNOSTIC_MODE
