@@ -4,24 +4,24 @@ This note captures the current AKS-side telemetry bandwidth estimate and the pra
 
 ## Current AKS Telemetry Payload
 
-Current uplink format:
+Current uplink format (TEKNOFEST-compliant):
 
-- ASCII CSV line
-- Prefix: `TEL,<version>,<sequence>,...`
+- ASCII semicolon-separated line
+- Fields: `zaman_ms;hiz_kmh;T_bat_C;V_bat_C;kalan_enerji_Wh`
 - Terminator: `\r\n`
 - Rate: `5 Hz`
 
 Representative packet:
 
 ```text
-TEL,1,42,3150,12,0,1,0,77,-15,28,612,3400,0,1\r\n
+10000;0;32;780;0\r\n
 ```
 
-Typical payload size is approximately `45-70 bytes` depending on numeric field widths.
-A conservative planning budget of `70 bytes` per packet gives:
+Typical payload size is approximately `15-25 bytes` depending on numeric field widths.
+A conservative planning budget of `30 bytes` per packet gives:
 
-- `70 bytes * 5 Hz = 350 bytes/s`
-- `350 bytes/s * 10 bits/byte ~= 3500 bit/s` on the UART side including start/stop overhead
+- `30 bytes * 5 Hz = 150 bytes/s`
+- `150 bytes/s * 10 bits/byte ~= 1500 bit/s` on the UART side including start/stop overhead
 
 ## Interpretation
 
@@ -35,17 +35,15 @@ Important distinction:
 
 Implemented now:
 
+- TEKNOFEST-compliant telemetry format: `zaman_ms;hiz_kmh;T_bat_C;V_bat_C;kalan_enerji_Wh` (semicolon-separated)
+- Millisecond timestamp from boot (monotonic clock) replaces sequence counter
+- LoRa RX restricted to E-Stop only (TEKNOFEST rule: UKS-to-vehicle is E-Stop-only)
+- OfflineBuffer ring buffer (300 entries = 60 s at 5 Hz) retains telemetry during link loss
+- Link-down detection via heartbeat timeout (3 s); buffered packets replayed FIFO on reconnect
 - No AKS retransmission
 - No AKS-level ACK handling
-- Latest-sample-wins behavior
-- Sequence counter for loss detection
+- Latest-sample-wins behavior for live telemetry
 - AUX gate checked before each TX attempt
-
-Implication:
-
-- Packet loss is observable at UKS by sequence gaps.
-- Lost packets are not resent.
-- If AUX is busy, AKS skips the current sample and waits for the next period.
 
 ## Recommended Field Checks
 
