@@ -20,11 +20,12 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
         return;
 
     // Format: TEL,ver,seq,rpm,torque,motorErr,motorValid,motorTimeout,
-    //         cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,bmsValid
-    char TEL_payload[160];
+    //         cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
+    //         bmsValid,tsMs,spdX10
+    char TEL_payload[192];
     const int TEL_payloadLength = snprintf(
         TEL_payload, sizeof(TEL_payload),
-        "TEL,%d,%lu,%u,%d,%u,%u,%u,%u,%u,%d,%d,%u,%u,%ld,%u,%u\r\n",
+        "TEL,%d,%lu,%u,%d,%u,%u,%u,%u,%u,%d,%d,%u,%u,%ld,%u,%u,%lu,%u\r\n",
         LORA_PROTOCOL_VERSION,
         static_cast<unsigned long>(TEL_sequenceCounter),
         TEL_data.TEL_motorRpm,
@@ -40,7 +41,9 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
         TEL_data.TEL_bmsPackVoltageDeciV,
         static_cast<long>(TEL_data.TEL_bmsCurrentCentiMa),
         TEL_data.TEL_bmsSocHundredths,
-        TEL_data.TEL_bmsDataValid ? 1u : 0u);
+        TEL_data.TEL_bmsDataValid ? 1u : 0u,
+        static_cast<unsigned long>(TEL_data.TEL_timestampMs),
+        TEL_data.TEL_speedKmhX10);
 
     if (TEL_payloadLength <= 0)
         return;

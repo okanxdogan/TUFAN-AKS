@@ -28,6 +28,8 @@ TelemetryData makeDistinctData() {
     d.TEL_bmsCurrentCentiMa = -181610;      // -1816.10 mA
     d.TEL_bmsSocHundredths = 6283;          // 62.83%
     d.TEL_bmsDataValid = true;
+    d.TEL_timestampMs = 12345;
+    d.TEL_speedKmhX10 = 1413;  // rpmToSpeedKmhX10(1500) ile tutarlı
     return d;
 }
 
@@ -44,7 +46,7 @@ void test_no_write_before_begin(void) {
 }
 
 // ---------------------------------------------------------------------------
-// İlk paket "TEL,1,0," ile başlamalı (versiyon=1, seq=0).
+// İlk paket "TEL,2,0," ile başlamalı (versiyon=2, seq=0).
 // ---------------------------------------------------------------------------
 void test_first_packet_has_v1_seq0_prefix(void) {
     fake_uart_reset();
@@ -53,7 +55,7 @@ void test_first_packet_has_v1_seq0_prefix(void) {
     tel.sendStatus(makeZeroData());
 
     const char* buf = fake_uart_get_buffer();
-    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,1,0,"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,2,0,"));
 }
 
 // ---------------------------------------------------------------------------
@@ -68,9 +70,9 @@ void test_sequence_increments(void) {
     tel.sendStatus(makeZeroData());
 
     const char* buf = fake_uart_get_buffer();
-    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,1,0,"));
-    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,1,1,"));
-    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,1,2,"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,2,0,"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,2,1,"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,2,2,"));
 }
 
 // ---------------------------------------------------------------------------
@@ -88,9 +90,8 @@ void test_begin_resets_sequence(void) {
     tel.sendStatus(makeZeroData());
 
     const char* buf = fake_uart_get_buffer();
-    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,1,0,"));
-    // Hâlâ 1 ile başlayan yeni bir kayıt OLMAMALI (yalnız tek sendStatus geçti).
-    TEST_ASSERT_NULL(strstr(buf, "TEL,1,1,"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "TEL,2,0,"));
+    TEST_ASSERT_NULL(strstr(buf, "TEL,2,1,"));
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +157,8 @@ void test_motor_valid_renders_as_one(void) {
     d.TEL_motorDataValid = true;
     tel.sendStatus(d);
 
-    // Format: TEL,1,0,rpm,torque,motorErr,motorValid,motorTimeout,...
-    //                  ↓        ↓           ↓
-    //   "TEL,1,0,0,0,0,1,0,..."
-    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,1,0,0,0,0,1,0,"));
+    // Format: TEL,2,0,rpm,torque,motorErr,motorValid,motorTimeout,...
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,2,0,0,0,0,1,0,"));
 }
 
 void test_motor_timeout_renders_as_one(void) {
@@ -170,7 +169,7 @@ void test_motor_timeout_renders_as_one(void) {
     d.TEL_motorTimeoutActive = true;
     tel.sendStatus(d);
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,1,0,0,0,0,0,1,"));
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,2,0,0,0,0,0,1,"));
 }
 
 void test_bms_valid_renders_as_one(void) {
@@ -181,14 +180,9 @@ void test_bms_valid_renders_as_one(void) {
     d.TEL_bmsDataValid = true;
     tel.sendStatus(d);
 
-    // BMS valid son alandır → ",1\r\n" ile bitmeli.
-    size_t sz = fake_uart_get_size();
-    const char* buf = fake_uart_get_buffer();
-    TEST_ASSERT_TRUE(sz >= 4);
-    TEST_ASSERT_EQUAL_CHAR(',', buf[sz - 4]);
-    TEST_ASSERT_EQUAL_CHAR('1', buf[sz - 3]);
-    TEST_ASSERT_EQUAL_CHAR('\r', buf[sz - 2]);
-    TEST_ASSERT_EQUAL_CHAR('\n', buf[sz - 1]);
+    // v2: bmsDataValid artık son alan değil; ts_ms=0, spd_x10=0 arkasından gelir.
+    // makeZeroData ile bitiş: "...,1,0,0\r\n"
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",1,0,0\r\n"));
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +196,7 @@ void test_full_format_with_distinct_values(void) {
 
     const char* buf = fake_uart_get_buffer();
     const char* expected =
-        "TEL,1,0,1500,-250,5,1,0,37734,37422,32,31,2,780,-181610,6283,1\r\n";
+        "TEL,2,0,1500,-250,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,12345,1413\r\n";
     TEST_ASSERT_EQUAL_STRING(expected, buf);
 }
 
@@ -217,4 +211,57 @@ void test_two_packets_have_separator(void) {
     tel.sendStatus(makeZeroData());
 
     TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "\r\nTEL,"));
+}
+
+// ---------------------------------------------------------------------------
+// ts_ms doğru pozisyon ve değerle encode edilmeli.
+// ---------------------------------------------------------------------------
+void test_ts_ms_is_encoded(void) {
+    fake_uart_reset();
+    Telemetry tel;
+    tel.begin();
+    TelemetryData d = makeZeroData();
+    d.TEL_timestampMs = 99999;
+    tel.sendStatus(d);
+
+    // bmsDataValid=0, ts_ms=99999, spd_x10=0 → ",0,99999,0\r\n"
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",0,99999,0\r\n"));
+}
+
+// ---------------------------------------------------------------------------
+// spd_x10 doğru pozisyon ve değerle encode edilmeli.
+// ---------------------------------------------------------------------------
+void test_spd_x10_is_encoded(void) {
+    fake_uart_reset();
+    Telemetry tel;
+    tel.begin();
+    TelemetryData d = makeZeroData();
+    d.TEL_speedKmhX10 = 423;
+    tel.sendStatus(d);
+
+    // ts_ms=0, spd_x10=423 → ",0,0,423\r\n"
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",0,0,423\r\n"));
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: rpm=0 → 0
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_zero(void) {
+    TEST_ASSERT_EQUAL_UINT16(0, rpmToSpeedKmhX10(0));
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: rpm=1500, D=0.5, GR=1.0 →
+//   km/h = 1500*PI*0.5*60/1000 ≈ 141.37 → ×10 = 1413
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_typical(void) {
+    TEST_ASSERT_EQUAL_UINT16(1413, rpmToSpeedKmhX10(1500));
+}
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10: uint16_t max rpm — sonuç 65535'i aşmamalı (clamp).
+// ---------------------------------------------------------------------------
+void test_rpm_to_speed_clamp(void) {
+    uint16_t result = rpmToSpeedKmhX10(65535u);
+    TEST_ASSERT_TRUE(result <= 65535u);
 }

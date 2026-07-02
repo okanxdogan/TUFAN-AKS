@@ -1,12 +1,15 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
 #include "DisplayHMI.h"
 #include "CanManager.h"
+#include "LinkMonitor.h"
+#include "OfflineBuffer.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
 #include "Telemetry.h"
@@ -24,6 +27,14 @@ static constexpr const char *TAG = "APP_MAIN";
 static constexpr uint32_t STACK_LOG_INTERVAL_MS = 30000;
 
 QueueHandle_t TEL_sensorDataQueue = nullptr;
+
+// --- LoRa link monitörü (vTask_LoRa_UKS yazar, diğer task'lar okur) ---
+static volatile bool   s_linkDown        = false;
+static volatile uint64_t s_lastHeartbeatMs = 0u;  // ms; 0 = henüz heartbeat gelmedi
+
+extern "C" bool LoRa_IsLinkDown(void) {
+    return s_linkDown;
+}
 
 static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
   switch (HMI_state) {
@@ -106,7 +117,7 @@ void vTask_CAN_Comm(void *pvParameters) {
   // Phase 1.2 placeholder:
   // keep propulsion torque at zero until the pedal / brake conversion model
   // is defined and validated with vehicle controls.
-  uint16_t CAN_torqueCmd = 0;
+  //uint16_t CAN_torqueCmd = 0;
   uint32_t lastStackLog = 0;
 
   while (true) {
@@ -115,7 +126,7 @@ void vTask_CAN_Comm(void *pvParameters) {
     // 1. Read incoming messages and dispatch them
     can.processRxMessages();
 
-    // 2. Send torque command if in DRIVE state
+    /* // 2. Send torque command if in DRIVE state
     if (VcuLogic::getState() == VcuLogic::VcuState::DRIVE) {
       // TODO: Get actual torque value from control logic
       can.sendTorqueCommand(CAN_torqueCmd);
@@ -123,10 +134,13 @@ void vTask_CAN_Comm(void *pvParameters) {
       // Not in drive — send zero torque for safety
       can.sendTorqueCommand(0);
     }
+    */
 
     // 3. Push the latest telemetry snapshot to the shared queue
     if (TEL_sensorDataQueue != nullptr) {
-      const TelemetryData TEL_data = can.getTelemetryData();
+      TelemetryData TEL_data = can.getTelemetryData();
+      TEL_data.TEL_speedKmhX10  = rpmToSpeedKmhX10(TEL_data.TEL_motorRpm);
+      TEL_data.TEL_timestampMs  = (uint32_t)(esp_timer_get_time() / 1000ULL);
       xQueueOverwrite(TEL_sensorDataQueue, &TEL_data);
     }
 
@@ -190,8 +204,8 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_screenData.HMI_currentBattery =
                 static_cast<uint8_t>(TEL_data.TEL_bmsSocHundredths / 100);
             HMI_screenData.HMI_motorRpm = TEL_data.TEL_motorRpm;
-            HMI_screenData.HMI_motorTorqueFeedback =
-                TEL_data.TEL_motorTorqueFeedback;
+         //   HMI_screenData.HMI_motorTorqueFeedback =
+       //         TEL_data.TEL_motorTorqueFeedback;
             HMI_screenData.HMI_motorErrorFlags = TEL_data.TEL_motorErrorFlags;
             HMI_screenData.HMI_motorDataValid = TEL_data.TEL_motorDataValid;
             HMI_screenData.HMI_motorTimeoutActive =
@@ -299,14 +313,7 @@ void vTask_LoRa_UKS(void *pvParameters) {
   LO_auxPinConfig.intr_type = GPIO_INTR_DISABLE;
   ESP_ERROR_CHECK(gpio_config(&LO_auxPinConfig));
 
-  gpio_set_level(LORA_M0_PIN, LORA_MODE_NORMAL_M0_LEVEL);
-  gpio_set_level(LORA_M1_PIN, LORA_MODE_NORMAL_M1_LEVEL);
-
-  LO_auxLevel = gpio_get_level(LORA_AUX_PIN);
-  ESP_LOGI(TAG, "LoRa mode configured: M0=%d M1=%d AUX=%d",
-           LORA_MODE_NORMAL_M0_LEVEL, LORA_MODE_NORMAL_M1_LEVEL, LO_auxLevel);
-
-  // UART init for E32
+  // UART init — config modunda da 9600 8N1 kullanıldığından önce başlatılıyor
   uart_config_t LO_uartConfig = {
       .baud_rate = LORA_UART_BAUD,
       .data_bits = UART_DATA_8_BITS,
@@ -317,7 +324,103 @@ void vTask_LoRa_UKS(void *pvParameters) {
   uart_param_config(LORA_UART_NUM, &LO_uartConfig);
   uart_set_pin(LORA_UART_NUM, LORA_TX_PIN, LORA_RX_PIN, UART_PIN_NO_CHANGE,
                UART_PIN_NO_CHANGE);
-  uart_driver_install(LORA_UART_NUM, 256, 0, 0, nullptr, 0);
+  uart_driver_install(LORA_UART_NUM, 256, 256, 0, nullptr, 0);
+
+  // --- E32 boot konfigürasyonu: yazma + echo doğrulama ---
+  gpio_set_level(LORA_M0_PIN, 1);
+  gpio_set_level(LORA_M1_PIN, 1);
+  ESP_LOGI(TAG, "E32: config moduna giriliyor (M0=1 M1=1)");
+
+  {
+    // Config modunda AUX HIGH bekle
+    const TickType_t LO_modeT0 = xTaskGetTickCount();
+    bool LO_auxCfgReady = false;
+    while ((xTaskGetTickCount() - LO_modeT0) <
+           pdMS_TO_TICKS(LORA_AUX_MODE_TIMEOUT_MS)) {
+      if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
+        LO_auxCfgReady = true;
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (!LO_auxCfgReady) {
+      ESP_LOGE(TAG, "E32 AUX timeout (%d ms): config moduna girilemedi, "
+                    "normal moda devam ediliyor",
+               LORA_AUX_MODE_TIMEOUT_MS);
+    } else {
+      // Kalıcı yazma komutu: 0xC0 HEAD + 5 register byte
+      uart_flush(LORA_UART_NUM);
+      const uint8_t LO_cfgCmd[6] = {
+          0xC0,
+          LORA_CFG_ADDH, LORA_CFG_ADDL,
+          LORA_CFG_SPED, LORA_CFG_CHAN, LORA_CFG_OPTION
+      };
+      uart_write_bytes(LORA_UART_NUM, (const char*)LO_cfgCmd, sizeof(LO_cfgCmd));
+
+      // Flash yazımının bitmesini bekle: AUX LOW→HIGH geçişi (~200ms tipik)
+      vTaskDelay(pdMS_TO_TICKS(50));  // modülün LOW'a geçmesine zaman ver
+      const TickType_t LO_flashT0 = xTaskGetTickCount();
+      bool LO_flashDone = false;
+      while ((xTaskGetTickCount() - LO_flashT0) <
+             pdMS_TO_TICKS(LORA_AUX_CFG_TIMEOUT_MS)) {
+        if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
+          LO_flashDone = true;
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+
+      if (!LO_flashDone) {
+        ESP_LOGE(TAG, "E32 flash AUX timeout (%d ms): config yazildi ancak "
+                      "dogrulanamadi, devam ediliyor",
+                 LORA_AUX_CFG_TIMEOUT_MS);
+      } else {
+        // 6 byte echo oku ve doğrula
+        uint8_t LO_echo[6] = {};
+        const int LO_echoLen = uart_read_bytes(
+            LORA_UART_NUM, LO_echo, sizeof(LO_echo), pdMS_TO_TICKS(500));
+
+        if (LO_echoLen >= 6 &&
+            LO_echo[0] == 0xC0 &&
+            LO_echo[1] == LORA_CFG_ADDH &&
+            LO_echo[2] == LORA_CFG_ADDL &&
+            LO_echo[3] == LORA_CFG_SPED &&
+            LO_echo[4] == LORA_CFG_CHAN &&
+            LO_echo[5] == LORA_CFG_OPTION) {
+          ESP_LOGI(TAG,
+                   "E32 config dogrulandi: SPED=0x%02X CHAN=0x%02X OPTION=0x%02X",
+                   LO_echo[3], LO_echo[4], LO_echo[5]);
+        } else {
+          ESP_LOGE(TAG,
+                   "E32 config echo hatasi (%d/6 byte): "
+                   "[0]=0x%02X [3]=0x%02X [4]=0x%02X [5]=0x%02X — "
+                   "devam ediliyor",
+                   LO_echoLen,
+                   LO_echoLen > 0 ? LO_echo[0] : 0xFFu,
+                   LO_echoLen > 3 ? LO_echo[3] : 0xFFu,
+                   LO_echoLen > 4 ? LO_echo[4] : 0xFFu,
+                   LO_echoLen > 5 ? LO_echo[5] : 0xFFu);
+        }
+      }
+    }
+  }
+
+  // Normal transparan moda dön; AUX HIGH gelene kadar TX/RX başlatma
+  gpio_set_level(LORA_M0_PIN, LORA_MODE_NORMAL_M0_LEVEL);
+  gpio_set_level(LORA_M1_PIN, LORA_MODE_NORMAL_M1_LEVEL);
+  {
+    const TickType_t LO_normT0 = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - LO_normT0) <
+           pdMS_TO_TICKS(LORA_AUX_MODE_TIMEOUT_MS)) {
+      if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) break;
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+  LO_auxLevel = gpio_get_level(LORA_AUX_PIN);
+  ESP_LOGI(TAG, "E32: normal mod (M0=%d M1=%d AUX=%d)",
+           LORA_MODE_NORMAL_M0_LEVEL, LORA_MODE_NORMAL_M1_LEVEL, LO_auxLevel);
+
   LO_telemetry.begin();
 
   uint8_t LO_rxBuffer[4];
@@ -331,8 +434,8 @@ void vTask_LoRa_UKS(void *pvParameters) {
     int LO_rxLength = uart_read_bytes(LORA_UART_NUM, LO_rxBuffer,
                                       sizeof(LO_rxBuffer),
                                       pdMS_TO_TICKS(LORA_RX_TIMEOUT_MS));
-    if (LO_rxLength > 0) {
-      switch (LO_rxBuffer[0]) {
+    for (int LO_i = 0; LO_i < LO_rxLength; LO_i++) {
+      switch (LO_rxBuffer[LO_i]) {
       case UKS_CMD_EMERGENCY_STOP:
         VcuLogic::postEvent(VcuLogic::VcuEvent::EMERGENCY_STOP);
         break;
@@ -346,26 +449,61 @@ void vTask_LoRa_UKS(void *pvParameters) {
         ESP_LOGI(TAG, "LoRa command: DRIVE ENABLE request");
         VcuLogic::postEvent(VcuLogic::VcuEvent::DRIVE_ENABLE);
         break;
+      case UKS_HEARTBEAT_BYTE:
+        s_lastHeartbeatMs = (uint64_t)(esp_timer_get_time() / 1000LL);
+        break;
       default:
         break;
+      }
+    }
+
+    // Link durumu kontrolü — her 10 ms döngüde çalışır
+    {
+      const uint64_t LO_nowMs = (uint64_t)(esp_timer_get_time() / 1000LL);
+      const bool LO_timeout =
+          link_check_timeout(LO_nowMs, s_lastHeartbeatMs, LINK_TIMEOUT_MS);
+      if (LO_timeout && !s_linkDown) {
+        s_linkDown = true;
+        ESP_LOGW("LINK", "UKS heartbeat timeout — link DOWN");
+      } else if (!LO_timeout && s_linkDown && s_lastHeartbeatMs != 0u) {
+        s_linkDown = false;
+        ESP_LOGI("LINK", "Heartbeat alindi — link UP: %d paket replay edilecek",
+                 ob_count());
       }
     }
 
     const TickType_t LO_nowTick = xTaskGetTickCount();
     if ((LO_nowTick - LO_lastTelemetryTick) >=
         pdMS_TO_TICKS(LORA_TX_PERIOD_MS)) {
+      LO_lastTelemetryTick = LO_nowTick;
+
       if (TEL_sensorDataQueue != nullptr) {
-        TelemetryData TEL_data = {};
-        if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-          if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-            LO_telemetry.sendStatus(TEL_data);
-            LO_lastTelemetryTick = LO_nowTick;
-            LO_auxNotReadyLogged = false;
-          } else {
-            if (!LO_auxNotReadyLogged) {
-              ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
-              LO_auxNotReadyLogged = true;
+        if (!LoRa_IsLinkDown()) {
+          // --- NORMAL MOD: önce buffer replay, sonra canlı paket ---
+          TelemetryData LO_replay = {};
+          while (ob_pop(LO_replay)) {
+            LO_telemetry.sendStatus(LO_replay);
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(50));
+          }
+          TelemetryData LO_live = {};
+          if (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE) {
+            if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
+              LO_telemetry.sendStatus(LO_live);
+              LO_auxNotReadyLogged = false;
+            } else {
+              if (!LO_auxNotReadyLogged) {
+                ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
+                LO_auxNotReadyLogged = true;
+              }
             }
+          }
+        } else {
+          // --- OFFLINE MOD: canlı TX yok, buffer'a yaz ---
+          // TEL_timestampMs paket üretildiğinde (CAN task) zaten set edildi.
+          TelemetryData LO_buffered = {};
+          if (xQueuePeek(TEL_sensorDataQueue, &LO_buffered, 0) == pdTRUE) {
+            ob_push(LO_buffered);
           }
         }
       }
@@ -379,6 +517,7 @@ void vTask_LoRa_UKS(void *pvParameters) {
 // ---------------------------------------------------------------------------
 // Main application entry point
 // ---------------------------------------------------------------------------
+#ifndef E32_DIAGNOSTIC_MODE
 extern "C" void app_main() {
   // --- Hardware initialization (before any tasks) ---
 
@@ -410,3 +549,4 @@ extern "C" void app_main() {
   xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr, 8,
                           nullptr, 0);
 }
+#endif  // E32_DIAGNOSTIC_MODE

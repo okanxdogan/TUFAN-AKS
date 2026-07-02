@@ -47,4 +47,12 @@ bool isMotorStatusTimedOut(bool hasSeen,
                            TickType_t lastTick,
                            TickType_t timeoutTicks);
 
+// BMS timeout: isMotorStatusTimedOut ile aynı mantık, BMS Config/Live
+// ID'lerinden her biri için ayrı ayrı çağrılır.
+bool isBmsStatusTimedOut(bool hasSeen,
+                         bool lastValid,
+                         TickType_t now,
+                         TickType_t lastTick,
+                         TickType_t timeoutTicks);
+
 }  // namespace CanParse

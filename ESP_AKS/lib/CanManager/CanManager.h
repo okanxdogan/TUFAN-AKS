@@ -40,6 +40,7 @@ class CanManager {
     void handleSolionBmsA(const twai_message_t& msg);
     void handleSolionBmsB(const twai_message_t& msg);
     void updateMotorStatusValidity();
+    void updateBmsValidity();
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
 
@@ -51,10 +52,20 @@ class CanManager {
     MotorStatus s_motorStatus = {};
     TelemetryData s_telemetryData = {};
     mutable SemaphoreHandle_t s_mutex = nullptr;
+
     TickType_t CAN_lastMotorStatusTick = 0;
     bool CAN_hasSeenMotorStatus = false;
     bool CAN_motorTimeoutLogged = false;
     uint8_t CAN_prevBmsSystemState = 0;
+
+    TickType_t CAN_lastBmsConfigTick = 0;
+    TickType_t CAN_lastBmsLiveTick = 0;
+    bool CAN_hasSeen_BmsConfig = false;
+    bool CAN_hasSeen_BmsLive = false;
+    bool CAN_bmsConfigValid = false;
+    bool CAN_bmsLiveValid = false;
+    bool CAN_bmsTimeoutLogged = false;
+
     CAN_EventCallback CAN_eventCallback = nullptr;
     void* CAN_eventContext = nullptr;
 };

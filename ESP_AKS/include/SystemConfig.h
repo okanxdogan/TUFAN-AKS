@@ -11,7 +11,7 @@
 #include "driver/uart.h"
 
 // --- CAN Message IDs ---
-#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
+//#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
 #define CAN_ID_MOTOR_STATUS 0x200  // Motor Driver → AKS
 #define CAN_ID_BMS_STATUS 0x300    // Legacy (unused)
 // Solion SK Serisi BMS — 29-bit Extended ID, Big Endian, 125kbps
@@ -40,20 +40,37 @@
 #define LORA_UART_NUM UART_NUM_2
 #define LORA_TX_PIN GPIO_NUM_16   // ESP TX -> Şemadaki LR_RXD (IO16)
 #define LORA_RX_PIN GPIO_NUM_17   // ESP RX <- Şemadaki LR_TXD (IO17)
-#define LORA_AUX_PIN GPIO_NUM_35  // Şemada AUX IO35'e bağlı (Giriş)
+#define LORA_AUX_PIN GPIO_NUM_35  // IO35 sadece giriş; dahili pull-up YOK — harici 10k pull-up gerekli
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
-#define LORA_UART_BAUD 9600       // E32 default baud
+#define LORA_UART_BAUD 9600       // MCU↔E32 yerel seri hız (config modunda da aynı)
 #define LORA_TX_PERIOD_MS 200     // 5 Hz telemetry uplink
 #define LORA_RX_TIMEOUT_MS 20
 #define LORA_MODE_NORMAL_M0_LEVEL 0
 #define LORA_MODE_NORMAL_M1_LEVEL 0
 #define LORA_AUX_READY_LEVEL 1
-#define LORA_PROTOCOL_VERSION 1
-// Planned startup mode for E32:
-// M0 = 0, M1 = 0 -> normal transparent UART mode.
-// AUX should be used as a readiness gate before TX once the GPIO init
-// sequence is added in the LoRa task startup path.
+#define LORA_PROTOCOL_VERSION 2
+
+// --- E32 Register Values (UKS lora.h ile birebir eşleştirilmeli) ---
+// E32-433T30D SPED byte bit alanları (datasheet Tablo 4):
+//   bit[7:6] = UART baud : 00=1200 01=2400 10=4800 11=9600
+//   bit[5:3] = parity    : 000=8N1 001=8O1 010=8E1
+//   bit[2:0] = air rate  : 000=0.3k 001=1.2k 010=2.4k 011=4.8k 100=9.6k 101=19.2k
+//
+// SPED=0xC4 = 1100 0100 → bit[7:6]=11(9600 baud) | bit[5:3]=000(8N1) | bit[2:0]=100(9.6 kbps air)
+// 9.6 kbps air: ~78 byte v2 telemetri paketi ~65 ms havada kalır → 200 ms / 5 Hz periyoduna sığar.
+// ÖNEMLİ: UKS lora.h'de de SPED=0xC4 olmalı (eski 0xC2=2.4kbps air / 0x1A=1200 baud YANLIŞTIR).
+#define LORA_CFG_ADDH   0x00U
+#define LORA_CFG_ADDL   0x00U
+#define LORA_CFG_SPED   0xC4U
+#define LORA_CFG_CHAN   0x17U  // kanal 23 -> 433 MHz
+#define LORA_CFG_OPTION 0x44U  // transparent | push-pull | 250ms wake | FEC on | max-güç kodu (bit[1:0]=00)
+// OPTION bit[1:0] güç: 00=en yüksek, 01=orta-yüksek, 10=orta-düşük, 11=en düşük (~10 dBm).
+// T30D harici PA bu register değerini farklı yorumlar; sahada menzil testiyle doğrula.
+
+// --- E32 Config Modu Zaman Aşımları ---
+#define LORA_AUX_MODE_TIMEOUT_MS  500   // M0/M1=1 sonrası AUX HIGH bekleme (ms)
+#define LORA_AUX_CFG_TIMEOUT_MS   2000  // Config yazımı sonrası flash tamamlanma (ms)
 
 // --- MCP23S17 I/O Expander (SPI) → Relays ---
 #define RELAY_SPI_HOST SPI2_HOST
@@ -81,11 +98,15 @@
 
 #define RELAY_TOTAL_CHANNELS 10
 
-// --- UKS Emergency Stop Command (LoRa packet ID) ---
+// --- UKS LoRa Komut ve Heartbeat Byte Tanımları ---
 #define UKS_CMD_EMERGENCY_STOP 0xA1
-#define UKS_CMD_START 0xA2
-#define UKS_CMD_STOP 0xA3
-#define UKS_CMD_DRIVE_ENABLE 0xA4
+#define UKS_CMD_START          0xA2
+#define UKS_CMD_STOP           0xA3
+#define UKS_CMD_DRIVE_ENABLE   0xA4
+#define UKS_HEARTBEAT_BYTE     0xB0   // UKS ~1 Hz periyodik heartbeat (komut değil)
+
+// --- LoRa Link Monitörü ---
+#define LINK_TIMEOUT_MS        3000U  // 3 sn: 1 Hz heartbeat için 3x marj
 
 // --- Phase 1 Planning Notes ---
 // Torque command generation is intentionally held at zero until the pedal /
@@ -124,5 +145,6 @@
 
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
+#define CAN_BMS_STATUS_TIMEOUT_MS   500
 
 #endif  // SYSTEM_CONFIG_H
