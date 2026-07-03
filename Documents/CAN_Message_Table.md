@@ -113,10 +113,3 @@ Bilinmeyen ID'lerin çözümü için önerilen yöntem:
 2. Her ID için bilinen bir parametreyi değiştirip (ör. yük altına alarak akım, şarj ederek SOC) CAN loglarında hangi ID/byte'ın değiştiğini gözlemlemek
 3. Lithium Balance teknik destek / doküman talebi
 
-## Legacy / Reserved
-
-### `0x300` Legacy BMS Status
-
-Direction: `BMS -> AKS`
-
-Status: reserved for backward compatibility logging only. The current firmware does not parse payload fields from this frame.
