@@ -24,6 +24,11 @@ extern void test_rpm_to_speed_clamp(void);
 extern void test_rpm_to_speed_clamp_at_rpm_20000(void);
 extern void test_rpm_to_speed_clamp_just_above_threshold_rpm(void);
 extern void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void);
+extern void test_impl_hand_calc_motor_rpm_with_gear_ratio(void);
+extern void test_impl_hand_calc_different_wheel_and_gear_ratio(void);
+extern void test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio(void);
+extern void test_impl_motor_rpm_false_applies_gear_ratio(void);
+extern void test_impl_applies_clamp(void);
 
 // TelemetrySanitize (UKS aralik-disi alan sanitizasyonu) birim testleri
 extern void test_sanitize_system_state_valid_passthrough(void);
@@ -71,6 +76,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_rpm_to_speed_clamp_at_rpm_20000);
     RUN_TEST(test_rpm_to_speed_clamp_just_above_threshold_rpm);
     RUN_TEST(test_rpm_to_speed_no_clamp_just_below_threshold_rpm);
+    RUN_TEST(test_impl_hand_calc_motor_rpm_with_gear_ratio);
+    RUN_TEST(test_impl_hand_calc_different_wheel_and_gear_ratio);
+    RUN_TEST(test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio);
+    RUN_TEST(test_impl_motor_rpm_false_applies_gear_ratio);
+    RUN_TEST(test_impl_applies_clamp);
 
     RUN_TEST(test_sanitize_system_state_valid_passthrough);
     RUN_TEST(test_sanitize_system_state_zero_becomes_fault);

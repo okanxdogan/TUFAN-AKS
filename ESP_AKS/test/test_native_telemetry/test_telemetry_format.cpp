@@ -296,3 +296,55 @@ void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void) {
     uint16_t result = rpmToSpeedKmhX10(3182u);
     TEST_ASSERT_TRUE(result < TEL_SPD_X10_MAX);
 }
+
+// ---------------------------------------------------------------------------
+// rpmToSpeedKmhX10Impl — el hesabı testleri. Bilinçli olarak
+// VehicleParams.h'deki WHEEL_DIAMETER_M/GEAR_RATIO makrolarına DEĞİL,
+// testin kendi yerel D/GR sabitlerine bağlıdır: gerçek araç değerleri
+// VehicleParams.h'de güncellendiğinde bu testler KIRILMAMALIDIR.
+// ---------------------------------------------------------------------------
+
+// D=0.5 m, GR=1.0 (mevcut placeholder ile aynı, ama makro yerine yerel
+// literal kullanılıyor), motorRpmIsWheelRpm=false, rpm=1500:
+// km/h = 1500*pi*0.5*60/1000 ≈ 141.37 → x10 = 1413 (mevcut clamp testiyle
+// aynı beklenen değer — refactor'ün üretim yolunu bozmadığını kanıtlar).
+void test_impl_hand_calc_motor_rpm_with_gear_ratio(void) {
+    uint16_t result = rpmToSpeedKmhX10Impl(1500u, 0.5f, 1.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(1413, result);
+}
+
+// D=1.0 m, GR=2.0, motorRpmIsWheelRpm=false, rpm=1000:
+// wheelRpm = 1000/2.0 = 500 → km/h = 500*pi*1.0*60/1000 ≈ 94.2478 → x10=942.
+// GR farklı bir değerle de doğru bölündüğünü kanıtlar (D=0.5/GR=1.0'a
+// özel bir davranış olmadığını gösterir).
+void test_impl_hand_calc_different_wheel_and_gear_ratio(void) {
+    uint16_t result = rpmToSpeedKmhX10Impl(1000u, 1.0f, 2.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(942, result);
+}
+
+// ---------------------------------------------------------------------------
+// MOTOR_RPM_IS_WHEEL_RPM dallanması: motorRpmIsWheelRpm=true iken GEAR_RATIO
+// bölmesi TAMAMEN atlanmalı — GR=5.0 verilse bile sonuç GR'den etkilenmez.
+// D=0.5, rpm=500: km/h = 500*pi*0.5*60/1000 ≈ 47.1239 → x10=471.
+// ---------------------------------------------------------------------------
+void test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio(void) {
+    uint16_t withFlagTrue = rpmToSpeedKmhX10Impl(500u, 0.5f, 5.0f, true);
+    TEST_ASSERT_EQUAL_UINT16(471, withFlagTrue);
+}
+
+// Aynı rpm/D, motorRpmIsWheelRpm=false, GR=5.0 → GR'ye bölünür, sonuç
+// yukarıdakinden belirgin şekilde FARKLI olmalı (dallanmanın gerçekten
+// etkili olduğunu kanıtlar): wheelRpm=100 → km/h≈9.4248 → x10=94.
+void test_impl_motor_rpm_false_applies_gear_ratio(void) {
+    uint16_t withFlagFalse = rpmToSpeedKmhX10Impl(500u, 0.5f, 5.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(94, withFlagFalse);
+}
+
+// ---------------------------------------------------------------------------
+// Impl fonksiyonu da TEL_SPD_X10_MAX clamp'ini uygulamalı (sarmalayıcıya
+// özel bir davranış değil, çekirdek fonksiyonun kendisinde).
+// ---------------------------------------------------------------------------
+void test_impl_applies_clamp(void) {
+    uint16_t result = rpmToSpeedKmhX10Impl(65535u, 0.5f, 1.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
+}

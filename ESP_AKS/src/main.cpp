@@ -19,6 +19,7 @@
 #include "Telemetry.h"
 #include "TelemetrySanitize.h"
 #include "VcuLogic.h"
+#include "VehicleParams.h"
 
 // 24 hücreli BMS gösterge altyapısı (Gerçek veri ile)
 #include "BmsModel.h"
@@ -643,6 +644,15 @@ void vTask_LoRa_UKS(void *pvParameters) {
 // ---------------------------------------------------------------------------
 #ifndef E22_DIAGNOSTIC_MODE
 extern "C" void app_main() {
+#if !VEHICLE_PARAMS_CONFIRMED
+  // 9.2.c.i / 9.4.b.iii / 9.2.f: WHEEL_DIAMETER_M / GEAR_RATIO /
+  // MOTOR_RPM_IS_WHEEL_RPM henüz gerçek değerlerle teyit edilmedi —
+  // hız ve enerji verisi bu haliyle YANLIŞ. Derleme #warning'i
+  // VehicleParams.h'de; bu boot logu sahada/bench'te de görünür kalır.
+  ESP_LOGE(TAG, "ARAC PARAMETRELERI TEYITSIZ — hiz/enerji verisi gecersiz "
+                "(VehicleParams.h)");
+#endif
+
   // --- Hardware initialization (before any tasks) ---
 
   // 1. Initialize relay hardware (SPI + MCP23S17)
