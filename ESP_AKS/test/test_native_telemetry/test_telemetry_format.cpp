@@ -251,11 +251,12 @@ void test_rpm_to_speed_zero(void) {
 }
 
 // ---------------------------------------------------------------------------
-// rpmToSpeedKmhX10: rpm=1500, D=0.5, GR=1.0 →
-//   km/h = 1500*PI*0.5*60/1000 ≈ 141.37 → ×10 = 1413
+// rpmToSpeedKmhX10: rpm=1500, D=0.56, GR=1.0 →
+//   km/h = 1500*PI*0.56*60/1000 ≈ 158.34 → ×10 = 1583
 // ---------------------------------------------------------------------------
 void test_rpm_to_speed_typical(void) {
-    TEST_ASSERT_EQUAL_UINT16(1413, rpmToSpeedKmhX10(1500));
+    // 1500 rpm × pi × 0.56 × 60/1000 = 158.3 km/h (0.56m/GR=1, 2026-07)
+    TEST_ASSERT_EQUAL_UINT16(1583, rpmToSpeedKmhX10(1500));
 }
 
 // ---------------------------------------------------------------------------
@@ -279,21 +280,21 @@ void test_rpm_to_speed_clamp_at_rpm_20000(void) {
 }
 
 // ---------------------------------------------------------------------------
-// rpmToSpeedKmhX10: clamp eşiği sınırı. Placeholder geometriyle spd_x10=3000
-// eşiği rpm≈3183.1'e denk gelir; rpm=3184'te ham hesap (~3001) sınırı geçer
-// ve clamp devreye girmelidir.
+// rpmToSpeedKmhX10: clamp eşiği sınırı.
+// clamp eşiği: 3000/(pi×0.56×60/1000) ≈ 2842.4 rpm
+// rpm=2843'te ham hesap (~3001) sınırı geçer ve clamp devreye girmelidir.
 // ---------------------------------------------------------------------------
 void test_rpm_to_speed_clamp_just_above_threshold_rpm(void) {
-    uint16_t result = rpmToSpeedKmhX10(3184u);
+    uint16_t result = rpmToSpeedKmhX10(2843u);
     TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
 }
 
 // ---------------------------------------------------------------------------
-// rpmToSpeedKmhX10: eşiğin hemen altında (rpm=3182) ham hesap ~2999.5 —
+// rpmToSpeedKmhX10: eşiğin hemen altında (rpm=2842) ham hesap ~2999.6 —
 // clamp devreye GİRMEMELİ, gerçek (kırpılmamış) değer dönmeli.
 // ---------------------------------------------------------------------------
 void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void) {
-    uint16_t result = rpmToSpeedKmhX10(3182u);
+    uint16_t result = rpmToSpeedKmhX10(2842u);
     TEST_ASSERT_TRUE(result < TEL_SPD_X10_MAX);
 }
 
