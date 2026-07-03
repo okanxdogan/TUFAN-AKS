@@ -83,27 +83,42 @@ void CanManager::processRxMessages() {
             break;
         }
 
-        switch (msg.identifier) {
-            case CAN_ID_MOTOR_STATUS:
-                handleMotorStatus(msg);
-                break;
-
-            case CAN_ID_SOLION_BMS_A:
-                handleSolionBmsA(msg);
-                break;
-
-            case CAN_ID_SOLION_BMS_B:
-                handleSolionBmsB(msg);
-                break;
-
-            case CAN_ID_BMS_STATUS:
-                ESP_LOGD(TAG, "Legacy BMS frame received: 0x%03lX",
-                         msg.identifier);
-                break;
-
-            default:
-                ESP_LOGD(TAG, "Unknown CAN ID: 0x%03lX", msg.identifier);
-                break;
+        if (msg.extd) {
+            // --- 29-bit Extended Frame ID'ler ---
+            switch (msg.identifier) {
+                case CAN_ID_LB_BMS_E000:
+                    handleLbBmsE000(msg);
+                    break;
+                case CAN_ID_LB_BMS_E001:
+                case CAN_ID_LB_BMS_E002:
+                case CAN_ID_LB_BMS_E003:
+                case CAN_ID_LB_BMS_E004:
+                case CAN_ID_LB_BMS_E005:
+                case CAN_ID_LB_BMS_E032:
+                case CAN_ID_LB_BMS_E033:
+                    handleLbBmsStub(msg, msg.identifier);
+                    break;
+                default:
+                    ESP_LOGD(TAG, "Unknown EXT CAN ID: 0x%08lX", msg.identifier);
+                    break;
+            }
+        } else {
+            // --- 11-bit Standard Frame ID'ler ---
+            switch (msg.identifier) {
+                case CAN_ID_MOTOR_STATUS:
+                    handleMotorStatus(msg);
+                    break;
+                case CAN_ID_LB_STD_0x000:
+                    handleLbBmsStub(msg, msg.identifier);
+                    break;
+                case CAN_ID_BMS_STATUS:
+                    ESP_LOGD(TAG, "Legacy BMS frame received: 0x%03lX",
+                             msg.identifier);
+                    break;
+                default:
+                    ESP_LOGD(TAG, "Unknown STD CAN ID: 0x%03lX", msg.identifier);
+                    break;
+            }
         }
     }
 
@@ -223,78 +238,53 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
   //           s_motorStatus.torqueFeedback);
 }
 
-void CanManager::handleSolionBmsA(const twai_message_t& msg) {
+// =========================================================================
+// Lithium Balance c-BMS Handlers
+// =========================================================================
+
+void CanManager::handleLbBmsE000(const twai_message_t& msg) {
     if (s_mutex == nullptr) {
-        ESP_LOGW(TAG, "Solion BMS-A received before mutex initialization");
+        ESP_LOGW(TAG, "LB BMS E000 received before mutex initialization");
         return;
     }
 
     TelemetryData parsed{};
-    if (!CanParse::parseSolionBmsA(msg, parsed)) {
-        ESP_LOGW(TAG, "Solion BMS-A DLC too short: %d", msg.data_length_code);
+    if (!CanParse::parseLbBmsE000(msg, parsed)) {
+        ESP_LOGW(TAG, "LB BMS E000 DLC too short: %d", msg.data_length_code);
         return;
     }
 
-    uint8_t CAN_prevState = 0;
-
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    CAN_prevState = CAN_prevBmsSystemState;
+    // DOĞRULANDI: packV
+    s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
 
-    s_telemetryData.TEL_bmsCellVoltageMaxDeciMv = parsed.TEL_bmsCellVoltageMaxDeciMv;
-    s_telemetryData.TEL_bmsCellVoltageMinDeciMv = parsed.TEL_bmsCellVoltageMinDeciMv;
-    s_telemetryData.TEL_bmsTempHighestC = parsed.TEL_bmsTempHighestC;
-    s_telemetryData.TEL_bmsTempLowestC  = parsed.TEL_bmsTempLowestC;
-    s_telemetryData.TEL_bmsSystemState  = parsed.TEL_bmsSystemState;
-    CAN_prevBmsSystemState = parsed.TEL_bmsSystemState;
-    CAN_lastBmsConfigTick = xTaskGetTickCount();
-    CAN_hasSeen_BmsConfig = true;
-    CAN_bmsConfigValid = true;
+    CAN_lastBmsE000Tick = xTaskGetTickCount();
+    CAN_hasSeen_BmsE000 = true;
+    CAN_bmsE000Valid = true;
     CAN_bmsTimeoutLogged = false;
-    s_telemetryData.TEL_bmsDataValid = CAN_bmsConfigValid && CAN_bmsLiveValid;
+    s_telemetryData.TEL_bmsDataValid = CAN_bmsE000Valid;
 
     xSemaphoreGive(s_mutex);
 
-    if (parsed.TEL_bmsSystemState == 4 && CAN_prevState != 4) {
-        ESP_LOGW(TAG, "BMS entered FAULT state");
-        if (CAN_eventCallback != nullptr)
-            CAN_eventCallback(CAN_Event::FAULT_DETECTED, CAN_eventContext);
-    }
-
-    ESP_LOGD(TAG, "BMS-A: cellMax=%u cellMin=%u deciMv, tempH=%d tempL=%d C, state=%u",
-             parsed.TEL_bmsCellVoltageMaxDeciMv, parsed.TEL_bmsCellVoltageMinDeciMv,
-             parsed.TEL_bmsTempHighestC, parsed.TEL_bmsTempLowestC,
-             parsed.TEL_bmsSystemState);
+    ESP_LOGD(TAG, "LB-E000: packV=%u deciV (%.1f V)",
+             parsed.TEL_bmsPackVoltageDeciV,
+             parsed.TEL_bmsPackVoltageDeciV * 0.1f);
 }
 
-void CanManager::handleSolionBmsB(const twai_message_t& msg) {
-    if (s_mutex == nullptr) {
-        ESP_LOGW(TAG, "Solion BMS-B received before mutex initialization");
+void CanManager::handleLbBmsStub(const twai_message_t& msg, uint32_t canId) {
+    // TODO: alan anlamı doğrulanmadı — ham byte'ları debug log'a bas,
+    // TelemetryData'ya hiçbir anlam yüklenmiyor.
+    if (msg.data_length_code == 0)
         return;
+
+    // Debug log: ID + ham byte dump (yalnızca VERBOSE/DEBUG seviyesinde görünür)
+    char hexBuf[8 * 3 + 1] = {};
+    for (uint8_t i = 0; i < msg.data_length_code && i < 8; i++) {
+        snprintf(hexBuf + i * 3, 4, "%02X ", msg.data[i]);
     }
-
-    TelemetryData parsed{};
-    if (!CanParse::parseSolionBmsB(msg, parsed)) {
-        ESP_LOGW(TAG, "Solion BMS-B DLC too short: %d", msg.data_length_code);
-        return;
-    }
-
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-
-    s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
-    s_telemetryData.TEL_bmsCurrentCentiMa   = parsed.TEL_bmsCurrentCentiMa;
-    s_telemetryData.TEL_bmsSocHundredths    = parsed.TEL_bmsSocHundredths;
-    CAN_lastBmsLiveTick = xTaskGetTickCount();
-    CAN_hasSeen_BmsLive = true;
-    CAN_bmsLiveValid = true;
-    CAN_bmsTimeoutLogged = false;
-    s_telemetryData.TEL_bmsDataValid = CAN_bmsConfigValid && CAN_bmsLiveValid;
-
-    xSemaphoreGive(s_mutex);
-
-    ESP_LOGD(TAG, "BMS-B: pack=%u deciV, current=%ld centi-mA, soc=%u (x0.01%%)",
-             parsed.TEL_bmsPackVoltageDeciV, parsed.TEL_bmsCurrentCentiMa,
-             parsed.TEL_bmsSocHundredths);
+    ESP_LOGD(TAG, "LB-0x%04lX [DLC=%d]: %s(DOĞRULANMADI — ham veri)",
+             (unsigned long)canId, msg.data_length_code, hexBuf);
 }
 
 void CanManager::updateMotorStatusValidity() {
@@ -335,26 +325,19 @@ void CanManager::updateBmsValidity() {
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsConfig, CAN_bmsConfigValid,
-                                      CAN_nowTick, CAN_lastBmsConfigTick,
+    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsE000, CAN_bmsE000Valid,
+                                      CAN_nowTick, CAN_lastBmsE000Tick,
                                       CAN_timeoutTicks)) {
-        CAN_bmsConfigValid = false;
+        CAN_bmsE000Valid = false;
     }
 
-    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsLive, CAN_bmsLiveValid,
-                                      CAN_nowTick, CAN_lastBmsLiveTick,
-                                      CAN_timeoutTicks)) {
-        CAN_bmsLiveValid = false;
-    }
-
-    if (!CAN_bmsConfigValid || !CAN_bmsLiveValid) {
+    if (!CAN_bmsE000Valid) {
         s_telemetryData.TEL_bmsDataValid = false;
         // TODO(ekip-karari): BMS timeout'ta allOff tetiklensin mi?
         // Motor timeout'u TEL_motorTimeoutActive -> VcuLogic FAULT yoluyla allOff
         // tetikliyor (motor kontrolsuz kalabilir). BMS verisi bayatladiginda
         // arac gucunu kesmek gerekli olabilir — ekip ve danismanla karara baglanmali.
-        if ((CAN_hasSeen_BmsConfig || CAN_hasSeen_BmsLive) &&
-            !CAN_bmsTimeoutLogged) {
+        if (CAN_hasSeen_BmsE000 && !CAN_bmsTimeoutLogged) {
             CAN_shouldLogTimeout = true;
             CAN_bmsTimeoutLogged = true;
         }

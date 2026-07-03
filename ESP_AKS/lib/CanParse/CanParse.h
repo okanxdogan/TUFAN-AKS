@@ -26,17 +26,39 @@ namespace CanParse {
 // halde 0. Başarıda `out.isValid = true` set edilir.
 bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out);
 
-// Solion SK BMS — CAN ID 0x111 (29-bit Extended), DLC = 8, Big Endian.
-// Yazılan alanlar: TEL_bmsCellVoltageMaxDeciMv, TEL_bmsCellVoltageMinDeciMv,
-// TEL_bmsTempHighestC, TEL_bmsTempLowestC, TEL_bmsSystemState,
-// TEL_bmsDataValid (=true). Başarısızlıkta (DLC < 7) false döner.
-bool parseSolionBmsA(const twai_message_t& msg, TelemetryData& out);
+// =========================================================================
+// Lithium Balance c-BMS — 29-bit Extended CAN ID'ler
+// =========================================================================
 
-// Solion SK BMS — CAN ID 0x112 (29-bit Extended), DLC = 8, Big Endian.
-// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsCurrentCentiMa,
-// TEL_bmsSocHundredths, TEL_bmsDataValid (=true).
-// Başarısızlıkta (DLC < 8) false döner.
-bool parseSolionBmsB(const twai_message_t& msg, TelemetryData& out);
+// 0xE000 — DOĞRULANDI (reverse-engineering + CAN sniffer ile)
+// Çözülmüş alanlar:
+//   byte[2:3] = Pack Voltage, big-endian uint16, raw * 0.1 = V
+//   byte[0:1] ve byte[4:5] henüz bilinmiyor — parse EDİLMİYOR.
+// DLC ≥ 6 olmalı; aksi halde false döner.
+// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsDataValid (=true).
+bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE001 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+// İleride alan anlamı çözüldüğünde gerçek parse eklenir.
+bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE002 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE002(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE003 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE003(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE004 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE004(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE005 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE005(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE032 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE033 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out);
 
 // Motor status timeout: en az bir paket görülmüş AND son veri valid AND
 // (now - lastTick) >= timeoutTicks. Diğer durumlarda false.

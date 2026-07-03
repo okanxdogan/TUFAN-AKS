@@ -35,46 +35,83 @@ Freshness rule:
 - If no valid `0x200` frame is received for `500 ms`, AKS marks motor data invalid.
 - A post-reception motor timeout is treated as a critical safety condition outside `IDLE`.
 
-## Solion SK Serisi BMS Frames
+## Lithium Balance c-BMS Frames
 
-Source: Solion SK Serisi Akü Kontrol Kartı (BMS) LB-LT Can 2.0b Haberleşme Föyü V1.4
+Source: Lithium Balance c-BMS24 — CAN sniffer logları ile reverse-engineering
 
 Protocol parameters:
 - ID Format: **29-bit Extended** (`CAN 2.0b`)
-- Byte Order: **Big Endian**
-- Standard CAN speed: **125 kbps** (configurable: 125 / 250 / 500 / 1000 kbps)
-- 120 Ω termination resistor: **not included** in BMS
+- Byte Order: **Big Endian** (doğrulanmış alanlar için)
+- CAN speed: **500 kbps** (ESP-IDF TWAI driver ayarı ile uyumlu)
+- 120 Ω termination resistor: TBD
 
-### `0x111` BMS-A — Cell Voltages, Temperatures, System State
+### `0xE000` — Pack Voltage (ÇÖZÜLDÜ)
 
-Direction: `BMS -> AKS` | Period: 250 ms (LT) / 100 ms (LB)
+Direction: `BMS -> AKS` | Status: **DOĞRULANDI** (CAN sniffer + reverse-engineering)
 
-| Byte | Field | TelemetryData | Type | Scale | Range | Description |
+| Byte | Field | TelemetryData | Type | Scale | Durum | Description |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0–1 | Cell Voltage Max | `TEL_bmsCellVoltageMaxDeciMv` | `uint16_t` | × 0.1 mV | 0–65535 | Maximum cell voltage |
-| 2–3 | Cell Voltage Min | `TEL_bmsCellVoltageMinDeciMv` | `uint16_t` | × 0.1 mV | 0–65535 | Minimum cell voltage |
-| 4 | Highest Cell Temp | `TEL_bmsTempHighestC` | `int8_t` | 1 °C | −128–127 | Hottest cell temperature |
-| 5 | Lowest Cell Temp | `TEL_bmsTempLowestC` | `int8_t` | 1 °C | −128–127 | Coldest cell temperature |
-| 6 | System State | `TEL_bmsSystemState` | `uint8_t` | state code | 1–4 | 1=Discharge, 2=IDLE, 3=Charge, 4=FAULT |
+| 0–1 | BİLİNMİYOR | — | — | — | ❌ DOĞRULANMADI | Alan anlamı bilinmiyor |
+| 2–3 | Pack Voltage | `TEL_bmsPackVoltageDeciV` | `uint16_t` | × 0.1 V | ✅ DOĞRULANDI | Total pack voltage |
+| 4–5 | BİLİNMİYOR | — | — | — | ❌ DOĞRULANMADI | Alan anlamı bilinmiyor |
 
-Doc examples: CellVMax `0x9366` = 3773.4 mV · CellVMin `0x922E` = 3742.2 mV · TempH `0x20` = 32 °C · State `0x03` = Charge
+Doğrulama: CAN sniffer ile `0x020E` okundu → 52.6 V (gerçek batarya voltajı ile eşleşiyor).
 
-Safety notes:
+### `0xE001` — BİLİNMİYOR
 
-- `TEL_bmsSystemState == 4` (FAULT) is treated as a critical condition and fires `FAULT_DETECTED` via the CAN event callback.
-- `TEL_bmsTempHighestC` is used for over-temperature threshold checks in VcuLogic.
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
 
-### `0x112` BMS-B — Pack Voltage, Pack Current, SOC
+Tüm byte alanları bilinmiyor. CAN sniffer loglarında tekrar eden bir ID olarak gözlemlendi.
+Ham byte'lar debug log'a basılıyor, TelemetryData'ya yazılmıyor.
 
-Direction: `BMS -> AKS` | Period: 250 ms (LT) / 100 ms (LB)
+### `0xE002` — BİLİNMİYOR
 
-| Byte | Field | TelemetryData | Type | Scale | Range | Description |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0–1 | Pack Voltage | `TEL_bmsPackVoltageDeciV` | `uint16_t` | × 0.1 V | 0–65535 | Total pack voltage |
-| 2–5 | Pack Current | `TEL_bmsCurrentCentiMa` | `int32_t` | × 0.01 mA | ±2 147 483 647 | Pack current (+charge / −discharge) |
-| 6–7 | SOC | `TEL_bmsSocHundredths` | `uint16_t` | × 0.01 % | 0–65535 | State of Charge |
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
 
-Doc examples: PackV `0x020E` = 52.6 V · Current `0xFFFD3A96` = −1816.1 mA · SOC `0x188B` = 62.83 %
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0xE003` — BİLİNMİYOR
+
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
+
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0xE004` — BİLİNMİYOR
+
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
+
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0xE005` — BİLİNMİYOR
+
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
+
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0xE032` — BİLİNMİYOR
+
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
+
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0xE033` — BİLİNMİYOR
+
+Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
+
+Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
+
+### `0x000` — Standart Frame
+
+Direction: `Bilinmiyor` | Status: **DOĞRULANMADI**
+
+CAN sniffer loglarında ara sıra görülen, tüm byte'ları sıfır olan 11-bit standart frame. Firmware tarafından şu an işlenmiyor.
+
+## Sonraki Adımlar
+
+Bilinmeyen ID'lerin çözümü için önerilen yöntem:
+1. **PeakCAN + LiBAL c-BMS CREATOR yazılımı** ile çapraz doğrulama
+2. Her ID için bilinen bir parametreyi değiştirip (ör. yük altına alarak akım, şarj ederek SOC) CAN loglarında hangi ID/byte'ın değiştiğini gözlemlemek
+3. Lithium Balance teknik destek / doküman talebi
 
 ## Legacy / Reserved
 

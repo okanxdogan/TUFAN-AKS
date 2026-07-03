@@ -242,7 +242,7 @@ void vTask_HMI_Display(void *pvParameters) {
                 // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
                 BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
                 
-                // Gerçek Solion BMS 24 hücre verisini ayrı ayrı göndermez, sadece max/min gönderir.
+                // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
                 // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
                 // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
                 uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
@@ -652,6 +652,19 @@ extern "C" void app_main() {
   ESP_LOGE(TAG, "ARAC PARAMETRELERI TEYITSIZ — hiz/enerji verisi gecersiz "
                 "(VehicleParams.h)");
 #endif
+
+  // AÇIK İŞ (2026-07-03 merge, Solion SK -> Lithium Balance c-BMS donanım
+  // geçişi): CanParse::parseLbBmsE000 yalnızca packV alanını çözüyor;
+  // tempH/tempL/sysState/current/soc alanları hiçbir CAN ID'den parse
+  // EDİLMİYOR (TelemetryData value-init default'unda kalıyor).
+  // TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar — yani
+  // UKS ekranında BMS her zaman FAULT görünür, gerçek bir arıza olmasa
+  // bile. Ayrıca BMS_WARN_MAX_TEMP_C / BMS_CRITICAL_MAX_TEMP_C eşikleri
+  // (SystemConfig.h) hiç tetiklenmez (temp hep 0 okunur). Bkz.
+  // TEKNIK_KONTROL_PROVASI.md "AÇIK İŞ" maddesi (9.2.c.ii).
+  ESP_LOGW(TAG, "BMS: LB parse eksik — tempH/soc/sysState vb. placeholder, "
+                "sysState=FAULT gorunur (bkz. CanParse.cpp Lithium Balance "
+                "stub'lari)");
 
   // --- Hardware initialization (before any tasks) ---
 

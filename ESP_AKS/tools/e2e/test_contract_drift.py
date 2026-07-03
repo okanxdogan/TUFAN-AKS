@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 import contract
 from drift_helpers import (
     count_active_code_hits,
@@ -264,4 +266,58 @@ def test_monitor_config_confirmed_flag_exists(monitor_root):
     text_no_comments = strip_py_comments(text)
     assert re.search(r"^\s*CONFIG_CONFIRMED\s*=", text_no_comments, re.MULTILINE), (
         "Monitor config.py icinde CONFIG_CONFIRMED bayragi yok"
+    )
+
+
+# ===========================================================================
+# 3.6 — AÇIK İŞ izleyicisi: Lithium Balance c-BMS alan kapsamı (9.2.c.ii)
+#
+# 2026-07-03 main-merge'inde BMS vendörü Solion SK -> Lithium Balance
+# c-BMS'e gecti (donanim teyitli). Su an SADECE packV (CAN ID 0xE000)
+# cozuldu; digger 7 ID (E001-E005, E032, E033) stub — TelemetryData'ya
+# hicbir alan yazmiyor (bkz. TEKNIK_KONTROL_PROVASI.md "AÇIK İŞ" maddesi).
+#
+# Bu test BİLEREK xfail(strict=True): alan kapsamı eksikliğini izler.
+# Ekip stub'lardan birine gerçek parse ekleyip TelemetryData'ya yazmaya
+# baslarsa bu test XPASS eder ve strict=True nedeniyle SUITE KIRILIR —
+# bu, TEKNIK_KONTROL_PROVASI.md'yi ve boot-log uyarisini guncellemeyi
+# unutmamak icin bilincli bir hatirlatma mekanizmasidir.
+# ===========================================================================
+
+_LB_STUB_IDS = ["E001", "E002", "E003", "E004", "E005", "E032", "E033"]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "9.2.c.ii AÇIK İŞ: Lithium Balance c-BMS'in 7 CAN ID'si (E001-E005,"
+        " E032, E033) henuz TelemetryData'ya alan yazmiyor (yalnizca packV/"
+        " E000 cozuldu). Biri gercek parse kazanirsa bu test XPASS eder —"
+        " TEKNIK_KONTROL_PROVASI.md 'AÇIK İŞ' maddesini ve boot-log"
+        " uyarisini guncelleyip bu testi kaldirin/genisletin."
+    ),
+)
+def test_lb_bms_field_coverage_is_tracked(aks_root):
+    can_parse_cpp = read(aks_root / "lib/CanParse/CanParse.cpp")
+    cleaned = strip_c_comments(can_parse_cpp)
+
+    still_stubbed = []
+    for can_id in _LB_STUB_IDS:
+        m = re.search(
+            rf"bool\s+parseLbBms{can_id}\s*\([^)]*\)\s*\{{(.*?)\n\}}",
+            cleaned, re.DOTALL,
+        )
+        assert m, f"parseLbBms{can_id} fonksiyonu CanParse.cpp'de bulunamadi"
+        body = m.group(1)
+        # Stub imzasi: (void)out; ve govde icinde out. alan atamasi YOK.
+        if "(void)out;" in body and not re.search(r"\bout\.\w+\s*=", body):
+            still_stubbed.append(can_id)
+
+    # Hedef durum (henuz ULASILMADI): 7 ID'nin TAMAMI gercek parse kazanmis
+    # olmali (still_stubbed bos). Bu satir BUGUN FAIL eder (xfail bunu
+    # bekliyor); biri parse eklerse still_stubbed kuculur/bosalir, assert
+    # PASS eder, xfail(strict=True) bunu XPASS'e cevirip suite'i kirar.
+    assert still_stubbed == [], (
+        f"Hala stub olan LB BMS ID'leri: {still_stubbed} — hedef: tumu "
+        "gercek parse kazanmis olmali (bos liste)."
     )

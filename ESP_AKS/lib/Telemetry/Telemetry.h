@@ -45,28 +45,37 @@ struct TelemetryData {
     bool TEL_motorDataValid;
     bool TEL_motorTimeoutActive;
 
-    // Solion SK BMS — CAN ID 0x111
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // raw * 0.1 = mV
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // raw * 0.1 = mV
-    int8_t TEL_bmsTempHighestC;
-    int8_t TEL_bmsTempLowestC;
-    uint8_t TEL_bmsSystemState;  // 1=Discharge, 2=IDLE, 3=Charge, 4=FAULT
+    // Lithium Balance c-BMS — alanlar henüz çözülmemiş ID'lerden gelecek
+    // Bu alanlar TelemetryData yapısında kalıyor çünkü telemetri, HMI ve
+    // VcuLogic tüketici kodları bunları kullanıyor. İlgili CAN ID'lerin
+    // reverse-engineering'i tamamlandıkça parse edilecek.
+    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
+    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
+    int8_t TEL_bmsTempHighestC;            // DOĞRULANMADI — kaynak ID bilinmiyor
+    int8_t TEL_bmsTempLowestC;             // DOĞRULANMADI — kaynak ID bilinmiyor
+    uint8_t TEL_bmsSystemState;            // DOĞRULANMADI — kaynak ID bilinmiyor
 
-    // Solion SK BMS — CAN ID 0x112
-    uint16_t TEL_bmsPackVoltageDeciV;  // raw * 0.1 = V
-    int32_t TEL_bmsCurrentCentiMa;     // raw * 0.01 = mA (+charge, -discharge)
-    uint16_t TEL_bmsSocHundredths;     // raw * 0.01 = %
+    // Lithium Balance c-BMS — CAN ID 0xE000 byte[2:3] (DOĞRULANDI)
+    uint16_t TEL_bmsPackVoltageDeciV;  // raw * 0.1 = V — DOĞRULANDI
+    int32_t TEL_bmsCurrentCentiMa;     // DOĞRULANMADI — kaynak ID bilinmiyor
+    uint16_t TEL_bmsSocHundredths;     // DOĞRULANMADI — kaynak ID bilinmiyor
 
     bool TEL_bmsDataValid;
 
-    uint32_t TEL_timestampMs   = 0;   // boot'tan beri ms — paket oluşturulduğu anda damgalanır
-    uint16_t TEL_speedKmhX10  = 0;   // araç hızı ×10 km/h, rpmToSpeedKmhX10() ile doldurulur
+    uint32_t TEL_timestampMs   = 0;   // ms since boot — stamped when packet is created
+    uint16_t TEL_speedKmhX10  = 0;   // vehicle speed ×10 km/h, filled via rpmToSpeedKmhX10()
 };
 
 class Telemetry {
    public:
     Telemetry();
     bool begin();
+
+    // Formats TelemetryData into the AKS->UKS ASCII CSV frame and writes it
+    // to UART. Format: TEL,ver,seq,rpm,torque,motorErr,motorValid,
+    // motorTimeout,cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
+    // bmsValid,tsMs,spdX10\r\n (19 alan; UKS Core/Src/telemetry.c
+    // Decode_Line ile sozlesmeli, bkz. tools/e2e/contract.py).
     void sendStatus(const TelemetryData& TEL_data);
 
    private:

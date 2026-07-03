@@ -118,17 +118,16 @@ UKS'in kabul aralığı dışına kesinlikle çıkmayan değerler üretmelidir.
 
 ### DOĞRULANACAK
 
-- **`sysState` eşlemesi (1=Discharge, 2=IDLE, 3=Charge, 4=FAULT) Solion SK
-  BMS datasheet'i ile HENÜZ doğrulanmadı.** `CanManager::handleSolionBmsA`
-  / `CanParse::parseSolionBmsA`, Solion'un CAN 0x111 frame'indeki system
-  state byte'ını (`data[6]`) hiçbir çeviri tablosu olmadan doğrudan bu
-  enum'a eşit kabul ediyor. Gerçek BMS ile bench testinde bu varsayımın
-  (vendor'ın state kodlarının gerçekten 1/2/3/4 sırasıyla
-  Discharge/IDLE/Charge/FAULT olduğu) teyit edilmesi gerekiyor. Yanlış
-  çıkarsa: (a) datasheet'teki gerçek kodlarla AKS tarafında bir çeviri
-  tablosu eklenmeli, (b) `TelemetrySanitize::sanitizeSystemState()`
-  aralık-dışı durumu zaten FAULT'a çevirdiği için sistem güvenli tarafta
-  kalır, ama telemetri UKS ekranında yanlış durum gösterebilir.
+- **`sysState` alanının kaynağı ve eşlemesi henüz DOĞRULANMADI.**
+  Lithium Balance c-BMS'in hangi CAN ID'sinde, hangi byte'ta ve hangi
+  kodlama ile (1=Discharge, 2=IDLE, 3=Charge, 4=FAULT) system state
+  gönderdiği bilinmiyor. Şu an `TEL_bmsSystemState` alanı hiçbir CAN
+  ID'den parse EDİLMİYOR (sıfır olarak kalıyor). İlgili ID çözüldüğünde
+  `CanParse::parseLbBmsExxx()` stub'larından birine gerçek parse
+  eklenmeli ve eşleme tablosu doğrulanmalı.
+  `TelemetrySanitize::sanitizeSystemState()` aralık-dışı durumu zaten
+  FAULT'a çevirdiği için sistem güvenli tarafta kalır, ama telemetri
+  UKS ekranında yanlış durum gösterebilir.
 
 ## Future Extensions
 

@@ -2,138 +2,95 @@
 
 #include "CanParse.h"
 
-// Solion SK BMS — CAN ID 0x112 (parseSolionBmsB)
-// Frame layout (Big Endian):
-//   [0-1] Pack Voltage     uint16  0.1 V
-//   [2-5] Pack Current     int32   0.01 mA  (+charge / -discharge)
-//   [6-7] SOC              uint16  0.01 %
+// =========================================================================
+// Lithium Balance c-BMS — CAN ID 0xE001..0xE033 (DOĞRULANMADI)
+//
+// Bu test dosyası, alan anlamı henüz bilinmeyen ID'lerin stub
+// parser'larının derleme ve temel DLC davranışını doğrular.
+// Solion varsayımına dayanan eski testler SİLİNDİ — yanlış varsayımı
+// doğrulayan yeşil testler güvenlik riski oluşturur.
+//
+// İleride gerçek alan anlamı çözüldüğünde bu dosyaya gerçek parse
+// testleri eklenecektir.
+// =========================================================================
 
 namespace {
 
-twai_message_t makeBmsBMsg(uint8_t dlc,
-                            uint8_t pv_hi,  uint8_t pv_lo,
-                            uint8_t c3,     uint8_t c2,
-                            uint8_t c1,     uint8_t c0,
-                            uint8_t soc_hi, uint8_t soc_lo) {
+twai_message_t makeStubMsg(uint32_t canId, uint8_t dlc) {
     twai_message_t m{};
-    m.identifier = 0x112;
+    m.identifier = canId;
     m.data_length_code = dlc;
-    m.data[0] = pv_hi;
-    m.data[1] = pv_lo;
-    m.data[2] = c3;
-    m.data[3] = c2;
-    m.data[4] = c1;
-    m.data[5] = c0;
-    m.data[6] = soc_hi;
-    m.data[7] = soc_lo;
+    for (uint8_t i = 0; i < 8; i++)
+        m.data[i] = 0xA0 + i;  // tanınabilir dummy pattern
     return m;
 }
 
 }  // namespace
 
-void test_bms_live_dlc_too_short(void) {
-    twai_message_t m = makeBmsBMsg(7, 0x02, 0x0E, 0xFF, 0xFD, 0x3A, 0x96, 0x18, 0x8B);
+// --- E001 stub testleri ---
+
+void test_e001_stub_accepts_valid_dlc(void) {
+    twai_message_t m = makeStubMsg(0x0000E001, 8);
     TelemetryData out{};
-    TEST_ASSERT_FALSE(CanParse::parseSolionBmsB(m, out));
-    TEST_ASSERT_FALSE(out.TEL_bmsDataValid);
+    out.TEL_bmsPackVoltageDeciV = 999;  // önceden set edilmiş değer korunmalı
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE001(m, out));
+    // Stub, TelemetryData'ya hiçbir alan YAZMAMALI
+    TEST_ASSERT_EQUAL_UINT16(999, out.TEL_bmsPackVoltageDeciV);
 }
 
-void test_bms_live_pack_voltage_big_endian(void) {
-    // Doc example: 0x020E = 526 → 52.6 V
-    twai_message_t m = makeBmsBMsg(8, 0x02, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+void test_e001_stub_rejects_zero_dlc(void) {
+    twai_message_t m = makeStubMsg(0x0000E001, 0);
     TelemetryData out{};
-    TEST_ASSERT_TRUE(CanParse::parseSolionBmsB(m, out));
-    TEST_ASSERT_EQUAL_UINT16(0x020E, out.TEL_bmsPackVoltageDeciV);
+    TEST_ASSERT_FALSE(CanParse::parseLbBmsE001(m, out));
 }
 
-void test_bms_live_current_negative(void) {
-    // Doc example: 0xFFFD3A96 = -181610 centi-mA = -1816.10 mA (deşarj)
-    twai_message_t m = makeBmsBMsg(8, 0x02, 0x0E, 0xFF, 0xFD, 0x3A, 0x96, 0x18, 0x8B);
+// --- E002 stub testleri ---
+
+void test_e002_stub_accepts_valid_dlc(void) {
+    twai_message_t m = makeStubMsg(0x0000E002, 6);
     TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(-181610, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE002(m, out));
 }
 
-void test_bms_live_current_positive(void) {
-    // 0x0002BF20 = 180000 centi-mA = 1800 mA = 1.8 A (şarj)
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x00, 0x02, 0xBF, 0x20, 0x00, 0x00);
+// --- E032 stub testleri ---
+
+void test_e032_stub_accepts_valid_dlc(void) {
+    twai_message_t m = makeStubMsg(0x0000E032, 8);
     TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(180000, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE032(m, out));
 }
 
-void test_bms_live_current_zero(void) {
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+// --- E033 stub testleri ---
+
+void test_e033_stub_accepts_valid_dlc(void) {
+    twai_message_t m = makeStubMsg(0x0000E033, 8);
     TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(0, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE033(m, out));
 }
 
-void test_bms_live_soc_big_endian(void) {
-    // Doc example: 0x188B = 6283 → %62.83
-    twai_message_t m = makeBmsBMsg(8, 0x02, 0x0E, 0xFF, 0xFD, 0x3A, 0x96, 0x18, 0x8B);
-    TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_UINT16(0x188B, out.TEL_bmsSocHundredths);
-}
+// --- Stub'lar TelemetryData'ya yazmamalı (regression) ---
 
-void test_bms_live_soc_full(void) {
-    // %100.00 = 10000 = 0x2710
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x27, 0x10);
-    TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_UINT16(10000, out.TEL_bmsSocHundredths);
-}
+void test_stubs_do_not_write_telemetry(void) {
+    TelemetryData baseline{};
+    baseline.TEL_motorRpm = 500;
+    baseline.TEL_bmsPackVoltageDeciV = 780;
+    baseline.TEL_bmsCurrentCentiMa = -100000;
+    baseline.TEL_bmsSocHundredths = 8000;
+    baseline.TEL_bmsTempHighestC = 25;
+    baseline.TEL_bmsSystemState = 2;
+    baseline.TEL_bmsDataValid = false;
 
-void test_bms_live_sets_valid_flag(void) {
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-    TelemetryData out{};
-    out.TEL_bmsDataValid = false;
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_TRUE(out.TEL_bmsDataValid);
-}
+    TelemetryData out = baseline;
 
-void test_bms_live_error_flags(void) {
-    // parseSolionBmsB does not exist in CAN ID 0x112 — system state is in BMS-A.
-    // This test is intentionally absent.
-}
+    twai_message_t m = makeStubMsg(0x0000E003, 8);
+    CanParse::parseLbBmsE003(m, out);
 
-void test_bms_live_current_signed_minus_one(void) {
-    // 0xFFFFFFFF = -1 centi-mA
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00);
-    TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(-1, out.TEL_bmsCurrentCentiMa);
-}
-
-void test_bms_live_current_signed_min(void) {
-    // 0x80000000 = INT32_MIN
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00);
-    TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(INT32_MIN, out.TEL_bmsCurrentCentiMa);
-}
-
-void test_bms_live_current_signed_max(void) {
-    // 0x7FFFFFFF = INT32_MAX
-    twai_message_t m = makeBmsBMsg(8, 0x00, 0x00, 0x7F, 0xFF, 0xFF, 0xFF, 0x00, 0x00);
-    TelemetryData out{};
-    CanParse::parseSolionBmsB(m, out);
-    TEST_ASSERT_EQUAL_INT32(INT32_MAX, out.TEL_bmsCurrentCentiMa);
-}
-
-void test_bms_live_preserves_other_fields(void) {
-    twai_message_t m = makeBmsBMsg(8, 0x03, 0x10, 0x00, 0x00, 0x00, 0x00, 0x18, 0x8B);
-    TelemetryData out{};
-    out.TEL_motorRpm = 500;
-    out.TEL_bmsCellVoltageMaxDeciMv = 40000;
-    out.TEL_bmsTempHighestC = 25;
-    out.TEL_bmsSystemState = 2;
-
-    CanParse::parseSolionBmsB(m, out);
-
+    // Hiçbir alan değişmemiş olmalı
     TEST_ASSERT_EQUAL_UINT16(500, out.TEL_motorRpm);
-    TEST_ASSERT_EQUAL_UINT16(40000, out.TEL_bmsCellVoltageMaxDeciMv);
+    TEST_ASSERT_EQUAL_UINT16(780, out.TEL_bmsPackVoltageDeciV);
+    TEST_ASSERT_EQUAL_INT32(-100000, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_EQUAL_UINT16(8000, out.TEL_bmsSocHundredths);
     TEST_ASSERT_EQUAL_INT8(25, out.TEL_bmsTempHighestC);
     TEST_ASSERT_EQUAL_UINT8(2, out.TEL_bmsSystemState);
+    TEST_ASSERT_FALSE(out.TEL_bmsDataValid);
 }
