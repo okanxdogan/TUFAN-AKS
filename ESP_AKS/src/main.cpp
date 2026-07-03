@@ -228,7 +228,7 @@ void vTask_HMI_Display(void *pvParameters) {
                 // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
                 BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
                 
-                // Gerçek Solion BMS 24 hücre verisini ayrı ayrı göndermez, sadece max/min gönderir.
+                // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
                 // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
                 // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
                 uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;

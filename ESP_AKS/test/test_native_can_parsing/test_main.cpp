@@ -17,32 +17,23 @@ extern void test_motor_status_torque_positive(void);
 extern void test_motor_status_torque_min_int16(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
 
-// BMS config
-extern void test_bms_config_dlc_too_short(void);
-extern void test_bms_config_pack_voltage_big_endian(void);
-extern void test_bms_config_cell_voltage_big_endian(void);
-extern void test_bms_config_temp_highest_signed(void);
-extern void test_bms_config_temp_lowest_signed(void);
-extern void test_bms_config_temp_negative(void);
-extern void test_bms_config_system_state(void);
-extern void test_bms_config_system_state_fault(void);
-extern void test_bms_config_sets_valid_flag(void);
-extern void test_bms_config_preserves_other_fields(void);
+// Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)
+extern void test_e000_dlc_too_short(void);
+extern void test_e000_packv_big_endian(void);
+extern void test_e000_packv_zero(void);
+extern void test_e000_packv_max_uint16(void);
+extern void test_e000_packv_nominal_78v(void);
+extern void test_e000_sets_valid_flag(void);
+extern void test_e000_preserves_other_fields(void);
+extern void test_e000_dlc_8_extra_bytes_ignored(void);
 
-// BMS live
-extern void test_bms_live_dlc_too_short(void);
-extern void test_bms_live_pack_voltage_big_endian(void);
-extern void test_bms_live_error_flags(void);
-extern void test_bms_live_current_signed_minus_one(void);
-extern void test_bms_live_current_signed_min(void);
-extern void test_bms_live_current_signed_max(void);
-extern void test_bms_live_current_negative(void);
-extern void test_bms_live_current_positive(void);
-extern void test_bms_live_current_zero(void);
-extern void test_bms_live_soc_big_endian(void);
-extern void test_bms_live_soc_full(void);
-extern void test_bms_live_sets_valid_flag(void);
-extern void test_bms_live_preserves_other_fields(void);
+// Lithium Balance c-BMS — DOĞRULANMAMIŞ ID stub'ları
+extern void test_e001_stub_accepts_valid_dlc(void);
+extern void test_e001_stub_rejects_zero_dlc(void);
+extern void test_e002_stub_accepts_valid_dlc(void);
+extern void test_e032_stub_accepts_valid_dlc(void);
+extern void test_e033_stub_accepts_valid_dlc(void);
+extern void test_stubs_do_not_write_telemetry(void);
 
 // Motor timeout
 extern void test_timeout_not_seen_yet(void);
@@ -80,32 +71,23 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_motor_status_torque_min_int16);
     RUN_TEST(test_motor_status_invalid_does_not_modify_out);
 
-    // BMS config parse
-    RUN_TEST(test_bms_config_dlc_too_short);
-    RUN_TEST(test_bms_config_pack_voltage_big_endian);
-    RUN_TEST(test_bms_config_cell_voltage_big_endian);
-    RUN_TEST(test_bms_config_temp_highest_signed);
-    RUN_TEST(test_bms_config_temp_lowest_signed);
-    RUN_TEST(test_bms_config_temp_negative);
-    RUN_TEST(test_bms_config_system_state);
-    RUN_TEST(test_bms_config_system_state_fault);
-    RUN_TEST(test_bms_config_sets_valid_flag);
-    RUN_TEST(test_bms_config_preserves_other_fields);
+    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)
+    RUN_TEST(test_e000_dlc_too_short);
+    RUN_TEST(test_e000_packv_big_endian);
+    RUN_TEST(test_e000_packv_zero);
+    RUN_TEST(test_e000_packv_max_uint16);
+    RUN_TEST(test_e000_packv_nominal_78v);
+    RUN_TEST(test_e000_sets_valid_flag);
+    RUN_TEST(test_e000_preserves_other_fields);
+    RUN_TEST(test_e000_dlc_8_extra_bytes_ignored);
 
-    // BMS live parse
-    RUN_TEST(test_bms_live_dlc_too_short);
-    RUN_TEST(test_bms_live_pack_voltage_big_endian);
-    RUN_TEST(test_bms_live_error_flags);
-    RUN_TEST(test_bms_live_current_signed_minus_one);
-    RUN_TEST(test_bms_live_current_signed_min);
-    RUN_TEST(test_bms_live_current_signed_max);
-    RUN_TEST(test_bms_live_current_negative);
-    RUN_TEST(test_bms_live_current_positive);
-    RUN_TEST(test_bms_live_current_zero);
-    RUN_TEST(test_bms_live_soc_big_endian);
-    RUN_TEST(test_bms_live_soc_full);
-    RUN_TEST(test_bms_live_sets_valid_flag);
-    RUN_TEST(test_bms_live_preserves_other_fields);
+    // Lithium Balance c-BMS — DOĞRULANMAMIŞ ID stub'ları
+    RUN_TEST(test_e001_stub_accepts_valid_dlc);
+    RUN_TEST(test_e001_stub_rejects_zero_dlc);
+    RUN_TEST(test_e002_stub_accepts_valid_dlc);
+    RUN_TEST(test_e032_stub_accepts_valid_dlc);
+    RUN_TEST(test_e033_stub_accepts_valid_dlc);
+    RUN_TEST(test_stubs_do_not_write_telemetry);
 
     // Motor timeout
     RUN_TEST(test_timeout_not_seen_yet);

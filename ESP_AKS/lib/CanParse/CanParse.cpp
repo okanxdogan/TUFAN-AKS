@@ -14,36 +14,80 @@ bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out) {
     return true;
 }
 
-bool parseSolionBmsA(const twai_message_t& msg, TelemetryData& out) {
-    if (msg.data_length_code < 7)
+// =========================================================================
+// Lithium Balance c-BMS — 29-bit Extended CAN ID'ler
+// =========================================================================
+
+// 0xE000 — DOĞRULANDI: byte[2:3] = Pack Voltage (big-endian uint16, deciV)
+// byte[0:1] ve byte[4:5] henüz bilinmiyor — TelemetryData'ya yazılmıyor.
+bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 6)
         return false;
 
-    out.TEL_bmsCellVoltageMaxDeciMv =
-        static_cast<uint16_t>((msg.data[0] << 8) | msg.data[1]);
-    out.TEL_bmsCellVoltageMinDeciMv =
+    // ÇÖZÜLMÜŞ: byte[2:3] = Pack Voltage, big-endian uint16, raw * 0.1 = V
+    out.TEL_bmsPackVoltageDeciV =
         static_cast<uint16_t>((msg.data[2] << 8) | msg.data[3]);
-    out.TEL_bmsTempHighestC = static_cast<int8_t>(msg.data[4]);
-    out.TEL_bmsTempLowestC  = static_cast<int8_t>(msg.data[5]);
-    out.TEL_bmsSystemState  = msg.data[6];
-    out.TEL_bmsDataValid    = true;
+
+    // byte[0:1]: BİLİNMİYOR — TelemetryData'ya yazılmıyor
+    // byte[4:5]: BİLİNMİYOR — TelemetryData'ya yazılmıyor
+
+    out.TEL_bmsDataValid = true;
     return true;
 }
 
-bool parseSolionBmsB(const twai_message_t& msg, TelemetryData& out) {
-    if (msg.data_length_code < 8)
-        return false;
+// --- Aşağıdaki fonksiyonlar, CAN sniffer loglarında görülen ancak alan
+// --- anlamı henüz DOĞRULANMAMIŞ ID'ler içindir. Ham byte'ları kabul eder
+// --- ama TelemetryData'ya anlam yüklenmez. İleride gerçek anlam çözüldükçe
+// --- bu fonksiyonların içi doldurulacaktır.
 
-    out.TEL_bmsPackVoltageDeciV =
-        static_cast<uint16_t>((msg.data[0] << 8) | msg.data[1]);
-    out.TEL_bmsCurrentCentiMa = static_cast<int32_t>(
-        (static_cast<uint32_t>(msg.data[2]) << 24) |
-        (static_cast<uint32_t>(msg.data[3]) << 16) |
-        (static_cast<uint32_t>(msg.data[4]) << 8)  |
-         static_cast<uint32_t>(msg.data[5]));
-    out.TEL_bmsSocHundredths =
-        static_cast<uint16_t>((msg.data[6] << 8) | msg.data[7]);
-    out.TEL_bmsDataValid = true;
-    return true;
+// 0xE001 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    // TelemetryData'ya HİÇBİR alan yazılmıyor.
+    return msg.data_length_code > 0;
+}
+
+// 0xE002 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE002(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
+// 0xE003 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE003(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
+// 0xE004 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE004(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
+// 0xE005 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE005(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
+// 0xE032 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
+// 0xE033 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
 }
 
 bool isMotorStatusTimedOut(bool hasSeen,

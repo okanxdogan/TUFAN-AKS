@@ -15,9 +15,23 @@
 //#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
 #define CAN_ID_MOTOR_STATUS 0x200  // Motor Driver → AKS
 #define CAN_ID_BMS_STATUS 0x300    // Legacy (unused)
-// Solion SK Serisi BMS — 29-bit Extended ID, Big Endian, 125kbps
-#define CAN_ID_SOLION_BMS_A 0x111  // Cell voltages, temperatures, system state
-#define CAN_ID_SOLION_BMS_B 0x112  // Pack voltage, pack current, SOC
+
+// Lithium Balance c-BMS — 29-bit Extended ID, Big Endian
+// Gerçek CAN sniffer loglarından doğrulanmış ID'ler.
+// SADECE 0xE000 byte[2:3] = packV alanı reverse-engineer ile çözüldü.
+// Diğer ID'lerin alan anlamları henüz DOĞRULANMADI.
+#define CAN_ID_LB_BMS_E000 0x0000E000  // Pack voltage (ÇÖZÜLDÜ: byte[2:3] = packV deciV)
+#define CAN_ID_LB_BMS_E001 0x0000E001  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E002 0x0000E002  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E003 0x0000E003  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E004 0x0000E004  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E005 0x0000E005  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E032 0x0000E032  // TODO: alan anlamı doğrulanmadı
+#define CAN_ID_LB_BMS_E033 0x0000E033  // TODO: alan anlamı doğrulanmadı
+
+// CAN sniffer loglarında ara sıra görülen 11-bit standart frame.
+// Tüm byte'ları sıfır, anlamı bilinmiyor. Şu an işlenmiyor.
+#define CAN_ID_LB_STD_0x000 0x000      // STD 11-bit — TODO: alan anlamı doğrulanmadı
 
 // --- CAN (TJA1050 transceiver) ---
 #define CAN_TX_PIN GPIO_NUM_5
@@ -120,15 +134,17 @@
 // Critical levels should force a transition to FAULT.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
-// Current thresholds in centi-mA (0.01 mA units) — Solion SK Pack Current resolution.
+// Current thresholds in centi-mA (0.01 mA units) — BMS Pack Current resolution.
 // 1 A = 100 000 centi-mA.
+// NOT: Bu eşikler Solion föyünden alınmıştı, Lithium Balance c-BMS'in akım
+// çözünürlüğü henüz DOĞRULANMADI. Gerçek BMS dokümanı ile eşleştirilmeli.
 #define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA    90000    // 0.9 A
 #define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA 100000  // 1.0 A
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA  900000  // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA 1500000 // 15.0 A
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
-// The Solion SK BMS reports Pack Voltage with 0.1 V resolution;
-// raw = V * 10, so a 78 V nominal pack sits around raw 780.
+// Lithium Balance c-BMS Pack Voltage: CAN ID 0xE000, byte[2:3],
+// big-endian uint16, raw * 0.1 = V. (DOĞRULANDI)
 #define BMS_WARN_MIN_PACK_VOLTAGE_DECI_V 740
 #define BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V 700
 #define BMS_WARN_MAX_PACK_VOLTAGE_DECI_V 850

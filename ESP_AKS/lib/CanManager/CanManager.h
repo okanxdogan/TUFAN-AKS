@@ -38,8 +38,11 @@ class CanManager {
 
    private:
     void handleMotorStatus(const twai_message_t& msg);
-    void handleSolionBmsA(const twai_message_t& msg);
-    void handleSolionBmsB(const twai_message_t& msg);
+
+    // Lithium Balance c-BMS handler'ları
+    void handleLbBmsE000(const twai_message_t& msg);   // packV — DOĞRULANDI
+    void handleLbBmsStub(const twai_message_t& msg, uint32_t canId);  // diğer ID'ler — DOĞRULANMADI
+
     void updateMotorStatusValidity();
     void updateBmsValidity();
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
@@ -57,14 +60,11 @@ class CanManager {
     TickType_t CAN_lastMotorStatusTick = 0;
     bool CAN_hasSeenMotorStatus = false;
     bool CAN_motorTimeoutLogged = false;
-    uint8_t CAN_prevBmsSystemState = 0;
 
-    TickType_t CAN_lastBmsConfigTick = 0;
-    TickType_t CAN_lastBmsLiveTick = 0;
-    bool CAN_hasSeen_BmsConfig = false;
-    bool CAN_hasSeen_BmsLive = false;
-    bool CAN_bmsConfigValid = false;
-    bool CAN_bmsLiveValid = false;
+    // BMS freshness tracking — E000 (packV, doğrulanmış veri kaynağı)
+    TickType_t CAN_lastBmsE000Tick = 0;
+    bool CAN_hasSeen_BmsE000 = false;
+    bool CAN_bmsE000Valid = false;
     bool CAN_bmsTimeoutLogged = false;
 
     // UKS aralik-disi alan sanitizasyonu icin throttle'li WARN log
