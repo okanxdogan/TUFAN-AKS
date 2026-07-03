@@ -1,0 +1,9 @@
+# tools/e2e bagimliliklari.
+#
+# pytest: test kosucusu. YETERLI olmali (KISIT: "pytest yeterli olmali;
+# ekstra paket eklenecekse gerekcesiyle").
+#
+# TUFAN-Monitor'un csv_logger.py modulu stdlib-only'dir (os, datetime) —
+# bu yuzden monitor.py'nin pyserial/matplotlib bagimliliklari BURADA
+# GEREKMEZ (monitor.py hicbir zaman import edilmez, yalnizca csv_logger.py).
+pytest>=7.0
