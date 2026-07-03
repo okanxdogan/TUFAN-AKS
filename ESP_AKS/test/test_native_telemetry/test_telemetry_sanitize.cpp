@@ -56,3 +56,51 @@ void test_sanitize_current_normal_passthrough(void) {
     TEST_ASSERT_EQUAL_INT32(0, TelemetrySanitize::sanitizeCurrent(0));
     TEST_ASSERT_EQUAL_INT32(INT32_MAX, TelemetrySanitize::sanitizeCurrent(INT32_MAX));
 }
+
+// ---------------------------------------------------------------------------
+// sanitizeForUplink (S4): tek ortak sanitize kapısı — üç alanı da birlikte
+// düzeltir, geçerli değerleri değiştirmeden bırakır.
+// ---------------------------------------------------------------------------
+void test_sanitize_for_uplink_passthrough_when_all_valid(void) {
+    TelemetryData d = {};
+    d.TEL_bmsSystemState = 2;
+    d.TEL_bmsSocHundredths = 6283;
+    d.TEL_bmsCurrentCentiMa = -181610;
+    d.TEL_motorRpm = 1234;  // sanitize kapsamı dışı alan — dokunulmamalı
+
+    const TelemetryData out = TelemetrySanitize::sanitizeForUplink(d);
+
+    TEST_ASSERT_EQUAL_UINT8(2, out.TEL_bmsSystemState);
+    TEST_ASSERT_EQUAL_UINT16(6283, out.TEL_bmsSocHundredths);
+    TEST_ASSERT_EQUAL_INT32(-181610, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_EQUAL_UINT16(1234, out.TEL_motorRpm);
+}
+
+// ---------------------------------------------------------------------------
+// sanitizeForUplink: aralık dışı sysState (0 veya 7 gibi) FAULT(4)'e
+// düzeltilmeli — buffer'a bozuk veri girse bile replay çıktısı UKS'in
+// kabul aralığında olur (S4).
+// ---------------------------------------------------------------------------
+void test_sanitize_for_uplink_corrects_invalid_system_state(void) {
+    TelemetryData d = {};
+    d.TEL_bmsSystemState = 7;  // aralık dışı
+
+    const TelemetryData out = TelemetrySanitize::sanitizeForUplink(d);
+    TEST_ASSERT_EQUAL_UINT8(4, out.TEL_bmsSystemState);
+}
+
+// ---------------------------------------------------------------------------
+// sanitizeForUplink: soc ve current de aynı anda düzeltilmeli.
+// ---------------------------------------------------------------------------
+void test_sanitize_for_uplink_corrects_soc_and_current_together(void) {
+    TelemetryData d = {};
+    d.TEL_bmsSystemState = 0;             // -> 4
+    d.TEL_bmsSocHundredths = 65535;       // -> 10000
+    d.TEL_bmsCurrentCentiMa = INT32_MIN;  // -> INT32_MIN + 1
+
+    const TelemetryData out = TelemetrySanitize::sanitizeForUplink(d);
+
+    TEST_ASSERT_EQUAL_UINT8(4, out.TEL_bmsSystemState);
+    TEST_ASSERT_EQUAL_UINT16(10000, out.TEL_bmsSocHundredths);
+    TEST_ASSERT_EQUAL_INT32(INT32_MIN + 1, out.TEL_bmsCurrentCentiMa);
+}

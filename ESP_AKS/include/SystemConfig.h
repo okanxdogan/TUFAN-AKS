@@ -101,6 +101,24 @@
 // --- LoRa Link Monitörü ---
 #define LINK_TIMEOUT_MS        3000U  // 3 sn: 1 Hz heartbeat için 3x marj
 
+// Boot anindan itibaren bu sure icinde HIC heartbeat gelmediyse link DOWN
+// kabul edilir (9.2.e / 9.4.b.vi): arac acildiginda UKS hic yayinda
+// degilse AKS'in sonsuza dek "link UP" varsayip o donemin verisini
+// kaybetmesini onler (bkz. link_check_timeout_with_boot_grace).
+#define BOOT_LINK_GRACE_MS     5000U
+
+// --- Offline Buffer Örnekleme ve Replay (9.2.e / 9.2.h / 9.4.b.vi) ---
+// Kesinti sirasinda buffer'a yazilan ornekleme periyodu. 9.2.h izleme
+// merkezi kayitlari arasi en fazla 5 sn kuralina 5x marjla uyar ve
+// OB_CAPACITY / replay suresini 5'e boler (60 sn'lik kesinti icin 300
+// yerine 60-75 paket).
+#define OFFLINE_SAMPLE_PERIOD_MS 1000U
+
+// Link UP oldugunda tek LORA_TX_PERIOD_MS tikinde en fazla bu kadar
+// buffered (replay) paket gonderilir; canli paket akisi hic kesilmeden
+// (1 canli + en fazla bu kadar replay / tik) buffer bosaltilir (S1).
+#define REPLAY_BURST_PER_TICK  3
+
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
 

@@ -17,6 +17,7 @@
 #include "RelayManager.h"
 #include "SystemConfig.h"
 #include "Telemetry.h"
+#include "TelemetrySanitize.h"
 #include "VcuLogic.h"
 
 // 24 hücreli BMS gösterge altyapısı (Gerçek veri ile)
@@ -494,6 +495,19 @@ void vTask_LoRa_UKS(void *pvParameters) {
   TickType_t LO_lastTelemetryTick = 0;
   bool LO_auxNotReadyLogged = false;
 
+  // Boot-grace (9.2.e / 9.4.b.vi, S3): boot anindan itibaren BOOT_LINK_GRACE_MS
+  // icinde hic heartbeat gelmezse link DOWN kabul edilir (bkz.
+  // link_check_timeout_with_boot_grace) — araç açıldığında UKS hiç yayında
+  // değilse buffer'a yazım hemen başlar, veri kaybolmaz.
+  const uint64_t LO_bootMs = (uint64_t)(esp_timer_get_time() / 1000LL);
+
+  // Kesinti örnekleme durumu (S2): 1 Hz'e seyreltilmiş push + ts araligi
+  // (DOWN→UP log satırı için, madde 5).
+  uint64_t LO_lastOfflineSampleMs = 0u;  // 0 = bu kesintide henüz örnek yok
+  uint32_t LO_offlineFirstTs = 0u;
+  uint32_t LO_offlineLastTs  = 0u;
+  bool LO_offlineHasSamples  = false;
+
   while (true) {
     esp_task_wdt_reset();
 
@@ -526,15 +540,28 @@ void vTask_LoRa_UKS(void *pvParameters) {
     // Link durumu kontrolü — her 10 ms döngüde çalışır
     {
       const uint64_t LO_nowMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-      const bool LO_timeout =
-          link_check_timeout(LO_nowMs, s_lastHeartbeatMs, LINK_TIMEOUT_MS);
+      const bool LO_timeout = link_check_timeout_with_boot_grace(
+          LO_nowMs, s_lastHeartbeatMs, LINK_TIMEOUT_MS, LO_bootMs,
+          BOOT_LINK_GRACE_MS);
       if (LO_timeout && !s_linkDown) {
         s_linkDown = true;
+        // Yeni kesinti başlıyor — örnekleme saatini ve ts aralığını sıfırla.
+        LO_lastOfflineSampleMs = 0u;
+        LO_offlineHasSamples = false;
         ESP_LOGW("LINK", "UKS heartbeat timeout — link DOWN");
       } else if (!LO_timeout && s_linkDown && s_lastHeartbeatMs != 0u) {
         s_linkDown = false;
-        ESP_LOGI("LINK", "Heartbeat alindi — link UP: %d paket replay edilecek",
-                 ob_count());
+        // 9.4.b.vi: kesinti kaydı + devamlılık zaman damgasıyla denetlenir —
+        // jüri denetiminde gösterilecek tek satırlık DOWN→UP kaydı (madde 5).
+        if (LO_offlineHasSamples) {
+          ESP_LOGI("LINK",
+                   "Heartbeat alindi — link UP: %d paket, ts araligi [%lu..%lu] "
+                   "replay ediliyor",
+                   ob_count(), (unsigned long)LO_offlineFirstTs,
+                   (unsigned long)LO_offlineLastTs);
+        } else {
+          ESP_LOGI("LINK", "Heartbeat alindi — link UP: 0 paket replay edilecek");
+        }
       }
     }
 
@@ -545,17 +572,33 @@ void vTask_LoRa_UKS(void *pvParameters) {
 
       if (TEL_sensorDataQueue != nullptr) {
         if (!LoRa_IsLinkDown()) {
-          // --- NORMAL MOD: önce buffer replay, sonra canlı paket ---
-          TelemetryData LO_replay = {};
-          while (ob_pop(LO_replay)) {
-            LO_telemetry.sendStatus(LO_replay);
+          // --- NORMAL MOD: throttled replay + canlı paket (S1) ---
+          // seq (Telemetry::sendStatus içinde artar) yalnızca burada, gerçek
+          // TX anında ilerler — offline'da hiç artmaz. Replay edilen paketler
+          // TX sırasına göre ardışık YENİ seq alır; TUFAN-Monitor'ün
+          // new-boot tespiti (seq artar, ts geriye gider = replay) buna
+          // dayanır (madde 4) — peek/drop_front bu sırayı bozmaz.
+          for (int LO_burst = 0; LO_burst < REPLAY_BURST_PER_TICK; LO_burst++) {
+            TelemetryData LO_replay = {};
+            if (!ob_peek(LO_replay)) break;
+            if (gpio_get_level(LORA_AUX_PIN) != LORA_AUX_READY_LEVEL) {
+              // AUX meşgul: paket buffer'da KALIR, kaybolmaz — sıradaki
+              // tik'te tekrar denenir.
+              if (!LO_auxNotReadyLogged) {
+                ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
+                LO_auxNotReadyLogged = true;
+              }
+              break;
+            }
+            LO_telemetry.sendStatus(TelemetrySanitize::sanitizeForUplink(LO_replay));
+            ob_drop_front();
+            LO_auxNotReadyLogged = false;
             esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(50));
           }
           TelemetryData LO_live = {};
           if (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE) {
             if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-              LO_telemetry.sendStatus(LO_live);
+              LO_telemetry.sendStatus(TelemetrySanitize::sanitizeForUplink(LO_live));
               LO_auxNotReadyLogged = false;
             } else {
               if (!LO_auxNotReadyLogged) {
@@ -565,11 +608,26 @@ void vTask_LoRa_UKS(void *pvParameters) {
             }
           }
         } else {
-          // --- OFFLINE MOD: canlı TX yok, buffer'a yaz ---
-          // TEL_timestampMs paket üretildiğinde (CAN task) zaten set edildi.
+          // --- OFFLINE MOD: canlı TX yok; 1 Hz'e seyreltilmiş örnekle
+          // buffer'a yaz (S2, 9.2.h'ye 5x marj) ---
+          // TEL_timestampMs paket üretildiğinde (CAN task) zaten set edildi;
+          // kesinti aralığının zaman damgasıyla ispatı (9.2.e / 9.4.b.vi)
+          // buna dayanır — burada DEĞİŞTİRİLMEZ.
           TelemetryData LO_buffered = {};
           if (xQueuePeek(TEL_sensorDataQueue, &LO_buffered, 0) == pdTRUE) {
-            ob_push(LO_buffered);
+            const uint64_t LO_nowMsSample =
+                (uint64_t)(esp_timer_get_time() / 1000LL);
+            if (offline_should_sample(LO_nowMsSample, LO_lastOfflineSampleMs,
+                                       LO_offlineHasSamples,
+                                       OFFLINE_SAMPLE_PERIOD_MS)) {
+              LO_lastOfflineSampleMs = LO_nowMsSample;
+              ob_push(LO_buffered);
+              if (!LO_offlineHasSamples) {
+                LO_offlineFirstTs = LO_buffered.TEL_timestampMs;
+                LO_offlineHasSamples = true;
+              }
+              LO_offlineLastTs = LO_buffered.TEL_timestampMs;
+            }
           }
         }
       }

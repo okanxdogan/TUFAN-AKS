@@ -31,6 +31,19 @@ bool ob_pop(TelemetryData& out) {
     return true;
 }
 
+bool ob_peek(TelemetryData& out) {
+    if (s_count == 0) return false;
+    out = s_buf[s_head];
+    return true;
+}
+
+bool ob_drop_front() {
+    if (s_count == 0) return false;
+    s_head = (s_head + 1) % OB_CAPACITY;
+    s_count--;
+    return true;
+}
+
 int ob_count() {
     return s_count;
 }

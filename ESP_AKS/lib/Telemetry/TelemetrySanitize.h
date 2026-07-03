@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <climits>
 
+#include "Telemetry.h"
+
 namespace TelemetrySanitize {
 
 // UKS Decode_Line: Parse_Int(f[12], min=1, max=4).
@@ -38,6 +40,19 @@ inline uint16_t sanitizeSoc(uint16_t raw) {
 // gore +1 kaydirmanin fiziksel anlam kaybi yoktur.
 inline int32_t sanitizeCurrent(int32_t raw) {
     return (raw == INT32_MIN) ? (INT32_MIN + 1) : raw;
+}
+
+// Tek ortak sanitize kapısı: canlı VE replay (OfflineBuffer'dan gelen)
+// paketler, UKS'e gitmeden hemen önce (sendStatus çağrısının hemen
+// öncesinde) buradan geçer — böylece ikisi de aynı garantiye sahip olur
+// (S4). Yukarıdaki alan-bazlı fonksiyonların KENDİSİ değiştirilmedi;
+// bu yalnızca onları tek noktada birleştiren bir sarmalayıcıdır.
+inline TelemetryData sanitizeForUplink(const TelemetryData& raw) {
+    TelemetryData out = raw;
+    out.TEL_bmsSystemState     = sanitizeSystemState(out.TEL_bmsSystemState);
+    out.TEL_bmsSocHundredths   = sanitizeSoc(out.TEL_bmsSocHundredths);
+    out.TEL_bmsCurrentCentiMa  = sanitizeCurrent(out.TEL_bmsCurrentCentiMa);
+    return out;
 }
 
 }  // namespace TelemetrySanitize

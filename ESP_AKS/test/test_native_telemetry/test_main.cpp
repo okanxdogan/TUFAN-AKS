@@ -35,6 +35,14 @@ extern void test_sanitize_soc_above_max_clamped(void);
 extern void test_sanitize_current_int32_min_shifted(void);
 extern void test_sanitize_current_int32_min_plus_one_unchanged(void);
 extern void test_sanitize_current_normal_passthrough(void);
+extern void test_sanitize_for_uplink_passthrough_when_all_valid(void);
+extern void test_sanitize_for_uplink_corrects_invalid_system_state(void);
+extern void test_sanitize_for_uplink_corrects_soc_and_current_together(void);
+
+// Replay sanitize-sırası (S4) ve seq semantiği (madde 4) testleri
+extern void test_replay_output_sanitizes_corrupted_system_state(void);
+extern void test_replay_output_sanitizes_zero_system_state(void);
+extern void test_replay_then_live_seq_is_sequential_and_monotonic(void);
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -73,6 +81,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_sanitize_current_int32_min_shifted);
     RUN_TEST(test_sanitize_current_int32_min_plus_one_unchanged);
     RUN_TEST(test_sanitize_current_normal_passthrough);
+    RUN_TEST(test_sanitize_for_uplink_passthrough_when_all_valid);
+    RUN_TEST(test_sanitize_for_uplink_corrects_invalid_system_state);
+    RUN_TEST(test_sanitize_for_uplink_corrects_soc_and_current_together);
+
+    RUN_TEST(test_replay_output_sanitizes_corrupted_system_state);
+    RUN_TEST(test_replay_output_sanitizes_zero_system_state);
+    RUN_TEST(test_replay_then_live_seq_is_sequential_and_monotonic);
 
     return UNITY_END();
 }
