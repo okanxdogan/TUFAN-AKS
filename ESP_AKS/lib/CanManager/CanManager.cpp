@@ -111,10 +111,6 @@ void CanManager::processRxMessages() {
                 case CAN_ID_LB_STD_0x000:
                     handleLbBmsStub(msg, msg.identifier);
                     break;
-                case CAN_ID_BMS_STATUS:
-                    ESP_LOGD(TAG, "Legacy BMS frame received: 0x%03lX",
-                             msg.identifier);
-                    break;
                 default:
                     ESP_LOGD(TAG, "Unknown STD CAN ID: 0x%03lX", msg.identifier);
                     break;

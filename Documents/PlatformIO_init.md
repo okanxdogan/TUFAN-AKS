@@ -37,11 +37,10 @@ ESP_AKS/
 ## What This Project Uses
 - `platformio.ini` defines:
   - `env:esp32dev`
-  - `platform = espressif32`
+  - `platform = espressif32@6.13.0`
   - `framework = espidf`
   - `monitor_speed = 115200`
   - `build_flags = -std=gnu++17`
-  - `lib_deps = jgromes/RadioLib @ ^6.0.0`
 - `src/main.cpp` starts three FreeRTOS tasks:
   - CAN communication task
   - HMI display task

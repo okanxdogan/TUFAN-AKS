@@ -1,3 +1,6 @@
+> **DİKKAT: BU DOKÜMAN E32 DÖNEMİNE AİTTİR, E22 GEÇİŞİ SONRASI GÜNCELLİĞİNİ YİTİRMİŞTİR.**
+> Proje artık E22-400T30D-V2 (SX1268) modülünü kullanmaktadır. Güncel register tabanlı konfigürasyon detayları için `include/E22Regs.h` ve `Documents/README.md` dosyalarına başvurunuz.
+
 # AKS–UKS LoRa Uyum Notları
 
 ## SPED=0xC4 Değişikliği (SPED=0x1A yerine)

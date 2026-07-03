@@ -14,7 +14,6 @@
 // --- CAN Message IDs ---
 //#define CAN_ID_TORQUE_CMD 0x100    // AKS → Motor Driver
 #define CAN_ID_MOTOR_STATUS 0x200  // Motor Driver → AKS
-#define CAN_ID_BMS_STATUS 0x300    // Legacy (unused)
 
 // Lithium Balance c-BMS — 29-bit Extended ID, Big Endian
 // Gerçek CAN sniffer loglarından doğrulanmış ID'ler.
