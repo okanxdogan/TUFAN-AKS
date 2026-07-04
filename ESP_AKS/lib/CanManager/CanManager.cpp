@@ -89,13 +89,21 @@ void CanManager::processRxMessages() {
                 case CAN_ID_LB_BMS_E000:
                     handleLbBmsE000(msg);
                     break;
-                case CAN_ID_LB_BMS_E001:
-                case CAN_ID_LB_BMS_E002:
+                case CAN_ID_LB_CHARGER_CMD:
+                    // BMS -> Charger komutu (DOĞRULANDI decode);
+                    // AKS yalnızca DİNLER, hiçbir zaman göndermez.
+                    handleCharger1806E5F4(msg);
+                    break;
+                // Aşağıdakiler DOĞRULANMADI — alan hipotezleri için bkz.
+                // Documents/CAN_Message_Table.md. Stub yalnızca ham hex dump
+                // basar; TelemetryData'ya ve karar mantığına bağlanmaz.
+                case CAN_ID_LB_BMS_E001:  // analog kanal + sıcaklık adayları (HIPOTEZ)
+                case CAN_ID_LB_BMS_E002:  // sabit limit/config adayı; E004 ile multiplex
                 case CAN_ID_LB_BMS_E003:
-                case CAN_ID_LB_BMS_E004:
-                case CAN_ID_LB_BMS_E005:
-                case CAN_ID_LB_BMS_E032:
-                case CAN_ID_LB_BMS_E033:
+                case CAN_ID_LB_BMS_E004:  // sabit limit/config adayı; E002 ile multiplex
+                case CAN_ID_LB_BMS_E005:  // sabit limit/config adayı
+                case CAN_ID_LB_BMS_E032:  // gözlemlenen oturumda hep sıfır — reserved/heartbeat adayı
+                case CAN_ID_LB_BMS_E033:  // gözlemlenen oturumda hep sıfır — reserved/heartbeat adayı
                     handleLbBmsStub(msg, msg.identifier);
                     break;
                 default:
@@ -109,6 +117,8 @@ void CanManager::processRxMessages() {
                     handleMotorStatus(msg);
                     break;
                 case CAN_ID_LB_STD_0x000:
+                    // Gözlemlenen oturumlarda payload hep sıfır — anlamı
+                    // bilinmiyor (reserved/heartbeat adayı), stub'da kalır.
                     handleLbBmsStub(msg, msg.identifier);
                     break;
                 default:
@@ -120,6 +130,7 @@ void CanManager::processRxMessages() {
 
     updateMotorStatusValidity();
     updateBmsValidity();
+    updateChargerValidity();
 }
 
 MotorStatus CanManager::getMotorStatus() const {
@@ -250,22 +261,97 @@ void CanManager::handleLbBmsE000(const twai_message_t& msg) {
         return;
     }
 
+    // Pack voltajı güvenlik eşiği — yalnızca DOĞRULANMIŞ sinyal (packV) ile.
+    // Saf kontrol CanParse'ta; eşikler 24S LiFePO4 spec'inden (SystemConfig.h).
+    const CanParse::BmsPackVoltageFault CAN_packVoltFault =
+        CanParse::checkPackVoltageFault(parsed.TEL_bmsPackVoltageDeciV,
+                                        BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V,
+                                        BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V);
+    const uint8_t CAN_newPackFaultFlags =
+        (CAN_packVoltFault == CanParse::BmsPackVoltageFault::UNDERVOLTAGE
+             ? 0x01
+             : 0) |
+        (CAN_packVoltFault == CanParse::BmsPackVoltageFault::OVERVOLTAGE
+             ? 0x02
+             : 0);
+
+    uint8_t CAN_previousPackFaultFlags = 0;
+
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     // DOĞRULANDI: packV
     s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
+
+    // DOĞRULANMADI (UNVERIFIED) — HAM alanlar: ölçek bilinmediği için yalnızca
+    // TEL_bmsE000Raw* alanlarında ölçeksiz tutulur. TelemetryData'nın anlamlı
+    // alanlarına (TEL_bmsCurrentCentiMa vb.) ve karar mantığına YAZILMAZ.
+    s_telemetryData.TEL_bmsE000RawCurrent = parsed.TEL_bmsE000RawCurrent;
+    s_telemetryData.TEL_bmsE000RawCounter1 = parsed.TEL_bmsE000RawCounter1;
+    s_telemetryData.TEL_bmsE000RawCounter2 = parsed.TEL_bmsE000RawCounter2;
 
     CAN_lastBmsE000Tick = xTaskGetTickCount();
     CAN_hasSeen_BmsE000 = true;
     CAN_bmsE000Valid = true;
     CAN_bmsTimeoutLogged = false;
     s_telemetryData.TEL_bmsDataValid = CAN_bmsE000Valid;
+    s_telemetryData.TEL_bmsTimeoutActive = false;
+
+    CAN_previousPackFaultFlags = CAN_bmsPackFaultFlags;
+    CAN_bmsPackFaultFlags = CAN_newPackFaultFlags;
 
     xSemaphoreGive(s_mutex);
+
+    if (CAN_newPackFaultFlags != 0 &&
+        CAN_newPackFaultFlags != CAN_previousPackFaultFlags) {
+        ESP_LOGE(TAG,
+                 "BMS pack voltage %s: %u deciV (%.1f V) — esikler "
+                 "[%u..%u] deciV, FAULT bildiriliyor",
+                 (CAN_newPackFaultFlags & 0x01) ? "UNDERVOLTAGE" : "OVERVOLTAGE",
+                 parsed.TEL_bmsPackVoltageDeciV,
+                 parsed.TEL_bmsPackVoltageDeciV * 0.1f,
+                 (unsigned)BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V,
+                 (unsigned)BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V);
+    }
+
+    // Motor errorFlags ile aynı mekanizma: değişimde CAN_Event::FAULT_DETECTED
+    // yayınlanır (main.cpp -> VcuLogic::postEvent(FAULT_DETECTED) -> FAULT).
+    notifyFaultIfNeeded(CAN_previousPackFaultFlags, CAN_newPackFaultFlags,
+                        "BMS packV");
 
     ESP_LOGD(TAG, "LB-E000: packV=%u deciV (%.1f V)",
              parsed.TEL_bmsPackVoltageDeciV,
              parsed.TEL_bmsPackVoltageDeciV * 0.1f);
+}
+
+// 0x1806E5F4 — Charger komut frame'i (BMS -> Charger, DOĞRULANDI decode).
+// AKS bu frame'i yalnızca DİNLER; hiçbir TX yolu yoktur. Setpoint'ler karar
+// mantığına bağlanmaz, yalnızca gözlem/telemetri amaçlı saklanır.
+void CanManager::handleCharger1806E5F4(const twai_message_t& msg) {
+    if (s_mutex == nullptr) {
+        ESP_LOGW(TAG, "Charger frame received before mutex initialization");
+        return;
+    }
+
+    ChargerCommand parsed{};
+    if (!CanParse::parseCharger1806E5F4(msg, parsed)) {
+        ESP_LOGW(TAG, "Charger 1806E5F4 DLC too short: %d",
+                 msg.data_length_code);
+        return;
+    }
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    s_chargerCommand = parsed;
+    CAN_lastChargerTick = xTaskGetTickCount();
+    CAN_hasSeenCharger = true;
+    CAN_chargerValid = true;
+    CAN_chargerStaleLogged = false;
+    xSemaphoreGive(s_mutex);
+
+    ESP_LOGD(TAG, "Charger-1806E5F4: Vset=%u deciV (%.1f V), Iset=%u deciA (%.1f A)",
+             parsed.chargeVoltageSetpointDeciV,
+             parsed.chargeVoltageSetpointDeciV * 0.1f,
+             parsed.chargeCurrentSetpointDeciA,
+             parsed.chargeCurrentSetpointDeciA * 0.1f);
 }
 
 void CanManager::handleLbBmsStub(const twai_message_t& msg, uint32_t canId) {
@@ -329,21 +415,71 @@ void CanManager::updateBmsValidity() {
 
     if (!CAN_bmsE000Valid) {
         s_telemetryData.TEL_bmsDataValid = false;
-        // TODO(ekip-karari): BMS timeout'ta allOff tetiklensin mi?
-        // Motor timeout'u TEL_motorTimeoutActive -> VcuLogic FAULT yoluyla allOff
-        // tetikliyor (motor kontrolsuz kalabilir). BMS verisi bayatladiginda
-        // arac gucunu kesmek gerekli olabilir — ekip ve danismanla karara baglanmali.
-        if (CAN_hasSeen_BmsE000 && !CAN_bmsTimeoutLogged) {
-            CAN_shouldLogTimeout = true;
-            CAN_bmsTimeoutLogged = true;
+        // KARAR (ekip-karari cozuldu): Post-reception BMS timeout, motor
+        // timeout ile ayni yoldan eskale edilir — TEL_bmsTimeoutActive
+        // set edilir, VcuLogic hasCriticalCondition() IDLE disindaysa
+        // FAULT'a gecirir (allOff). Pre-reception (hic E000 gorulmemis)
+        // durumda bayrak set EDILMEZ; arac BMS'siz baslarken IDLE'da
+        // kalabilir, READY/DRIVE'a gecis zaten taze veri gerektirir.
+        if (CAN_hasSeen_BmsE000) {
+            s_telemetryData.TEL_bmsTimeoutActive = true;
+            if (!CAN_bmsTimeoutLogged) {
+                CAN_shouldLogTimeout = true;
+                CAN_bmsTimeoutLogged = true;
+            }
         }
     }
 
     xSemaphoreGive(s_mutex);
 
     if (CAN_shouldLogTimeout) {
-        ESP_LOGW(TAG, "BMS status timeout after %d ms", CAN_BMS_STATUS_TIMEOUT_MS);
+        ESP_LOGE(TAG,
+                 "BMS status timeout after %d ms — IDLE disinda kritik fault "
+                 "(TEL_bmsTimeoutActive)",
+                 CAN_BMS_STATUS_TIMEOUT_MS);
     }
+}
+
+void CanManager::updateChargerValidity() {
+    if (s_mutex == nullptr)
+        return;
+
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+    bool CAN_shouldLogStale = false;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    // Timeout mantığı E000 ile aynı saf yardımcıyı kullanır; fark, sonucun
+    // eskalasyonudur: charger akışı OPSİYONEL olduğundan (araç sürüşteyken
+    // charger bağlı olmayabilir) bayatlama yalnızca CAN_chargerValid'i
+    // düşürür — CAN_Event/FAULT ÜRETİLMEZ ve TEL_bmsDataValid ETKİLENMEZ.
+    if (CanParse::isBmsStatusTimedOut(CAN_hasSeenCharger, CAN_chargerValid,
+                                      CAN_nowTick, CAN_lastChargerTick,
+                                      pdMS_TO_TICKS(CAN_CHARGER_TIMEOUT_MS))) {
+        CAN_chargerValid = false;
+        CAN_shouldLogStale = !CAN_chargerStaleLogged;
+        CAN_chargerStaleLogged = true;
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (CAN_shouldLogStale) {
+        ESP_LOGD(TAG, "Charger frame stale after %d ms (opsiyonel akış — FAULT üretmez)",
+                 CAN_CHARGER_TIMEOUT_MS);
+    }
+}
+
+bool CanManager::getChargerCommand(ChargerCommand& out) const {
+    if (s_mutex == nullptr) {
+        out = s_chargerCommand;
+        return false;
+    }
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    out = s_chargerCommand;
+    const bool CAN_isFresh = CAN_chargerValid;
+    xSemaphoreGive(s_mutex);
+    return CAN_isFresh;
 }
 
 void CanManager::notifyFaultIfNeeded(uint8_t CAN_previousFlags,

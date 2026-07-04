@@ -1,0 +1,15 @@
+# Ornek fixture — Oturum 2 (24.421 frame, ~8 dk, paket idle) sniffer
+# kaydindan alinmis GERCEK frame'ler (bkz. Documents/CAN_Message_Table.md).
+# Gercek tam log repoya GOMULMEZ; yerel yol icin README'ye bakin.
+#
+# Format: EXT/STD | 0xID | DLC | HEX byte'lar (bosluklu)
+EXT | 0xE000     | 8 | FF FF 03 16 0F 5E 09 71
+EXT | 0xE001     | 8 | 80 84 80 AB 80 96 19 19
+EXT | 0x1806E5F4 | 8 | 03 70 03 E8 00 00 00 00
+EXT | 0xE002     | 8 | 03 70 03 E8 01 00 00 00
+EXT | 0xE005     | 8 | 03 E8 05 DC 00 0B 71 B0
+EXT | 0xE004     | 8 | 01 89 03 E8 03 E8 00 00
+EXT | 0xE032     | 8 | 00 00 00 00 00 00 00 00
+EXT | 0xE033     | 8 | 00 00 00 00 00 00 00 00
+STD | 0x000      | 8 | 00 00 00 00 00 00 00 00
+EXT | 0xE000     | 8 | FF FE 03 16 0F 5B 09 6D

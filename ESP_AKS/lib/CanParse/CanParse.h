@@ -19,6 +19,15 @@ struct MotorStatus {
     bool     isValid;
 };
 
+// Charger komut frame'i (CAN ID 0x1806E5F4, BMS -> Charger) çıktısı.
+// GEÇİCİ çıktı tipi: TelemetryData'ya charger setpoint alanlarının eklenmesi
+// sonraki adıma bırakıldı; şimdilik parser bu struct'a yazar.
+// Her iki alan da DOĞRULANDI (sniffer Oturum 2 + J1939 şarj protokolü).
+struct ChargerCommand {
+    uint16_t chargeVoltageSetpointDeciV;  // byte[0:1] — raw × 0.1 = V — DOĞRULANDI
+    uint16_t chargeCurrentSetpointDeciA;  // byte[2:3] — raw × 0.1 = A — DOĞRULANDI
+};
+
 namespace CanParse {
 
 // Motor status frame (CAN ID 0x200). DLC ≥ 4 olmalı; aksi halde false döner ve
@@ -30,13 +39,27 @@ bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out);
 // Lithium Balance c-BMS — 29-bit Extended CAN ID'ler
 // =========================================================================
 
-// 0xE000 — DOĞRULANDI (reverse-engineering + CAN sniffer ile)
-// Çözülmüş alanlar:
+// 0xE000 — alan bazında güven seviyeleri (bkz. Documents/CAN_Message_Table.md):
 //   byte[2:3] = Pack Voltage, big-endian uint16, raw * 0.1 = V
-//   byte[0:1] ve byte[4:5] henüz bilinmiyor — parse EDİLMİYOR.
-// DLC ≥ 6 olmalı; aksi halde false döner.
-// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsDataValid (=true).
+//               — DOĞRULANDI (2 bağımsız sniffer oturumu)
+//   byte[0:1] = pack akımı adayı, big-endian int16 — HIPOTEZ-orta,
+//               UNVERIFIED — scale unknown; HAM olarak TEL_bmsE000RawCurrent'a
+//               yazılır, TEL_bmsCurrentCentiMa'ya YAZILMAZ.
+//   byte[4:5] = kapasite/sayaç adayı, big-endian uint16 — HIPOTEZ-düşük,
+//               UNVERIFIED — scale unknown; HAM olarak TEL_bmsE000RawCounter1.
+//   byte[6:7] = kapasite/sayaç adayı, big-endian uint16 — HIPOTEZ-düşük,
+//               UNVERIFIED — scale unknown; HAM olarak TEL_bmsE000RawCounter2
+//               (yalnızca DLC ≥ 8 ise okunur, aksi halde 0).
+// DLC ≥ 6 olmalı; aksi halde false döner (mevcut sözleşme korunur).
+// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsE000Raw*, TEL_bmsDataValid (=true).
 bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
+
+// 0x1806E5F4 — Charger komut frame'i (BMS -> Charger; AKS yalnızca dinler).
+// DOĞRULANDI (sniffer Oturum 2; J1939: PGN 0x1806, DA 0xE5, SA 0xF4):
+//   byte[0:1] = şarj voltaj hedefi, big-endian uint16, raw * 0.1 = V
+//   byte[2:3] = şarj akım hedefi, big-endian uint16, raw * 0.1 = A
+// DLC < 4 ise false döner ve `out` değiştirilmez.
+bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out);
 
 // 0xE001 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
 // İleride alan anlamı çözüldüğünde gerçek parse eklenir.
@@ -59,6 +82,23 @@ bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out);
 
 // 0xE033 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
 bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out);
+
+// Pack voltajı güvenlik eşiği sonucu (yalnızca DOĞRULANMIŞ packV alanına
+// uygulanır — bkz. SystemConfig.h "Phase 2 Safety Thresholds").
+enum class BmsPackVoltageFault : uint8_t {
+    NONE = 0,
+    UNDERVOLTAGE = 1,
+    OVERVOLTAGE = 2,
+};
+
+// Saf eşik kontrolü: packVoltageDeciV <= criticalMinDeciV -> UNDERVOLTAGE,
+// >= criticalMaxDeciV -> OVERVOLTAGE, aksi halde NONE. Eşikler parametrik —
+// üretim kodu SystemConfig.h CRITICAL sabitlerini geçirir, native testler
+// kendi değerlerini verebilir. (<=/>= semantiği VcuLogic hasCriticalCondition
+// ile aynıdır.)
+BmsPackVoltageFault checkPackVoltageFault(uint16_t packVoltageDeciV,
+                                          uint16_t criticalMinDeciV,
+                                          uint16_t criticalMaxDeciV);
 
 // Motor status timeout: en az bir paket görülmüş AND son veri valid AND
 // (now - lastTick) >= timeoutTicks. Diğer durumlarda false.

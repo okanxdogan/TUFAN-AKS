@@ -28,6 +28,12 @@
 #define CAN_ID_LB_BMS_E032 0x0000E032  // TODO: alan anlamı doğrulanmadı
 #define CAN_ID_LB_BMS_E033 0x0000E033  // TODO: alan anlamı doğrulanmadı
 
+// Charger komut frame'i — 29-bit Extended ID (J1939: PGN 0x1806, DA 0xE5,
+// SA 0xF4). BMS -> Charger yönünde; byte[0:1] = şarj voltaj hedefi ×0.1 V,
+// byte[2:3] = şarj akım hedefi ×0.1 A (bkz. Documents/CAN_Message_Table.md).
+// AKS bu frame'i YALNIZCA DİNLER, asla göndermez. Şu an işlenmiyor.
+#define CAN_ID_LB_CHARGER_CMD 0x1806E5F4
+
 // CAN sniffer loglarında ara sıra görülen 11-bit standart frame.
 // Tüm byte'ları sıfır, anlamı bilinmiyor. Şu an işlenmiyor.
 #define CAN_ID_LB_STD_0x000 0x000      // STD 11-bit — TODO: alan anlamı doğrulanmadı
@@ -151,28 +157,48 @@
 // Warning levels should eventually trigger derating.
 // Critical levels should force a transition to FAULT.
 //
-// AÇIK İŞ (Lithium Balance c-BMS geçişi): TEL_bmsTempHighestC/LowestC hiçbir
-// CAN ID'den parse edilmiyor (bkz. CanParse.cpp parseLbBmsE001..E033
-// stub'ları), value-init default'unda (0) kalıyor — bu yüzden aşağıdaki
-// TEMP eşikleri şu an fiilen HİÇ TETİKLENMEZ. CAN ID reverse-engineering'i
-// tamamlanıp gerçek parse eklendiğinde bu not kaldırılmalı.
+// EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
+// sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
+// byte[2:3]) + BMS freshness (E000 timeout). Akım/sıcaklık/hücre voltajı/SOC
+// kaynak sinyalleri henüz doğrulanmadığı için aşağıdaki ilgili eşikler YER
+// TUTUCUDUR ve karar mantığına BAĞLI DEĞİLDİR.
+
+// Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
+// Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
+// raw * 0.1 = V — DOĞRULANDI (2 sniffer oturumu). KARAR MANTIĞINA BAĞLI.
+//
+// Paket: 24S LiFePO4. Referans aralık (paket etiketi/spec):
+//   min 60.0 V (2.50 V/hücre), nominal 76.8 V (3.20 V/hücre),
+//   maks 87.6 V (3.65 V/hücre)
+// CRITICAL eşikleri doğrudan spec uçlarından; WARN eşikleri hücre başına
+// 3.00 V / 3.55 V'den türetildi. CONFIG — gerçek saha kalibrasyonu bekleniyor;
+// nihai değerler ekip/danışman onayı ile güncellenmeli.
+#define BMS_WARN_MIN_PACK_VOLTAGE_DECI_V 720      // 72.0 V (3.00 V/hücre)
+#define BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V 600  // 60.0 V (2.50 V/hücre — spec min)
+#define BMS_WARN_MAX_PACK_VOLTAGE_DECI_V 852      // 85.2 V (3.55 V/hücre)
+#define BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V 876  // 87.6 V (3.65 V/hücre — spec maks)
+
+// --- YER TUTUCU eşikler (karar mantığına BAĞLI DEĞİL) ---
+// TODO: source signal not yet verified — TEL_bmsTempHighestC hiçbir CAN
+// ID'den parse edilmiyor (hep 0). Kaynak ID + ölçek doğrulanmadan
+// hasWarning/hasCriticalCondition'a BAĞLANMAMALI.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
-// Current thresholds in centi-mA (0.01 mA units) — BMS Pack Current resolution.
-// 1 A = 100 000 centi-mA.
-// NOT: Bu eşikler Solion föyünden alınmıştı, Lithium Balance c-BMS'in akım
-// çözünürlüğü henüz DOĞRULANMADI. Gerçek BMS dokümanı ile eşleştirilmeli.
+// Current thresholds in centi-mA (0.01 mA units).
+// TODO: source signal not yet verified — E000 byte[0:1] akım ADAYI ham
+// olarak toplanıyor (TEL_bmsE000RawCurrent) ama ölçek DOĞRULANMADI;
+// TEL_bmsCurrentCentiMa hiç yazılmıyor. Eski Solion föyü değerleri referans
+// olarak duruyor; Lithium Balance ölçeği doğrulanınca güncellenecek.
 #define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA    90000    // 0.9 A
 #define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA 100000  // 1.0 A
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA  900000  // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA 1500000 // 15.0 A
-// Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
-// Lithium Balance c-BMS Pack Voltage: CAN ID 0xE000, byte[2:3],
-// big-endian uint16, raw * 0.1 = V. (DOĞRULANDI)
-#define BMS_WARN_MIN_PACK_VOLTAGE_DECI_V 740
-#define BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V 700
-#define BMS_WARN_MAX_PACK_VOLTAGE_DECI_V 850
-#define BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V 870
+// Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
+// (2.50 V / 3.65 V per hücre).
+// TODO: source signal not yet verified — TEL_bmsCellVoltageMin/MaxDeciMv
+// hiçbir CAN ID'den parse edilmiyor (hep 0). BAĞLANMAMALI.
+#define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
+#define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
 
 // Task watchdog timing is still using the ESP-IDF default configuration.
 // The shorter LoRa RX timeout below improves scheduling margin, but the global
@@ -181,6 +207,10 @@
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
+// Charger komut frame'i (0x1806E5F4) OPSİYONEL bir akıştır: araç sürüşteyken
+// charger bağlı olmayabilir. Timeout yalnızca saklanan setpoint'leri "bayat"
+// işaretler; CAN_Event/FAULT ÜRETMEZ (krş. motor timeout -> FAULT).
+#define CAN_CHARGER_TIMEOUT_MS      2000
 
 // UKS'in aralik-disi alan sanitizasyonu (CanManager::getTelemetryData)
 // tetiklendiginde ayni durum tekrar tekrar olussa bile log spam'ini

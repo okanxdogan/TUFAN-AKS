@@ -60,7 +60,20 @@ struct TelemetryData {
     int32_t TEL_bmsCurrentCentiMa;     // DOĞRULANMADI — kaynak ID bilinmiyor
     uint16_t TEL_bmsSocHundredths;     // DOĞRULANMADI — kaynak ID bilinmiyor
 
+    // Lithium Balance c-BMS — CAN ID 0xE000 HAM alanlar (UNVERIFIED).
+    // Sniffer Oturum 2 gözlemine dayalı hipotezler; ölçek DOĞRULANMADI.
+    // Ham değerler olduğu gibi tutulur, ölçek katsayısı UYGULANMAZ.
+    // Tüketici kodlar (HMI/uplink/VcuLogic) doğrulama tamamlanana kadar
+    // bu alanları KULLANMAMALIDIR (bkz. Documents/CAN_Message_Table.md).
+    int16_t TEL_bmsE000RawCurrent;    // byte[0:1] — HIPOTEZ-orta: pack akımı adayı; UNVERIFIED — scale unknown
+    uint16_t TEL_bmsE000RawCounter1;  // byte[4:5] — HIPOTEZ-düşük: kapasite/sayaç adayı; UNVERIFIED — scale unknown
+    uint16_t TEL_bmsE000RawCounter2;  // byte[6:7] — HIPOTEZ-düşük: kapasite/sayaç adayı; UNVERIFIED — scale unknown (DLC<8 ise 0)
+
     bool TEL_bmsDataValid;
+    // Post-reception E000 freshness kaybı (krş. TEL_motorTimeoutActive).
+    // En az bir E000 görüldükten sonra CAN_BMS_STATUS_TIMEOUT_MS içinde yeni
+    // frame gelmezse true olur; VcuLogic IDLE dışında kritik fault sayar.
+    bool TEL_bmsTimeoutActive;
 
     uint32_t TEL_timestampMs   = 0;   // ms since boot — stamped when packet is created
     uint16_t TEL_speedKmhX10  = 0;   // vehicle speed ×10 km/h, filled via rpmToSpeedKmhX10()

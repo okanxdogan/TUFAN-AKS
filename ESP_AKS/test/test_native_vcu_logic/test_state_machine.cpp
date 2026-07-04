@@ -134,7 +134,7 @@ void test_ready_to_fault_on_critical_telemetry(void) {
                           static_cast<int>(VcuLogic::getState()));
 
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 80;  // > 70°C critical
+    d.TEL_bmsPackVoltageDeciV = 590;  // < 600 dV — undervoltage critical (DOĞRULANMIŞ sinyal)
     VcuLogic::setTelemetryData(d);
     VcuLogic::run();
 
@@ -142,7 +142,7 @@ void test_ready_to_fault_on_critical_telemetry(void) {
                           static_cast<int>(VcuLogic::getState()));
 }
 
-void test_drive_to_fault_on_critical_current(void) {
+void test_drive_to_fault_on_bms_timeout(void) {
     primeIdle();
     VcuLogic::postEvent(VcuEvent::START_REQUEST);
     VcuLogic::run();
@@ -150,7 +150,8 @@ void test_drive_to_fault_on_critical_current(void) {
     VcuLogic::run();
 
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = -2000000;  // 20 A discharge — critical
+    d.TEL_bmsTimeoutActive = true;  // post-reception E000 freshness kaybı
+    d.TEL_bmsDataValid = false;
     VcuLogic::setTelemetryData(d);
     VcuLogic::run();
 

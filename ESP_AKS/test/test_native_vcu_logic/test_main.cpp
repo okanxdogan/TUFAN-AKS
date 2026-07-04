@@ -19,10 +19,9 @@ extern void test_isCurrentWarning_charge_at_threshold(void);
 extern void test_isCurrentWarning_discharge_below_threshold(void);
 extern void test_isCurrentWarning_discharge_at_threshold(void);
 
-// Faz 1 — sıcaklık eşikleri
-extern void test_warning_temp_below_threshold(void);
-extern void test_warning_temp_at_warn_threshold(void);
-extern void test_critical_temp_at_critical_threshold(void);
+// Faz 1 — doğrulanmamış sinyaller karar dışı (Ek B)
+extern void test_unverified_temp_not_wired(void);
+extern void test_unverified_current_not_wired(void);
 
 // Faz 1 — voltaj eşikleri
 extern void test_warning_voltage_above_warn_low(void);
@@ -41,24 +40,28 @@ extern void test_motor_timeout_in_idle_is_safe(void);
 extern void test_motor_timeout_in_ready_is_critical(void);
 extern void test_motor_timeout_in_drive_is_critical(void);
 
+// Faz 1 — bms timeout (post-reception E000 freshness kaybı)
+extern void test_bms_timeout_in_idle_is_safe(void);
+extern void test_bms_timeout_in_ready_is_critical(void);
+extern void test_bms_timeout_in_drive_is_critical(void);
+
 // Faz 1 — bms data invalid
 extern void test_warning_bms_invalid_skips_thresholds(void);
 extern void test_critical_bms_invalid_with_motor_error_still_critical(void);
 
 // Faz 1 — baseline & akım uçtan uca
 extern void test_baseline_clean_data_no_conditions(void);
-extern void test_critical_via_charge_current(void);
-extern void test_critical_via_discharge_current(void);
 
 // Faz 1 — reset interlock
 extern void test_reset_interlock_clean_baseline_passes(void);
 extern void test_reset_interlock_motor_error_blocks(void);
 extern void test_reset_interlock_bms_error_blocks(void);
-extern void test_reset_interlock_critical_temperature_blocks(void);
+extern void test_reset_interlock_unverified_temp_does_not_block(void);
 extern void test_reset_interlock_critical_voltage_low_blocks(void);
 extern void test_reset_interlock_critical_voltage_high_blocks(void);
-extern void test_reset_interlock_critical_current_blocks(void);
+extern void test_reset_interlock_unverified_current_does_not_block(void);
 extern void test_reset_interlock_motor_timeout_in_fault_blocks(void);
+extern void test_reset_interlock_bms_timeout_in_fault_blocks(void);
 extern void test_reset_interlock_warning_level_passes(void);
 
 // Faz 2 — state machine geçişleri
@@ -70,7 +73,7 @@ extern void test_drive_to_emergency_stop(void);
 extern void test_idle_to_fault_on_fault_event(void);
 extern void test_ready_to_fault_on_fault_event(void);
 extern void test_ready_to_fault_on_critical_telemetry(void);
-extern void test_drive_to_fault_on_critical_current(void);
+extern void test_drive_to_fault_on_bms_timeout(void);
 extern void test_fault_to_idle_on_reset_when_clean(void);
 extern void test_emergency_stop_to_idle_on_reset_when_clean(void);
 extern void test_fault_stays_on_reset_when_motor_error(void);
@@ -106,11 +109,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_isCurrentWarning_discharge_at_threshold);
 
     // Faz 1 — sıcaklık
-    RUN_TEST(test_warning_temp_below_threshold);
-    RUN_TEST(test_warning_temp_at_warn_threshold);
-    RUN_TEST(test_critical_temp_at_critical_threshold);
 
     // Faz 1 — pack voltajı
+    RUN_TEST(test_unverified_temp_not_wired);
+    RUN_TEST(test_unverified_current_not_wired);
+
     RUN_TEST(test_warning_voltage_above_warn_low);
     RUN_TEST(test_warning_voltage_at_warn_low);
     RUN_TEST(test_critical_voltage_at_crit_low);
@@ -127,24 +130,27 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_motor_timeout_in_ready_is_critical);
     RUN_TEST(test_motor_timeout_in_drive_is_critical);
 
+    RUN_TEST(test_bms_timeout_in_idle_is_safe);
+    RUN_TEST(test_bms_timeout_in_ready_is_critical);
+    RUN_TEST(test_bms_timeout_in_drive_is_critical);
+
     // Faz 1 — bms invalid
     RUN_TEST(test_warning_bms_invalid_skips_thresholds);
     RUN_TEST(test_critical_bms_invalid_with_motor_error_still_critical);
 
     // Faz 1 — baseline & akım entegre
     RUN_TEST(test_baseline_clean_data_no_conditions);
-    RUN_TEST(test_critical_via_charge_current);
-    RUN_TEST(test_critical_via_discharge_current);
 
     // Faz 1 — reset interlock
     RUN_TEST(test_reset_interlock_clean_baseline_passes);
     RUN_TEST(test_reset_interlock_motor_error_blocks);
     RUN_TEST(test_reset_interlock_bms_error_blocks);
-    RUN_TEST(test_reset_interlock_critical_temperature_blocks);
+    RUN_TEST(test_reset_interlock_unverified_temp_does_not_block);
     RUN_TEST(test_reset_interlock_critical_voltage_low_blocks);
     RUN_TEST(test_reset_interlock_critical_voltage_high_blocks);
-    RUN_TEST(test_reset_interlock_critical_current_blocks);
+    RUN_TEST(test_reset_interlock_unverified_current_does_not_block);
     RUN_TEST(test_reset_interlock_motor_timeout_in_fault_blocks);
+    RUN_TEST(test_reset_interlock_bms_timeout_in_fault_blocks);
     RUN_TEST(test_reset_interlock_warning_level_passes);
 
     // Faz 2 — state machine
@@ -156,7 +162,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_idle_to_fault_on_fault_event);
     RUN_TEST(test_ready_to_fault_on_fault_event);
     RUN_TEST(test_ready_to_fault_on_critical_telemetry);
-    RUN_TEST(test_drive_to_fault_on_critical_current);
+    RUN_TEST(test_drive_to_fault_on_bms_timeout);
     RUN_TEST(test_fault_to_idle_on_reset_when_clean);
     RUN_TEST(test_emergency_stop_to_idle_on_reset_when_clean);
     RUN_TEST(test_fault_stays_on_reset_when_motor_error);

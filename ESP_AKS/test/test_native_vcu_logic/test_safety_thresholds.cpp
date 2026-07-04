@@ -64,55 +64,55 @@ void test_isCurrentWarning_discharge_at_threshold(void) {
 }
 
 // ---------------------------------------------------------------------------
-// hasWarningCondition / hasCriticalCondition — sıcaklık (warn 55, crit 70)
+// DOĞRULANMAMIŞ sinyaller karar mantığına BAĞLI DEĞİL (Ek B güven kuralı):
+// sıcaklık ve akım alanları hiçbir CAN ID'den parse edilmediği için
+// hasWarning/hasCriticalCondition bunlara bakmaz — aşırı değerler bile
+// koşul tetiklememeli. Kaynak sinyal + ölçek doğrulanınca bu testler
+// gerçek eşik testlerine dönüştürülecek.
 // ---------------------------------------------------------------------------
-void test_warning_temp_below_threshold(void) {
+void test_unverified_temp_not_wired(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 54;
+    d.TEL_bmsTempHighestC = 99;  // eşiklerin çok üstünde ama sinyal DOĞRULANMADI
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
-void test_warning_temp_at_warn_threshold(void) {
+void test_unverified_current_not_wired(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 55;
-    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    d.TEL_bmsCurrentCentiMa = -2000000;  // 20 A — ama sinyal DOĞRULANMADI
+    TEST_ASSERT_FALSE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+    d.TEL_bmsCurrentCentiMa = 120000;    // 1.2 A şarj
+    TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
-void test_critical_temp_at_critical_threshold(void) {
-    TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 70;
-    TEST_ASSERT_TRUE(hasWarningCondition(d));
-    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
-}
-
 // ---------------------------------------------------------------------------
-// Pack voltajı alt sınır (warn ≤740, crit ≤700 deci-V)
+// Pack voltajı alt sınır (24S LiFePO4: warn ≤720, crit ≤600 deci-V)
 // ---------------------------------------------------------------------------
 void test_warning_voltage_above_warn_low(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 750;
+    d.TEL_bmsPackVoltageDeciV = 730;
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
 void test_warning_voltage_at_warn_low(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 740;
+    d.TEL_bmsPackVoltageDeciV = 720;
     TEST_ASSERT_TRUE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
 void test_critical_voltage_at_crit_low(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 700;
+    d.TEL_bmsPackVoltageDeciV = 600;  // 60.0 V — spec min
     TEST_ASSERT_TRUE(hasWarningCondition(d));
     TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
 }
 
 // ---------------------------------------------------------------------------
-// Pack voltajı üst sınır (warn ≥850, crit ≥870)
+// Pack voltajı üst sınır (24S LiFePO4: warn ≥852, crit ≥876 deci-V)
 // ---------------------------------------------------------------------------
 void test_warning_voltage_below_warn_high(void) {
     TelemetryData d = makeTelemetryDataValid();
@@ -123,14 +123,14 @@ void test_warning_voltage_below_warn_high(void) {
 
 void test_warning_voltage_at_warn_high(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 850;
+    d.TEL_bmsPackVoltageDeciV = 852;
     TEST_ASSERT_TRUE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
 void test_critical_voltage_at_crit_high(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 870;
+    d.TEL_bmsPackVoltageDeciV = 876;  // 87.6 V — spec maks
     TEST_ASSERT_TRUE(hasWarningCondition(d));
     TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
 }
@@ -172,6 +172,31 @@ void test_motor_timeout_in_drive_is_critical(void) {
 }
 
 // ---------------------------------------------------------------------------
+// BMS timeout (post-reception E000 freshness kaybı) — motor timeout ile aynı
+// politika: IDLE'da yok sayılır, diğer durumlarda critical.
+// ---------------------------------------------------------------------------
+void test_bms_timeout_in_idle_is_safe(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTimeoutActive = true;
+    d.TEL_bmsDataValid = false;  // timeout'ta CanManager ikisini birlikte set eder
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::IDLE));
+}
+
+void test_bms_timeout_in_ready_is_critical(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTimeoutActive = true;
+    d.TEL_bmsDataValid = false;
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_bms_timeout_in_drive_is_critical(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTimeoutActive = true;
+    d.TEL_bmsDataValid = false;
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::DRIVE));
+}
+
+// ---------------------------------------------------------------------------
 // BMS data invalid — eşik kontrolü yapılmaz, motor error hâlâ critical.
 // ---------------------------------------------------------------------------
 void test_warning_bms_invalid_skips_thresholds(void) {
@@ -202,17 +227,6 @@ void test_baseline_clean_data_no_conditions(void) {
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::DRIVE));
 }
 
-// ---------------------------------------------------------------------------
-// Akım eşikleri uçtan uca BMS verisi içinden de doğrulansın.
-// ---------------------------------------------------------------------------
-void test_critical_via_charge_current(void) {
-    TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = 120000;   // 1.2 A — kritik eşiğin üstünde
-    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
-}
-
-void test_critical_via_discharge_current(void) {
-    TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = -1600000;  // 16 A — kritik eşiğin üstünde
-    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
-}
+// NOT: "Akım eşikleri uçtan uca" testleri kaldırıldı — akım sinyali
+// DOĞRULANMADIĞI için karar mantığına bağlı değil; kapsam
+// test_unverified_current_not_wired ile ters yönde korunuyor.
