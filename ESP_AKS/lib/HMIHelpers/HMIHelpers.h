@@ -51,6 +51,44 @@ inline const char* HMI_getContactorText(bool HMI_contactorClosed) {
     return HMI_contactorClosed ? "CLOSED" : "OPEN";
 }
 
+// --- "Veri yok" gösterimi (GEÇİCİ — kaynak sinyal doğrulanana kadar) ---
+//
+// TEL_bmsSocHundredths ve TEL_bmsTempHighestC kaynak CAN sinyalleri henüz
+// DOĞRULANMADI: hiçbir CAN ID'den parse edilmiyorlar, hep 0 kalıyorlar.
+// 0'ı doğrudan ekrana basmak sürücüye "%0 batarya / 0°C" gibi SAHTE veri
+// gösterir. Bu yüzden kaynak doğrulanana kadar geçerli aralık DIŞI birer
+// sentinel gönderilir; Nextion tarafı bu değerleri "--" olarak
+// göstermelidir (bat: 0-100 geçerli, 255 = veri yok; temp: -127 = veri yok).
+//
+// TEL_bmsDataValid=false (BMS hiç görülmedi / timeout) durumunda da aynı
+// sentinel geçerlidir — bayat/yok veri asla sayı gibi gösterilmez.
+//
+// TODO(dogrulama): İlgili kaynak sinyalin ID'si + ölçeği DOĞRULANDIĞINDA
+// aşağıdaki *_SOURCE_VERIFIED sabiti true yapılıp bu geçici sentinel yolu
+// kaldırılacak (bkz. Documents/CAN_Message_Table.md).
+constexpr uint8_t HMI_BATTERY_NO_DATA = 255;
+constexpr int16_t HMI_TEMP_NO_DATA = -127;
+
+constexpr bool HMI_SOC_SOURCE_VERIFIED = false;   // TEL_bmsSocHundredths — DOĞRULANMADI
+constexpr bool HMI_TEMP_SOURCE_VERIFIED = false;  // TEL_bmsTempHighestC — DOĞRULANMADI
+
+inline uint8_t HMI_batteryDisplayValue(bool HMI_sourceVerified,
+                                       bool HMI_bmsDataValid,
+                                       uint16_t HMI_socHundredths) {
+    if (!HMI_sourceVerified || !HMI_bmsDataValid)
+        return HMI_BATTERY_NO_DATA;
+    const uint16_t HMI_percent = HMI_socHundredths / 100U;
+    return (HMI_percent > 100U) ? 100U : static_cast<uint8_t>(HMI_percent);
+}
+
+inline int16_t HMI_temperatureDisplayValue(bool HMI_sourceVerified,
+                                           bool HMI_bmsDataValid,
+                                           int16_t HMI_temperatureC) {
+    if (!HMI_sourceVerified || !HMI_bmsDataValid)
+        return HMI_TEMP_NO_DATA;
+    return HMI_temperatureC;
+}
+
 // Nextion UART tarafı — implementasyonu HMIHelpers.cpp içindedir.
 void HMI_sendEndBytes(void);
 

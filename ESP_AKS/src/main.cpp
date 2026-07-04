@@ -206,13 +206,22 @@ void vTask_HMI_Display(void *pvParameters) {
     esp_task_wdt_reset();
 
     HMI_DisplayData HMI_screenData = {};
+    // Kuyruk boşken de "veri yok" ("--") görünmeli — sahte %0/0°C değil.
+    HMI_screenData.HMI_currentBattery = HMI_BATTERY_NO_DATA;
+    HMI_screenData.HMI_bmsTemperatureC = HMI_TEMP_NO_DATA;
 
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
         if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
             HMI_screenData.HMI_currentSpeed = TEL_data.TEL_motorRpm;
-            HMI_screenData.HMI_currentBattery =
-                static_cast<uint8_t>(TEL_data.TEL_bmsSocHundredths / 100);
+            // SOC/sıcaklık kaynak sinyalleri DOĞRULANMADI (hiç parse
+            // edilmiyor, hep 0) — sürücüye sahte "%0 batarya / 0°C"
+            // göstermemek için sentinel gönderilir. Kaynak sinyal
+            // DOĞRULANDIĞINDA HMI_*_SOURCE_VERIFIED true yapılıp bu geçici
+            // yol kaldırılacak (bkz. HMIHelpers.h "Veri yok gösterimi").
+            HMI_screenData.HMI_currentBattery = HMI_batteryDisplayValue(
+                HMI_SOC_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
+                TEL_data.TEL_bmsSocHundredths);
             HMI_screenData.HMI_motorRpm = TEL_data.TEL_motorRpm;
          //   HMI_screenData.HMI_motorTorqueFeedback =
        //         TEL_data.TEL_motorTorqueFeedback;
@@ -220,8 +229,9 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_screenData.HMI_motorDataValid = TEL_data.TEL_motorDataValid;
             HMI_screenData.HMI_motorTimeoutActive =
                 TEL_data.TEL_motorTimeoutActive;
-            HMI_screenData.HMI_bmsTemperatureC =
-                TEL_data.TEL_bmsTempHighestC;
+            HMI_screenData.HMI_bmsTemperatureC = HMI_temperatureDisplayValue(
+                HMI_TEMP_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
+                TEL_data.TEL_bmsTempHighestC);
             HMI_screenData.HMI_bmsPackVoltageDeciV =
                 TEL_data.TEL_bmsPackVoltageDeciV;
         }
