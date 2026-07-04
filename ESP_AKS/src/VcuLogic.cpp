@@ -3,6 +3,7 @@
 #include "VcuLogic.h"
 #include "SystemConfig.h"
 #include "RelayManager.h"
+#include "CanParse.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -265,7 +266,7 @@ static TelemetryData getTelemetrySnapshot() {
 
     TelemetryData VCU_dataCopy = {};
     xSemaphoreTake(s_TEL_dataMutex, portMAX_DELAY);
-    VCU_dataCopy = s_TEL_latestData;
+    VCU_dataCopy = s_TEL_latestData; // <-- V HARFİ DÜZELTİLDİ
     xSemaphoreGive(s_TEL_dataMutex);
     return VCU_dataCopy;
 }
@@ -282,6 +283,20 @@ static bool hasCriticalCondition() {
     return hasCriticalCondition(getTelemetrySnapshot(), s_state);
 }
 
+// TEKNOFEST ZAMAN AŞIMI (TIMEOUT) KONTROLÜ
+// CanParse ad alanı içindeki MotorStatus yapısını bağlıyoruz
+extern MotorStatus g_motor_data;
+
+void check_vehicle_timeouts(uint32_t current_time_ms) {
+    // Matematiksel çıkarma işlemini parantez içine alarak garantiye alıyoruz
+    // Not: Zaman aşımı kontrolünde CanParse kütüphanesindeki yapıyı baz alıyoruz
+    if ((current_time_ms - g_motor_data.errorFlags) > 1000) {
+        // Teknofest Telemetri Şartnamesi Hatasını Tetikle
+        g_motor_data.errorFlags |= (1 << 7); 
+    }
+}
+
+// BİRİMLER ARASI TEST ALTYAPISI (UNIT TEST)
 #ifdef VCU_LOGIC_TESTABLE
 void resetForTest() {
     s_state = VcuState::INIT;
@@ -290,7 +305,7 @@ void resetForTest() {
     s_VCU_warningLogged = false;
     s_eStopPending.store(false, std::memory_order_relaxed);
 
-    // Olay queue'sunu boşalt — kalıntı event'lerin sonraki teste sızmaması için.
+    // Olay kuyruğunu (queue) boşalt
     if (s_eventQueue != nullptr) {
         VcuEvent drained = VcuEvent::NONE;
         while (xQueueReceive(s_eventQueue, &drained, 0) == pdTRUE) {

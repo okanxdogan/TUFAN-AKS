@@ -357,3 +357,11 @@ void CanManager::notifyFaultIfNeeded(uint8_t CAN_previousFlags,
         CAN_eventCallback(CAN_Event::FAULT_DETECTED, CAN_eventContext);
     }
 }
+
+// TWAI Filtre Yapılandırması (Örnek)
+// Hem BMS ID'lerini hem de gelecekteki Motor Sürücü ID'sini kapsayacak maske ayarı
+twai_filter_config_t f_config = {
+    .acceptance_code = 0x00000000, 
+    .acceptance_mask = 0xFFFFFFFF, // Test sürecinde tüm ID'leri kabul et (Açık Filtre)
+    .single_filter = false          // Dual filter modu ile birden fazla bağımsız ID aralığı yakala
+};

@@ -1,3 +1,20 @@
+#ifndef VEHICLE_PARAMS_H
+#define VEHICLE_PARAMS_H
+
+#include <stdint.h>
+
+
+// Teknofest Şartnamesi Motor Sürücü Kritik Verileri
+typedef struct {
+    float motor_voltage;       // Motor Voltajı (V)
+    float motor_current;       // Motor Akımı (A)
+    int32_t motor_rpm;         // Motor Devri (RPM)
+    float motor_temp;          // Motor Sıcaklığı (°C)
+    float controller_temp;     // Sürücü/Evirici Sıcaklığı (°C)
+    uint32_t error_flags;      // Hata Kodları / Bayrakları
+    uint32_t last_msg_time;    // Zaman aşımı (Timeout) kontrolü için son mesaj zamanı (ms)
+} MotorController_t;
+
 #pragma once
 
 // Tekerlek çapı (metre). Kaynak: mekanik ekip — yüklü araçta (sürücü +
@@ -28,3 +45,4 @@
 #if !VEHICLE_PARAMS_CONFIRMED
 #warning "ARAC PARAMETRELERI TEYITSIZ — hiz/enerji verisi gecersiz (VehicleParams.h)"
 #endif
+#endif // VEHICLE_PARAMS_H

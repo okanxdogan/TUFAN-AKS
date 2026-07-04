@@ -1,4 +1,6 @@
 #include "CanParse.h"
+#include "VehicleParams.h"
+#include <math.h>
 
 namespace CanParse {
 
@@ -111,3 +113,31 @@ bool isBmsStatusTimedOut(bool hasSeen,
 }
 
 }  // namespace CanParse
+
+// RPM verisinden aracın hızını km/h cinsinden hesaplayan fonksiyon
+float calculate_vehicle_speed_kmh(int32_t motor_rpm) {
+    float wheel_rpm = 0.0f;
+
+    // RPM zaten tekerlek hızı mı yoksa motor mili hızı mı kontrolü
+    if (MOTOR_RPM_IS_WHEEL_RPM) {
+        wheel_rpm = (float)motor_rpm;
+    } else {
+        wheel_rpm = (float)motor_rpm / GEAR_RATIO;
+    }
+
+    // Çevre (m) = pi * D
+    float wheel_circumference = M_PI * WHEEL_DIAMETER_M;
+
+    // Hız (m/dakika) = Tekerlek RPM * Çevre
+    float speed_m_per_min = wheel_rpm * wheel_circumference;
+
+    // Hız (km/h) = (m/dakika) * 60 / 1000 -> yani 0.06 ile çarpmak
+    float speed_kmh = speed_m_per_min * 0.06f;
+
+    // Geri vites veya hatalı durumlar için mutlak değer veya sınır kontrolü eklenebilir
+    if (speed_kmh < 0.0f) {
+        speed_kmh = -speed_kmh; 
+    }
+
+    return speed_kmh;
+}
