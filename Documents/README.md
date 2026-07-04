@@ -45,6 +45,10 @@ Implemented frames:
 - `0xE000`: Lithium Balance BMS config
 - `0xE001`: Lithium Balance BMS live
 
+## Battery Threshold Ownership
+
+`SystemConfig.h` (pack-based, VCU safety authority) and `BmsAlgo.h` (cell-based, display layer) each define their own battery thresholds — see [Threshold_Ownership.md](Threshold_Ownership.md) for which constants are live, which are currently dead, and the known NMC-vs-LiFePO4 threshold conflict.
+
 ## LoRa / E22 Baseline
 
 The radio module is E22-400T30D-V2 (SX1268), a pin-compatible successor to

@@ -61,7 +61,8 @@ Test framework'ü olarak **Unity** kullanılmaktadır. Native testler, ESP-IDF b
 | `test_native_relay` | 7 | 18 | SPI relay sürücü: init sırası, kanal açma/kapama, `allOn`/`allOff` |
 | `test_native_telemetry` | 5 | 13 | UART telemetri paketi: format, sıra numarası, `begin`/`reset` |
 | `test_native_hmi_helpers` | — | — | HMI ekran yardımcı fonksiyonları: numerik/text güncelleme, `sendEndBytes` |
-| **Toplam** | | **149** | |
+| `test_native_bms_algo` | 9 | 18 | `computePack()`: SoC haritalaması, LiFePO4 uyarı/kritik eşik sınırları, dengeleme regresyonu, `cellBarFill()` (dolaylı, `buildBmsNextionCommands` üzerinden) |
+| **Toplam** | | **167** | |
 
 ### Embedded Testler (Board Gerektirir)
 

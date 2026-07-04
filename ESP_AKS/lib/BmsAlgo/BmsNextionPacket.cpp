@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "BmsAlgo.h"  // BMS_SOC_EMPTY_MV / BMS_SOC_FULL_MV — tek kaynak
+
 // Saf C++; snprintf dışında bağımlılık yok. UART çağrısı YAPMAZ.
 
 namespace {
@@ -28,15 +30,14 @@ void emitIndexedNumeric(BmsNextionEmit emit, void* ctx, const char* comp,
 }
 
 // Hücre gerilimini (mV) progress bar doluluğuna (0..100) çevirir. Aralık
-// 3000..4200 mV; dışı 0/100'e clamp'lenir.
+// BMS_SOC_EMPTY_MV..BMS_SOC_FULL_MV (BmsAlgo.h, tek kaynak — LiFePO4 spec
+// 2.50-3.65 V/hücre); dışı 0/100'e clamp'lenir.
 uint8_t cellBarFill(uint16_t mv) {
-    constexpr uint16_t kBarEmptyMv = 3000;
-    constexpr uint16_t kBarFullMv = 4200;
-    if (mv <= kBarEmptyMv) return 0;
-    if (mv >= kBarFullMv) return 100;
+    if (mv <= BMS_SOC_EMPTY_MV) return 0;
+    if (mv >= BMS_SOC_FULL_MV) return 100;
     return static_cast<uint8_t>(
-        (static_cast<uint32_t>(mv - kBarEmptyMv) * 100u) /
-        (kBarFullMv - kBarEmptyMv));
+        (static_cast<uint32_t>(mv - BMS_SOC_EMPTY_MV) * 100u) /
+        (BMS_SOC_FULL_MV - BMS_SOC_EMPTY_MV));
 }
 
 }  // namespace
