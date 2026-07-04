@@ -66,16 +66,21 @@ VCU karar mantığına hiç girmiyor.
 
 | Sabit | Satır | Değer | Birim | Rol |
 | --- | --- | --- | --- | --- |
-| `BMS_BALANCE_THRESHOLD_MV` | 25 | 50 | mV | Pasif dengeleme tetik bandı (delta eşiği) |
-| `BMS_BALANCE_TOP_MARGIN_MV` | 30 | 5 | mV | Dengeleme marjı (en yüksek hücreye yakın diğerleri) |
-| `BMS_SOC_EMPTY_MV` | 38 | 3000 | mV | SoC %0 referansı |
-| `BMS_SOC_FULL_MV` | 39 | 4200 | mV | SoC %100 referansı |
-| `BMS_CELL_UNDERVOLT_CRIT_MV` | 45 | 3000 | mV | Hücre CRITICAL alt sınır |
-| `BMS_CELL_OVERVOLT_CRIT_MV` | 46 | 4250 | mV | Hücre CRITICAL üst sınır |
-| `BMS_TEMP_OVERTEMP_CRIT_C` | 47 | 60 | °C | Hücre CRITICAL sıcaklık |
-| `BMS_CELL_UNDERVOLT_WARN_MV` | 50 | 3200 | mV | Hücre WARNING alt sınır |
-| `BMS_CELL_OVERVOLT_WARN_MV` | 51 | 4150 | mV | Hücre WARNING üst sınır |
-| `BMS_TEMP_OVERTEMP_WARN_C` | 52 | 50 | °C | Hücre WARNING sıcaklık |
+| `BMS_BALANCE_THRESHOLD_MV` | 25 | 50 | mV | Pasif dengeleme tetik bandı (delta eşiği) — kimyadan bağımsız, DEĞİŞMEDİ |
+| `BMS_BALANCE_TOP_MARGIN_MV` | 30 | 5 | mV | Dengeleme marjı (en yüksek hücreye yakın diğerleri) — kimyadan bağımsız, DEĞİŞMEDİ |
+| `BMS_SOC_EMPTY_MV` | 51 | 2500 | mV | SoC %0 referansı — LiFePO4 spec min (2.50 V) |
+| `BMS_SOC_FULL_MV` | 52 | 3650 | mV | SoC %100 referansı — LiFePO4 spec maks (3.65 V) |
+| `BMS_CELL_UNDERVOLT_CRIT_MV` | 66 | 2500 | mV | Hücre CRITICAL alt sınır — LiFePO4 spec min |
+| `BMS_CELL_OVERVOLT_CRIT_MV` | 67 | 3650 | mV | Hücre CRITICAL üst sınır — LiFePO4 spec maks |
+| `BMS_TEMP_OVERTEMP_CRIT_C` | 68 | 60 | °C | Hücre CRITICAL sıcaklık — kimyadan bağımsız, DEĞİŞMEDİ |
+| `BMS_CELL_UNDERVOLT_WARN_MV` | 75 | 2800 | mV | Hücre WARNING alt sınır — CRIT'e 300 mV marj |
+| `BMS_CELL_OVERVOLT_WARN_MV` | 76 | 3550 | mV | Hücre WARNING üst sınır — CRIT'e 100 mV marj |
+| `BMS_TEMP_OVERTEMP_WARN_C` | 77 | 50 | °C | Hücre WARNING sıcaklık — kimyadan bağımsız, DEĞİŞMEDİ |
+
+Değerler 24S LiFePO4 spec'ine (2.50–3.65 V/hücre) uyarlanmıştır — bkz. bölüm 5.
+CRITICAL uçları (2500/3650 mV) SystemConfig.h pack CRITICAL eşikleriyle
+(600/876 deciV) hücre×24 ilişkisiyle birebir örtüşür; WARN bandı bu katmana
+özgüdür (SystemConfig.h WARN eşikleriyle 1:1 eşleşmesi gerekmez).
 
 Bu eşikler kod yolunda "ölü" değildir — `computePack()` her HMI tick'inde
 çalışır ve `warningLevel`i gerçekten hesaplar. Ancak girdi (`BmsPackData`),
@@ -106,23 +111,36 @@ motor/BMS freshness timeout'ları.
 
 ## 5. Bilinen Çelişki: `BmsAlgo.h` NMC Varsayımları vs LiFePO4 Paket Kimyası
 
-`BmsAlgo.h`'nin hücre eşikleri **4.2 V Li-ion (NMC) kimyası** varsayımıyla
-yazılmış:
+> ✅ **ÇÖZÜLDÜ** (`AKS-bmsalgo-lifepo4-thresholds`, bkz. `lib/BmsAlgo/BmsAlgo.h`
+> ve `lib/BmsAlgo/BmsNextionPacket.cpp`'nin güncel hali). Aşağıdaki tarihçe,
+> çelişkinin neden var olduğunu ve nasıl giderildiğini kaydetmek için
+> bilerek SİLİNMEDİ.
 
-| BmsAlgo.h sabiti | Değer | NMC'de tipik anlamı | 24S LiFePO4 gerçeği (SystemConfig.h pack spec'i, satır 170-172) |
-| --- | --- | --- | --- |
-| `BMS_SOC_FULL_MV` | 4200 mV | Dolu hücre (NMC) | LiFePO4 hücre maksimumu **3650 mV** (3.65 V) |
-| `BMS_CELL_OVERVOLT_CRIT_MV` | 4250 mV | NMC aşırı şarj | LiFePO4 spec maks zaten 3650 mV — bu eşik hiç aşılamaz aralıkta |
-| `BMS_CELL_UNDERVOLT_CRIT_MV` | 3000 mV | NMC aşırı deşarj | LiFePO4 spec min **2500 mV** (2.50 V) — bu eşik LiFePO4 için ERKEN tetiklenir |
+`BmsAlgo.h`'nin hücre eşikleri, bu PR'dan önce **4.2 V Li-ion (NMC) kimyası**
+varsayımıyla yazılmıştı:
 
-Bu, paketin gerçek kimyasıyla (24S LiFePO4, 2.50–3.65 V/hücre) çelişiyor.
-**Düzeltmesi ayrı bir PR'da yapılacak — bu doküman yalnızca kaydeder.**
+| BmsAlgo.h sabiti | Eski (NMC) değer | NMC'de tipik anlamı | 24S LiFePO4 gerçeği (SystemConfig.h pack spec'i) | Yeni (LiFePO4) değer |
+| --- | --- | --- | --- | --- |
+| `BMS_SOC_FULL_MV` | 4200 mV | Dolu hücre (NMC) | LiFePO4 hücre maksimumu **3650 mV** (3.65 V) | **3650 mV** |
+| `BMS_CELL_OVERVOLT_CRIT_MV` | 4250 mV | NMC aşırı şarj | LiFePO4 spec maks zaten 3650 mV — bu eşik hiç aşılamaz aralıktaydı | **3650 mV** |
+| `BMS_CELL_UNDERVOLT_CRIT_MV` | 3000 mV | NMC aşırı deşarj | LiFePO4 spec min **2500 mV** (2.50 V) — bu eşik LiFePO4 için ERKEN tetikleniyordu | **2500 mV** |
+| `BMS_SOC_EMPTY_MV` | 3000 mV | Boş hücre (NMC) | LiFePO4 spec min 2500 mV | **2500 mV** |
+| `BMS_CELL_UNDERVOLT_WARN_MV` | 3200 mV | NMC WARN alt | CRIT'e (yeni: 2500) 300 mV marj hedefleniyor | **2800 mV** |
+| `BMS_CELL_OVERVOLT_WARN_MV` | 4150 mV | NMC WARN üst | CRIT'e (yeni: 3650) 100 mV marj hedefleniyor | **3550 mV** |
 
-Aynı NMC varsayımı üçüncü bir yerde daha var: `lib/BmsAlgo/BmsNextionPacket.cpp`
+Sıcaklık (`BMS_TEMP_OVERTEMP_WARN_C`/`CRIT_C`, 50/60°C) ve dengeleme
+(`BMS_BALANCE_THRESHOLD_MV`/`TOP_MARGIN_MV`, 50/5 mV) eşikleri kimyadan
+bağımsız olduğu için DEĞİŞTİRİLMEDİ.
+
+Aynı NMC varsayımı üçüncü bir yerde daha vardı: `lib/BmsAlgo/BmsNextionPacket.cpp`
 içindeki `cellBarFill()` fonksiyonunun **lokal** `kBarEmptyMv = 3000` /
-`kBarFullMv = 4200` sabitleri (satır 33-34) — hücre bar doluluk yüzdesini aynı
-yanlış (NMC) referans aralığına göre hesaplıyor. Düzeltme yapılacaksa üç yer
-(`BmsAlgo.h`, `BmsNextionPacket.cpp` lokal sabitleri) birlikte güncellenmeli.
+`kBarFullMv = 4200` sabitleri — hücre bar doluluk yüzdesini aynı yanlış (NMC)
+referans aralığına göre hesaplıyordu. Bu lokal kopya silindi; `cellBarFill()`
+artık doğrudan `BmsAlgo.h`'deki `BMS_SOC_EMPTY_MV`/`BMS_SOC_FULL_MV`'yi
+kullanıyor (tek kaynak).
+
+Regresyon kilidi: `test/test_native_bms_algo/` (SoC haritalaması, WARN/CRITICAL
+sınır semantiği, dengeleme, `cellBarFill` — bkz. `Documents/Test_Guide.md`).
 
 ---
 
