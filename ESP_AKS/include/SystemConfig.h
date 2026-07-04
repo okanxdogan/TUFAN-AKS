@@ -187,6 +187,10 @@
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
+// Charger komut frame'i (0x1806E5F4) OPSİYONEL bir akıştır: araç sürüşteyken
+// charger bağlı olmayabilir. Timeout yalnızca saklanan setpoint'leri "bayat"
+// işaretler; CAN_Event/FAULT ÜRETMEZ (krş. motor timeout -> FAULT).
+#define CAN_CHARGER_TIMEOUT_MS      2000
 
 // UKS'in aralik-disi alan sanitizasyonu (CanManager::getTelemetryData)
 // tetiklendiginde ayni durum tekrar tekrar olussa bile log spam'ini
