@@ -34,6 +34,8 @@ class CanManager {
 
     // Thread-safe read of latest motor status
     MotorStatus getMotorStatus() const;
+
+    // Returns raw internal telemetry. Sanitization happens only at the uplink gate in vTask_LoRa_UKS.
     TelemetryData getTelemetryData() const;
 
     // Thread-safe read of last charger command (0x1806E5F4, DOĞRULANDI).
@@ -92,11 +94,6 @@ class CanManager {
     bool CAN_chargerValid = false;
     bool CAN_chargerStaleLogged = false;
 
-    // UKS aralik-disi alan sanitizasyonu icin throttle'li WARN log
-    // zaman damgalari (bkz. getTelemetryData / TelemetrySanitize.h).
-    mutable TickType_t CAN_lastSysStateSanitizeWarnTick = 0;
-    mutable TickType_t CAN_lastSocSanitizeWarnTick = 0;
-    mutable TickType_t CAN_lastCurrentSanitizeWarnTick = 0;
 
     CAN_EventCallback CAN_eventCallback = nullptr;
     void* CAN_eventContext = nullptr;

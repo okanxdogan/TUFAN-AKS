@@ -70,8 +70,8 @@ constexpr uint8_t HMI_BATTERY_NO_DATA = 255;
 constexpr int16_t HMI_TEMP_NO_DATA = -127;
 constexpr uint16_t HMI_CELL_VOLTAGE_NO_DATA = 65535;
 
-constexpr bool HMI_SOC_SOURCE_VERIFIED = false;   // TEL_bmsSocHundredths — DOĞRULANMADI
-constexpr bool HMI_TEMP_SOURCE_VERIFIED = false;  // TEL_bmsTempHighestC — DOĞRULANMADI
+constexpr bool HMI_SOC_SOURCE_VERIFIED = true;          // TEL_bmsSocHundredths — ÇÖZÜLDÜ (0xE000)
+constexpr bool HMI_TEMP_SOURCE_VERIFIED = true;         // TEL_bmsTempHighestC — ÇÖZÜLDÜ (0xE001)
 constexpr bool HMI_CELL_VOLTAGE_SOURCE_VERIFIED = false; // TEL_bmsCellVoltageMaxDeciMv/MinDeciMv — DOĞRULANMADI
 
 inline uint8_t HMI_batteryDisplayValue(bool HMI_sourceVerified,

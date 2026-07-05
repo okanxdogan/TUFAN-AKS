@@ -261,59 +261,73 @@ void vTask_HMI_Display(void *pvParameters) {
     // 24-hücre BMS verisini Nextion'a gönder
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
-        if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            if (TEL_data.TEL_bmsDataValid) {
-                BmsPackData BMS_raw = {};
-                BMS_raw.isValid = true;
-                // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
-                BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
-                
-                // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
-                // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
-                // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
-                uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
-                for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
-                    BMS_raw.cellVoltageMv[i] = avgCellMv;
-                    BMS_raw.cellTempC[i] = TEL_data.TEL_bmsTempHighestC;
-                }
+        bool hasData = (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE);
+        bool bmsValid = hasData && TEL_data.TEL_bmsDataValid;
 
-                // TODO(dogrulama): Lithium Balance E001-E033 tersine mühendisliği
-                // (reverse engineering) henüz tamamlanmadı (açık iş).
-                // Gerçek max/min hücre gerilimi doğrulanana kadar algoritma uyarı seviyesi
-                // avgCellMv üzerinden (sağlıklı varsayılarak) çalışır.
-                // Ekranda ise sahte 0 mV yerine sentinel ("--") gösterilir.
-                BmsComputed BMS_comp = computePack(BMS_raw);
+        BmsPackData BMS_raw = {};
+        BMS_raw.isValid = bmsValid;
 
-                if (!HMI_CELL_VOLTAGE_SOURCE_VERIFIED) {
-                    BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
-                    BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
-                } else {
-                    BMS_comp.cellMaxMv = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
-                    BMS_comp.cellMinMv = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
-                }
+        BmsComputed BMS_comp = {};
 
-                static BmsNextionCache BMS_hmiCache = {};
-                static uint32_t BMS_lastCellUpdateMs = 0;
-                static bool BMS_firstRun = true;
-                
-                uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
-                bool updateCells = false;
-                bool forceRefresh = false;
-
-                if (BMS_firstRun) {
-                    forceRefresh = true;
-                    updateCells = true;
-                    BMS_firstRun = false;
-                    BMS_lastCellUpdateMs = nowMs;
-                } else if (nowMs - BMS_lastCellUpdateMs >= 1000) {
-                    updateCells = true;
-                    BMS_lastCellUpdateMs = nowMs;
-                }
-
-                buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr,
-                                        BMS_hmiCache, forceRefresh, updateCells);
+        if (bmsValid) {
+            // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
+            BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
+            
+            // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
+            // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
+            // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
+            uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
+            for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                BMS_raw.cellVoltageMv[i] = avgCellMv;
+                BMS_raw.cellTempC[i] = TEL_data.TEL_bmsTempHighestC;
             }
+
+            // TODO(dogrulama): Lithium Balance E001-E033 tersine mühendisliği
+            // (reverse engineering) henüz tamamlanmadı (açık iş).
+            // Gerçek max/min hücre gerilimi doğrulanana kadar algoritma uyarı seviyesi
+            // avgCellMv üzerinden (sağlıklı varsayılarak) çalışır.
+            BMS_comp = computePack(BMS_raw);
+
+            // Ekranda ise sahte 0 mV yerine sentinel ("--") gösterilir.
+            if (!HMI_CELL_VOLTAGE_SOURCE_VERIFIED) {
+                BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
+            } else {
+                BMS_comp.cellMaxMv = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
+                BMS_comp.cellMinMv = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
+            }
+        } else {
+            // Geçersiz/bayat veri durumu: Ekranda son değerlerin donup kalmaması
+            // için "--" (sentinel) ve boş bar gönderilir. Uyarı durumu CRITICAL yapılır.
+            for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_comp.balanceFlag[i] = false;
+            }
+            BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
+            BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
+            BMS_comp.warningLevel = BMS_WARN_CRITICAL;
         }
+
+        static BmsNextionCache BMS_hmiCache = {};
+        static uint32_t BMS_lastCellUpdateMs = 0;
+        static bool BMS_firstRun = true;
+        
+        uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
+        bool updateCells = false;
+        bool forceRefresh = false;
+
+        if (BMS_firstRun) {
+            forceRefresh = true;
+            updateCells = true;
+            BMS_firstRun = false;
+            BMS_lastCellUpdateMs = nowMs;
+        } else if (nowMs - BMS_lastCellUpdateMs >= 1000) {
+            updateCells = true;
+            BMS_lastCellUpdateMs = nowMs;
+        }
+
+        buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr,
+                                BMS_hmiCache, forceRefresh, updateCells);
     }
 
     if (HMI_display.readTouchCommand(HMI_incomingCommand)) {

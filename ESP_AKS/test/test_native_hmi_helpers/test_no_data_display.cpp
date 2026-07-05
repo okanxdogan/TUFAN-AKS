@@ -29,12 +29,10 @@ void test_temp_unverified_source_returns_no_data(void) {
                             HMI_temperatureDisplayValue(false, false, 0));
 }
 
-void test_production_source_verified_flags_are_false(void) {
-    // Üretim sabitleri: kaynaklar doğrulanana kadar false kalmalı.
-    // Bu test, sabit yanlışlıkla true yapılırsa (sinyal doğrulanmadan
-    // gerçek veri gösterimi açılırsa) kırmızıya düşer.
-    TEST_ASSERT_FALSE(HMI_SOC_SOURCE_VERIFIED);
-    TEST_ASSERT_FALSE(HMI_TEMP_SOURCE_VERIFIED);
+void test_production_source_verified_flags_are_true(void) {
+    // Sinyaller doğrulandığı için artık TRUE olmalılar.
+    TEST_ASSERT_TRUE(HMI_SOC_SOURCE_VERIFIED);
+    TEST_ASSERT_TRUE(HMI_TEMP_SOURCE_VERIFIED);
 }
 
 // --- bmsDataValid=false -> kaynak doğrulanmış olsa bile sentinel ---

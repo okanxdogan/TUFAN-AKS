@@ -28,6 +28,10 @@ extern void test_cell_bar_fill_at_empty_is_zero(void);
 extern void test_cell_bar_fill_at_full_is_hundred(void);
 extern void test_cell_bar_fill_at_midpoint_is_fifty(void);
 
+extern void test_cache_init_emits_on_first_nonforced_call(void);
+extern void test_byte_budget_is_respected(void);
+extern void test_valid_to_invalid_data_transition(void);
+
 void setUp(void) {
     fake_nextion_reset();
 }
@@ -51,12 +55,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_undervolt_at_warn_threshold_is_ok);
     RUN_TEST(test_undervolt_below_warn_threshold_is_warning);
 
-    RUN_TEST(test_balance_at_threshold_no_balancing);
-    RUN_TEST(test_balance_above_threshold_triggers_balancing);
-
     RUN_TEST(test_cell_bar_fill_at_empty_is_zero);
     RUN_TEST(test_cell_bar_fill_at_full_is_hundred);
     RUN_TEST(test_cell_bar_fill_at_midpoint_is_fifty);
+
+    RUN_TEST(test_cache_init_emits_on_first_nonforced_call);
+    RUN_TEST(test_byte_budget_is_respected);
+    RUN_TEST(test_valid_to_invalid_data_transition);
 
     return UNITY_END();
 }

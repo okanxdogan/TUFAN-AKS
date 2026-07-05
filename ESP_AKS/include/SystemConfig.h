@@ -17,16 +17,16 @@
 
 // Lithium Balance c-BMS — 29-bit Extended ID, Big Endian
 // Gerçek CAN sniffer loglarından doğrulanmış ID'ler.
-// SADECE 0xE000 byte[2:3] = packV alanı reverse-engineer ile çözüldü.
-// Diğer ID'lerin alan anlamları henüz DOĞRULANMADI.
-#define CAN_ID_LB_BMS_E000 0x0000E000  // Pack voltage (ÇÖZÜLDÜ: byte[2:3] = packV deciV)
-#define CAN_ID_LB_BMS_E001 0x0000E001  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E002 0x0000E002  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E003 0x0000E003  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E004 0x0000E004  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E005 0x0000E005  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E032 0x0000E032  // TODO: alan anlamı doğrulanmadı
-#define CAN_ID_LB_BMS_E033 0x0000E033  // TODO: alan anlamı doğrulanmadı
+// 0xE000 ve 0xE001 tamamen çözülüp doğrulandı.
+// E002-E033 arası (bireysel hücre verileri) henüz DOĞRULANMADI.
+#define CAN_ID_LB_BMS_E000 0x0000E000  // ÇÖZÜLDÜ: PackV, Current, SoC
+#define CAN_ID_LB_BMS_E001 0x0000E001  // ÇÖZÜLDÜ: Temp 1 & Temp 2
+#define CAN_ID_LB_BMS_E002 0x0000E002  // TODO: bireysel hücre voltajları (açık iş)
+#define CAN_ID_LB_BMS_E003 0x0000E003  // TODO: bireysel hücre voltajları (açık iş)
+#define CAN_ID_LB_BMS_E004 0x0000E004  // TODO: bireysel hücre voltajları (açık iş)
+#define CAN_ID_LB_BMS_E005 0x0000E005  // TODO: bireysel hücre voltajları (açık iş)
+#define CAN_ID_LB_BMS_E032 0x0000E032  // TODO: bireysel hücre sıcaklıkları (açık iş)
+#define CAN_ID_LB_BMS_E033 0x0000E033  // TODO: bireysel hücre sıcaklıkları (açık iş)
 
 // Charger komut frame'i — 29-bit Extended ID (J1939: PGN 0x1806, DA 0xE5,
 // SA 0xF4). BMS -> Charger yönünde; byte[0:1] = şarj voltaj hedefi ×0.1 V,
@@ -210,7 +210,7 @@
 // işaretler; CAN_Event/FAULT ÜRETMEZ (krş. motor timeout -> FAULT).
 #define CAN_CHARGER_TIMEOUT_MS      2000
 
-// UKS'in aralik-disi alan sanitizasyonu (CanManager::getTelemetryData)
+// UKS'in aralik-disi alan sanitizasyonu (yalnizca vTask_LoRa_UKS icindeki uplink asamasinda yapilir)
 // tetiklendiginde ayni durum tekrar tekrar olussa bile log spam'ini
 // onlemek icin alan basina en fazla 1 WARN / bu sure.
 #define TEL_SANITIZE_WARN_THROTTLE_MS 10000
