@@ -321,3 +321,48 @@ def test_lb_bms_field_coverage_is_tracked(aks_root):
         f"Hala stub olan LB BMS ID'leri: {still_stubbed} — hedef: tumu "
         "gercek parse kazanmis olmali (bos liste)."
     )
+
+
+# ===========================================================================
+# 3.7 — aks_loop_sim.py outage sim post_live_ms bekcisi
+# ===========================================================================
+
+
+def test_aks_loop_sim_post_live_ms_is_derived_from_contract(aks_root):
+    """417a665, REPLAY_BURST_PER_TICK'i 3'ten 1'e dusurdukten sonra
+    aks_loop_sim.run_outage_simulation'in sabit post_live_ms=6000 varsayilani
+    bayatlamis, 60 paketlik buffer'in yarisi replay edilmeden kalmisti (bkz.
+    test_outage_simulation.py'nin FAIL etmesi). Duzeltme: post_live_ms=None
+    varsayilan olsun, deger contract sabitlerinden turetilsin. Bu bekci,
+    fonksiyonun tekrar sabit bir sayiya donmedigini kontrol eder — aksi
+    halde REPLAY_BURST_PER_TICK bir daha degisirse ayni sozlesme kaymasi
+    sessizce geri gelir."""
+    src = strip_py_comments(read(aks_root / "tools/e2e/aks_loop_sim.py"))
+
+    assert re.search(r"post_live_ms\s*:\s*int\s*\|\s*None\s*=\s*None", src), (
+        "run_outage_simulation'in post_live_ms parametresi artik "
+        "'int | None = None' imzasini tasimiyor gorunuyor (sabit bir sayiya "
+        "geri donmus olabilir) — bu, REPLAY_BURST_PER_TICK degistiginde "
+        "post_live_ms'in yeniden bayatlayip 417a665'teki gibi buffer'in "
+        "yarisinin sessizce replay edilmeden kalmasina karsi korur; eger "
+        "parametre bilincli olarak yeniden adlandirildiysa/imzasi degistiyse "
+        "bu regex'i de AYNI COMMIT'TE yeni imzaya gore guncelleyin"
+    )
+    assert re.search(r"post_live_ms\s+is\s+None", src), (
+        "post_live_ms icin 'None ise dinamik hesapla' dali bulunamadi — "
+        "bu dal olmadan fonksiyon cagirani post_live_ms'i hep sabit/varsayilan "
+        "degerle calistirir ve REPLAY_BURST_PER_TICK degistiginde outage "
+        "testi sessizce yetersiz sureyle FAIL eder (417a665 kaymasi); eger "
+        "hesaplama farkli bir kosul ifadesiyle (orn. 'if not post_live_ms') "
+        "yeniden yazildiysa bu regex'i yeni ifadeye gore guncelleyin"
+    )
+    assert "contract.OFFLINE_SAMPLE_PERIOD_MS" in src and "contract.REPLAY_BURST_PER_TICK" in src, (
+        "post_live_ms hesaplamasi artik contract.OFFLINE_SAMPLE_PERIOD_MS / "
+        "contract.REPLAY_BURST_PER_TICK sabitlerine dayanmiyor gorunuyor — bu "
+        "sabitler yerine hard-code sayilar kullanilirsa REPLAY_BURST_PER_TICK "
+        "gelecekte tekrar degistiginde post_live_ms otomatik uyum saglamaz ve "
+        "417a665'teki sozlesme kaymasi baska bir sekilde geri gelir; eger "
+        "hesaplama mesru bir sekilde contract'tan farkli/ek sabitler "
+        "kullanacak sekilde genisletildiyse bu test'i de o sabitleri "
+        "kontrol edecek sekilde guncelleyin"
+    )
