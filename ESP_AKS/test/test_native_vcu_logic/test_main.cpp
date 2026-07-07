@@ -86,6 +86,13 @@ extern void test_idle_with_motor_timeout_stays_idle(void);
 extern void test_emergency_stop_opens_contactors_after_delay(void);
 extern void test_idle_with_unverified_bms_system_state_stays_idle(void);
 
+// Faz 2 — G3 actuator fault entegrasyonu
+extern void test_run_calls_verifyIfDue_each_tick(void);
+extern void test_idle_start_rejected_when_actuator_fault(void);
+extern void test_ready_to_fault_on_actuator_fault(void);
+extern void test_drive_to_fault_on_actuator_fault(void);
+extern void test_reset_from_fault_clears_actuator_fault(void);
+
 // Faz 0 sanity
 static void test_smoke_arithmetic(void) {
     TEST_ASSERT_EQUAL_INT(2, 1 + 1);
@@ -179,6 +186,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_idle_with_motor_timeout_stays_idle);
     RUN_TEST(test_emergency_stop_opens_contactors_after_delay);
     RUN_TEST(test_idle_with_unverified_bms_system_state_stays_idle);
+
+    RUN_TEST(test_run_calls_verifyIfDue_each_tick);
+    RUN_TEST(test_idle_start_rejected_when_actuator_fault);
+    RUN_TEST(test_ready_to_fault_on_actuator_fault);
+    RUN_TEST(test_drive_to_fault_on_actuator_fault);
+    RUN_TEST(test_reset_from_fault_clears_actuator_fault);
 
     return UNITY_END();
 }

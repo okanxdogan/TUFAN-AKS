@@ -350,3 +350,83 @@ void test_fault_latches_contactors_off_once_and_reasserts(void) {
     TEST_ASSERT_EQUAL_UINT(2, g_fake_relay_allOff_count);
     TEST_ASSERT_EQUAL_UINT(1, g_fake_relay_allOff_silent_count);
 }
+
+// ===========================================================================
+// G3 — Actuator (röle sürücüsü) fault durum makinesi entegrasyonu.
+// RelayManager kalıcı atomic bir bayrak tutar; VcuLogic her tick okur.
+// ===========================================================================
+
+// run() her tick RelayManager::verifyIfDue çağırmalı (periyodik doğrulama).
+void test_run_calls_verifyIfDue_each_tick(void) {
+    primeIdle();
+    unsigned before = g_fake_relay_verifyIfDue_count;
+    VcuLogic::run();
+    VcuLogic::run();
+    TEST_ASSERT_EQUAL_UINT(before + 2, g_fake_relay_verifyIfDue_count);
+}
+
+// Actuator fault aktifken START gelirse READY'ye GEÇİLMEZ (guard).
+void test_idle_start_rejected_when_actuator_fault(void) {
+    primeIdle();
+    g_fake_relay_actuatorFault = true;  // röle geri-okuma uyuşmazlığı enjekte et
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(0, g_fake_relay_allOn_count);
+}
+
+// READY'deyken actuator fault gelirse mevcut fault yoluna (FAULT) girer.
+void test_ready_to_fault_on_actuator_fault(void) {
+    primeIdle();
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+
+    g_fake_relay_actuatorFault = true;
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+}
+
+// DRIVE'dayken actuator fault gelirse de FAULT'a girer.
+void test_drive_to_fault_on_actuator_fault(void) {
+    primeIdle();
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+    VcuLogic::postEvent(VcuEvent::DRIVE_ENABLE);
+    VcuLogic::run();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::DRIVE),
+                          static_cast<int>(VcuLogic::getState()));
+
+    g_fake_relay_actuatorFault = true;
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+}
+
+// FAULT'tan RESET, RelayManager::clearActuatorFault'u çağırmalı.
+void test_reset_from_fault_clears_actuator_fault(void) {
+    primeIdle();
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();  // READY
+    g_fake_relay_actuatorFault = true;
+    VcuLogic::run();  // → FAULT
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+
+    unsigned clearsBefore = g_fake_relay_clearFault_count;
+    VcuLogic::setTelemetryData(makeTelemetryDataValid());  // interlock temiz
+    VcuLogic::postEvent(VcuEvent::RESET);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(clearsBefore + 1, g_fake_relay_clearFault_count);
+    TEST_ASSERT_FALSE(g_fake_relay_actuatorFault);
+}

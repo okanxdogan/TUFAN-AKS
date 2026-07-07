@@ -106,18 +106,38 @@
 // physical load assignment for each channel still needs hardware validation.
 // Keep this table synchronized with the wiring document before replacing the
 // placeholder descriptions below.
-#define RELAY_CH_POS_0 0  // Positive contactor output 0 (physical load TBD)
-#define RELAY_CH_POS_1 1  // Positive contactor output 1 (physical load TBD)
-#define RELAY_CH_POS_2 2  // Positive contactor output 2 (physical load TBD)
-#define RELAY_CH_POS_3 3  // Positive contactor output 3 (physical load TBD)
-#define RELAY_CH_POS_4 4  // Positive contactor output 4 (physical load TBD)
-#define RELAY_CH_POS_5 5  // Positive contactor output 5 (physical load TBD)
-#define RELAY_CH_POS_6 6  // Positive contactor output 6 (physical load TBD)
-#define RELAY_CH_POS_7 7  // Positive contactor output 7 (physical load TBD)
-#define RELAY_CH_POS_8 8  // Positive contactor output 8 (physical load TBD)
-#define RELAY_CH_POS_9 9  // Positive contactor output 9 (physical load TBD)
+//
+// Kanal rol sözlüğü (her kanalın FİZİKSEL işlevi; donanım ekibi harness'i
+// netleştirince "role:" etiketleri kesinleştirilecek):
+//   MAIN_POSITIVE — ana pozitif kontaktör (HV+ bara)
+//   MAIN_NEGATIVE — ana negatif kontaktör (HV- bara)
+//   AUX           — yardımcı yük/röle (fan, pompa, ikaz vb.)
+// NOT: Bu projede PRECHARGE devresi YOKTUR — precharge rolü TANIMLANMAZ.
+// Aşağıdaki "role:" değerleri mevcut "positive contactor bank" niyetine göre
+// PROVİZYONEL MAIN_POSITIVE'dir; fiziksel yük "TBD" olduğundan donanım ekibiyle
+// netleşince güncellenecektir.
+#define RELAY_CH_POS_0 0  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_1 1  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_2 2  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_3 3  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_4 4  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_5 5  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_6 6  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_7 7  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_8 8  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_9 9  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
 
 #define RELAY_TOTAL_CHANNELS 10
+
+// --- MCP23S17 Çıkış Doğrulama (Actuator Verify) Periyodu ---
+// VCU task'i 20 ms'de bir (50 Hz) döner; OLAT/IODIR geri-okuma doğrulamasını
+// HER tick yapmak SPI bara yükünü gereksiz artırır (tick başına 4 register
+// read). 100 ms (10 Hz) periyot, MCP23S17 brown-out/reset ile default'a
+// (tüm pinler input → röle sürücüleri floating) dönmesini kontaktör/insan
+// zaman ölçeğine göre yeterince hızlı yakalar; yazma noktaları (allOn/allOff/
+// setRelay/begin) zaten HEMEN doğrulandığından bu periyodik tarama yalnızca
+// yazma OLMADAN oluşan sessiz reset'leri yakalamak içindir.
+#define RELAY_VERIFY_PERIOD_MS 100U
 
 // --- UKS LoRa Heartbeat Byte ---
 // 9.2.a: RF hatti tek yonlu telemetri + heartbeat'tir; UKS->AKS komut
@@ -165,11 +185,13 @@
 // brake input model is finalized. READY -> DRIVE enable is now command-driven,
 // but propulsion stays inhibited until the torque mapping rules are defined.
 //
-// Contactor opening is still immediate in FAULT / EMERGENCY_STOP. The future
-// safe shutdown sequence should coordinate:
-// 1. Zero torque request
-// 2. Short hold time for motor torque decay
-// 3. Contactor opening
+// E-STOP / FAULT güvenli kapanış sırası (VcuLogic handleEmergencyStop/
+// handleFault) ARTIK kurulu: 1) sendTorqueCommand(0) 2) VCU_CONTACTOR_OPEN_
+// DELAY_MS bekle 3) kontaktörleri aç. MOTOR_DRIVER_PRESENT=0 iken (1) gerçek
+// frame göndermez (bkz. CanManager::sendTorqueCommand) — bkz. G2 riski,
+// Documents/MOTOR_ENTEGRASYON_NOTU.md.
+// 20 ms sembolik; motor sürücüsü entegrasyonunda gerçek tork sönüm süresine
+// göre kalibre edilecek (motor RPM/akım düşüşü doğrulanmadan sahaya çıkma).
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---

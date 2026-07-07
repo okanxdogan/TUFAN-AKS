@@ -76,6 +76,8 @@ Integration notes:
 
 All ten relay channels are currently treated as positive contactor outputs. The software channel numbers are fixed, but the final harness-level physical assignments still need to be validated against the wiring package. Until that validation is complete, `allOn()` and `allOff()` should be treated as bank-wide operations on the positive contactor group, not as independently named vehicle loads.
 
+**Bench'te yapılacaklar (HIL — kapsam dışı, native testlerle kanıtlanamaz):** G3 actuator geri-okuma doğrulaması (`RelayManager::verifyOutputs`, OLAT/IODIR readback + re-init/re-assert + actuator-fault) gerçek MCP23S17 ile bench'te doğrulanmalı: (1) çalışırken MCP23S17 gücünü kısa süre keserek brown-out reset tetikle, IODIR'in 0xFF'e döndüğünü ve VcuLogic'in FAULT'a geçtiğini osiloskopla/röle sesiyle teyit et; (2) MISO hattını fiziksel olarak ayırarak readback hatasında güvenli tarafa (kontaktör açık) düşüldüğünü doğrula.
+
 ## Contributors
 
 Based on current git history, the repository contributors are:

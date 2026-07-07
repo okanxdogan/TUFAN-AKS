@@ -49,25 +49,39 @@ bool CanManager::begin() {
     return true;
 }
 
-/* bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
+// Motor sürücüsü torque komutu. Motor sürücüsü henüz araca entegre DEĞİL
+// (MOTOR_DRIVER_PRESENT=0): bu fazda GERÇEK FRAME GÖNDERİLMEZ. E-STOP/FAULT
+// güvenli kapanış sırası (VcuLogic) bu fonksiyonu torque(0) ile çağırır;
+// bayrak 0 iken yalnızca bir kez uyarı loglanır (E-STOP yolunda spam yok) ve
+// false döner (frame üretilmedi). Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md.
+bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
     if (!isInitialized)
         return false;
 
-    twai_message_t msg = {};
-    msg.identifier = CAN_ID_TORQUE_CMD;
-    msg.data_length_code = 2;
-    msg.data[0] = static_cast<uint8_t>(torqueValue >> 8);
-    msg.data[1] = static_cast<uint8_t>(torqueValue & 0xFF);
-    msg.flags = TWAI_MSG_FLAG_NONE;
-
-    esp_err_t err = twai_transmit(&msg, pdMS_TO_TICKS(10));
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Torque TX failed: %s", esp_err_to_name(err));
-        return false;
+#if MOTOR_DRIVER_PRESENT
+    // TODO(motor entegrasyonu): GERÇEK torque frame'i burada kurulacak.
+    // CAN ID ve frame formatı motor sürücü spec'i gelince tanımlanacak
+    // (UYDURMA YOK). Fonksiyon imzası, çağrı noktaları ve E-STOP/FAULT
+    // sıralaması ŞİMDİ hazır; yalnızca frame içeriği ve twai_transmit çağrısı
+    // eksik:
+    //   twai_message_t msg = {};
+    //   msg.identifier = CAN_ID_TORQUE_CMD;              // ID doğrulanacak
+    //   msg.data_length_code = /* spec */;               // format doğrulanacak
+    //   ...
+    //   return twai_transmit(&msg, pdMS_TO_TICKS(10)) == ESP_OK;
+    (void)torqueValue;
+    ESP_LOGW(TAG, "sendTorqueCommand: MOTOR_DRIVER_PRESENT=1 ama frame TODO");
+    return false;
+#else
+    (void)torqueValue;
+    if (!CAN_torqueSkipLogged) {
+        ESP_LOGW(TAG,
+                 "torque cmd atlandi (motor surucusu yok — MOTOR_DRIVER_PRESENT=0)");
+        CAN_torqueSkipLogged = true;
     }
-    return true;
+    return false;  // frame ÜRETİLMEDİ
+#endif
 }
-*/
 
 void CanManager::processRxMessages() {
     if (!isInitialized)

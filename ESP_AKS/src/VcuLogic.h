@@ -136,6 +136,16 @@ void postEvent(VcuEvent event);
 VcuState getState();
 void setTelemetryData(const TelemetryData& TEL_data);
 
+// Torque komut yolu (motor sürücüsü entegrasyon iskeleti). E-STOP/FAULT
+// güvenli kapanış sırasında VcuLogic torque(0) ister; bu isteği donanıma
+// (CanManager::sendTorqueCommand) yönlendiren sink'i main.cpp bağlar.
+// VcuLogic, CanManager'a doğrudan bağımlı olmasın diye (native testler
+// CanManager'ı linklemez) function-pointer hook kullanılır. Sink bağlı
+// değilse istek sessizce yok sayılır. Native testler buraya bir spy takıp
+// çağrı sırasını doğrular.
+using TorqueSink = void (*)(uint16_t torque);
+void setTorqueSink(TorqueSink sink);
+
 #ifdef VCU_LOGIC_TESTABLE
 // Yalnız native test build'inde aktif. Tüm modül-içi state'i (durum, timer,
 // son telemetri, queue) sıfırlar; setUp() içinde çağrılarak testler arası

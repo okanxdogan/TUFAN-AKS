@@ -8,11 +8,23 @@ unsigned g_fake_relay_allOff_count = 0;
 unsigned g_fake_relay_allOff_silent_count = 0;
 unsigned g_fake_relay_setRelay_count = 0;
 
+bool     g_fake_relay_actuatorFault = false;
+unsigned g_fake_relay_clearFault_count = 0;
+unsigned g_fake_relay_verifyIfDue_count = 0;
+
+unsigned g_fake_call_seq = 0;
+unsigned g_fake_relay_allOff_firstSeq = 0;
+
 void fake_relay_reset(void) {
     g_fake_relay_allOn_count = 0;
     g_fake_relay_allOff_count = 0;
     g_fake_relay_allOff_silent_count = 0;
     g_fake_relay_setRelay_count = 0;
+    g_fake_relay_actuatorFault = false;
+    g_fake_relay_clearFault_count = 0;
+    g_fake_relay_verifyIfDue_count = 0;
+    g_fake_call_seq = 0;
+    g_fake_relay_allOff_firstSeq = 0;
 }
 
 RelayManager& RelayManager::instance() {
@@ -44,6 +56,8 @@ void RelayManager::allOn() {
 void RelayManager::allOff(bool silent) {
     s_relayState = 0;
     ++g_fake_relay_allOff_count;
+    if (g_fake_relay_allOff_firstSeq == 0)
+        g_fake_relay_allOff_firstSeq = ++g_fake_call_seq;  // G2: sıra kaydı
     if (silent) {
         ++g_fake_relay_allOff_silent_count;
     }
@@ -59,8 +73,28 @@ void RelayManager::writeRegister(uint8_t /*reg*/, uint8_t /*value*/) {
     // no-op
 }
 
+// --- G3: geri-okuma / actuator fault yolu (fake) ---
+// Gerçek SPI geri-okuma yok; fault durumu testler tarafından
+// g_fake_relay_actuatorFault ile enjekte edilir. VcuLogic bunları her tick
+// okur (verifyIfDue + hasActuatorFault).
+void RelayManager::verifyIfDue(uint32_t /*nowMs*/) {
+    ++g_fake_relay_verifyIfDue_count;
+}
+
+bool RelayManager::hasActuatorFault() const {
+    return g_fake_relay_actuatorFault;
+}
+
+void RelayManager::clearActuatorFault() {
+    g_fake_relay_actuatorFault = false;
+    ++g_fake_relay_clearFault_count;
+}
+
 void RelayManager::resetForTest() {
     s_relayState = 0;
     s_initialized = false;
     s_spiDev = nullptr;
+    s_actuatorFault.store(false, std::memory_order_relaxed);
+    s_lastVerifyMs = 0;
+    s_verifyStarted = false;
 }

@@ -26,7 +26,9 @@ class CanManager {
     bool begin();
     void setEventCallback(CAN_EventCallback CAN_callback, void* CAN_context);
 
-    // Send torque command to motor driver (CAN ID: 0x100)
+    // Motor sürücüsü torque komutu. MOTOR_DRIVER_PRESENT=0 iken GERÇEK FRAME
+    // GÖNDERMEZ (bir kez uyarı loglar, false döner); =1 iken frame gönderimi
+    // TODO. E-STOP/FAULT güvenli kapanış sırasında torque(0) ile çağrılır.
     bool sendTorqueCommand(uint16_t torqueValue);
 
     // Dispatch one received message — call this in the CAN task loop
@@ -74,6 +76,9 @@ class CanManager {
 
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
+
+    // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
+    bool CAN_torqueSkipLogged = false;
 
     // BMS freshness tracking — E000 (packV, doğrulanmış veri kaynağı)
     TickType_t CAN_lastBmsE000Tick = 0;

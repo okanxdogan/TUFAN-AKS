@@ -96,6 +96,19 @@ static void CAN_handleEvent(CAN_Event CAN_event, void* CAN_context) {
   }
 }
 
+// VcuLogic torque sink → CanManager köprüsü. `can` CAN task'ine ait olduğundan
+// (task-yerel), sink çağrıldığında geçerli örneğe bu file-scope pointer ile
+// erişilir; CAN task başlamadan/örnek kurulmadan çağrılırsa güvenle atlanır.
+// G2 iskeleti: MOTOR_DRIVER_PRESENT=0 iken sendTorqueCommand gerçek frame
+// üretmez. TODO(motor entegrasyonu): bayrak 1 olduğunda torque'un CAN task'i
+// DIŞINDAN (VCU task'inden) gönderilmesinin thread-safety'si ele alınmalı
+// (bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md).
+static CanManager* s_canForTorque = nullptr;
+static void CAN_torqueSink(uint16_t torque) {
+  if (s_canForTorque != nullptr)
+    s_canForTorque->sendTorqueCommand(torque);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: log stack high-water-mark periodically
 // ---------------------------------------------------------------------------
@@ -116,6 +129,7 @@ void vTask_CAN_Comm(void *pvParameters) {
 
   CanManager can(CAN_TX_PIN, CAN_RX_PIN);
   can.setEventCallback(CAN_handleEvent, nullptr);
+  s_canForTorque = &can;  // VcuLogic torque sink'inin köprüleyeceği örnek
 
   if (!can.begin()) {
     ESP_LOGE(TAG, "Failed to initialize CAN bus");
@@ -124,10 +138,13 @@ void vTask_CAN_Comm(void *pvParameters) {
     return;
   }
 
-  // Phase 1.2 placeholder:
-  // keep propulsion torque at zero until the pedal / brake conversion model
-  // is defined and validated with vehicle controls.
-  //uint16_t CAN_torqueCmd = 0;
+  // G2 GERÇEĞİ: Motor sürücüsü entegre değil (MOTOR_DRIVER_PRESENT=0). Bu
+  // fazda torque komutu GÖNDERİLMİYOR; kontaktörler yük altında açılıyor
+  // OLABİLİR. Saha riski: ark/kontak kaynaması. Entegrasyonda
+  // sendTorqueCommand(0) dizisi (VcuLogic E-STOP/FAULT güvenli kapanış sırası
+  // üzerinden) aktive edilecek. Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md.
+  // NOT: Torque komutu artık bu döngüde DEĞİL, VcuLogic handleEmergencyStop/
+  // handleFault içinden sink hook ile çağrılıyor (doğru güvenlik sırası için).
   uint32_t lastStackLog = 0;
 
   while (true) {
@@ -136,17 +153,7 @@ void vTask_CAN_Comm(void *pvParameters) {
     // 1. Read incoming messages and dispatch them
     can.processRxMessages();
 
-    /* // 2. Send torque command if in DRIVE state
-    if (VcuLogic::getState() == VcuLogic::VcuState::DRIVE) {
-      // TODO: Get actual torque value from control logic
-      can.sendTorqueCommand(CAN_torqueCmd);
-    } else {
-      // Not in drive — send zero torque for safety
-      can.sendTorqueCommand(0);
-    }
-    */
-
-    // 3. Push the latest telemetry snapshot to the shared queue
+    // 2. Push the latest telemetry snapshot to the shared queue
     if (TEL_sensorDataQueue != nullptr) {
       TelemetryData TEL_data = can.getTelemetryData();
       TEL_data.TEL_speedKmhX10  = rpmToSpeedKmhX10(TEL_data.TEL_motorRpm);
@@ -759,6 +766,9 @@ extern "C" void app_main() {
 
   // 2. Initialize VCU state machine (event queue, safety allOff, INIT→IDLE)
   VcuLogic::init();
+  // E-STOP/FAULT güvenli kapanış sırasındaki sıfır-tork isteğini CanManager'a
+  // yönlendir (G2 iskeleti; flag 0 iken gerçek frame üretmez).
+  VcuLogic::setTorqueSink(CAN_torqueSink);
 
   // 3. Create sensor data queue for inter-task communication
   TEL_sensorDataQueue = xQueueCreate(1, sizeof(TelemetryData));

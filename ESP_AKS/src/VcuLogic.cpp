@@ -19,6 +19,10 @@ namespace VcuLogic {
 static std::atomic<VcuState> s_state{VcuState::INIT};
 static QueueHandle_t s_eventQueue = nullptr;
 static uint32_t s_stateTimer = 0;
+// Monotonic uptime (transition'da SIFIRLANMAZ) — RelayManager periyodik
+// actuator verify'ının zamanlaması için (s_stateTimer state geçişinde
+// sıfırlandığından periyot ölçümüne uygun değil).
+static uint32_t s_uptimeMs = 0;
 static TelemetryData s_TEL_latestData = {};
 static bool s_VCU_warningLogged = false;
 static SemaphoreHandle_t s_TEL_dataMutex = nullptr;
@@ -37,10 +41,15 @@ static uint32_t s_lastFaultLogMs = 0;
 static const char* s_lastReadyRejectReason = nullptr;
 static uint32_t s_lastReadyRejectLogMs = 0;
 
+// Torque komut sink'i (main.cpp bağlar). Motor sürücüsü entegrasyon iskeleti;
+// bağlı değilse istek sessizce yok sayılır.
+static TorqueSink s_torqueSink = nullptr;
+
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
 static void transitionTo(VcuState next);
+static void requestZeroTorque();
 static bool pollEvent(VcuEvent& out);
 static bool isResetInterlockSatisfied();
 static bool hasWarningCondition();
@@ -78,6 +87,7 @@ void init() {
 
 void run() {
     s_stateTimer += TASK_PERIOD_MS;
+    s_uptimeMs += TASK_PERIOD_MS;
 
     if (s_eStopPending.exchange(false, std::memory_order_acquire)) {
         if (s_state.load(std::memory_order_relaxed) != VcuState::EMERGENCY_STOP) {
@@ -86,6 +96,26 @@ void run() {
         }
         // Already in EMERGENCY_STOP — clear flag but let run() continue
         // so handleEmergencyStop() keeps executing (timer must not reset).
+    }
+
+    // G3: hafif periyodik actuator (röle çıkışı) doğrulaması. RelayManager
+    // RELAY_VERIFY_PERIOD_MS'den seyrek olmayacak şekilde OLAT/IODIR'i geri
+    // okur; uyuşmazlıkta re-init + re-assert eder ve kalıcı atomic fault
+    // bayrağını set eder.
+    RelayManager::instance().verifyIfDue(s_uptimeMs);
+
+    // Actuator fault kalıcı bayrağını HER tick oku (R1: düşen event tuzağı
+    // yok). HV bus canlıyken (READY/DRIVE) gelen fault, mevcut fault yoluna
+    // (E-STOP dizisi / P3 sıralı kontaktör açma) girer. IDLE'da ise READY
+    // giriş guard'ı ile bloklanır (aşağıda), zorla FAULT'a geçilmez.
+    {
+        VcuState st = s_state.load(std::memory_order_relaxed);
+        if ((st == VcuState::READY || st == VcuState::DRIVE) &&
+            RelayManager::instance().hasActuatorFault()) {
+            ESP_LOGE(TAG, "Actuator fault while HV live — entering FAULT");
+            transitionTo(VcuState::FAULT);
+            return;
+        }
     }
 
     VcuState currentState = s_state.load(std::memory_order_relaxed);
@@ -126,6 +156,9 @@ void run() {
                 ESP_LOGW(TAG, "RESET rejected: safety interlock still active");
                 return;
             }
+            // Actuator fault'u temizle; donanım hâlâ bozuksa bir sonraki
+            // periyodik verify yeniden latch'ler ve READY tekrar bloklanır.
+            RelayManager::instance().clearActuatorFault();
             transitionTo(VcuState::IDLE);
             return;
         }
@@ -136,11 +169,19 @@ void run() {
                 if (event == VcuEvent::START_REQUEST) {
                     // READY 10 kontaktörü kapatıp HV bus'ı enerjilendirir;
                     // batarya hakkında doğrulanmış/taze veri yoksa geçme.
+                    // Actuator fault guard'ı isReadyEntryPermitted'ın DIŞINDA
+                    // tutuldu: o predicate saf/donanımsız (yalnız TelemetryData);
+                    // röle donanım sağlığı ayrı bir global okuma olduğundan
+                    // burada ayrı guard olarak kontrol edilir.
                     TelemetryData VCU_snap = getTelemetrySnapshot();
-                    if (isReadyEntryPermitted(VCU_snap)) {
+                    bool actuatorFault =
+                        RelayManager::instance().hasActuatorFault();
+                    if (isReadyEntryPermitted(VCU_snap) && !actuatorFault) {
                         transitionTo(VcuState::READY);
                     } else {
-                        const char* reason = readyRejectReason(VCU_snap);
+                        const char* reason =
+                            actuatorFault ? "actuator fault"
+                                          : readyRejectReason(VCU_snap);
                         if (reason != s_lastReadyRejectReason ||
                             s_stateTimer - s_lastReadyRejectLogMs >= 1000) {
                             ESP_LOGW(TAG, "READY reddedildi: %s", reason);
@@ -211,6 +252,10 @@ void setTelemetryData(const TelemetryData& TEL_data) {
     xSemaphoreGive(s_TEL_dataMutex);
 }
 
+void setTorqueSink(TorqueSink sink) {
+    s_torqueSink = sink;
+}
+
 // ---------------------------------------------------------------------------
 // State handlers
 // ---------------------------------------------------------------------------
@@ -230,25 +275,35 @@ static void handleReady() {
 }
 
 static void handleDrive() {
-    // Contactors remain closed during drive
-    // Torque output is still held at zero in the CAN task until the Phase 1.2
-    // input-to-torque model is implemented.
+    // Contactors remain closed during drive.
+    // G2: Motor sürücüsü entegre değil (MOTOR_DRIVER_PRESENT=0) — hiçbir torque
+    // komutu ÜRETİLMİYOR. Propulsion, motor sürücüsü gelip torque haritalama
+    // modeli tanımlanana kadar fiilen devre dışı.
 }
 
 static void handleEmergencyStop() {
+    // G2 GERÇEĞİ: Motor sürücüsü entegre değil (MOTOR_DRIVER_PRESENT=0). Bu
+    // fazda torque komutu gönderilmiyor; kontaktörler yük altında açılıyor
+    // OLABİLİR. Saha riski: ark/kontak kaynaması. Entegrasyonda
+    // sendTorqueCommand(0) dizisi aktive edilecek.
+    //
+    // Güvenli kapanış sırası (flag'ten bağımsız çağrı sırası): (1) t=0'da
+    // sıfır tork iste → (2) VCU_CONTACTOR_OPEN_DELAY_MS bekle → (3) kontaktör aç.
     if (s_stateTimer <= TASK_PERIOD_MS) {
-        ESP_LOGW(TAG, "EMERGENCY STOP: zero torque phase started");
+        requestZeroTorque();  // (1) — flag 0 iken gerçek frame üretmez
+        ESP_LOGW(TAG, "EMERGENCY STOP: sifir-tork istegi (motor surucusu yoksa atlanir)");
     }
 
-    // The CAN task sends zero torque as soon as state != DRIVE.
-    // Hold the contactors closed briefly so the zero-torque command can be
-    // transmitted before opening the positive contactor bank.
+    // (2)+(3): torkun sönmesi için bekle, sonra pozitif kontaktör bankını aç.
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
         if (!s_relaysOpenedInEstop) {
             RelayManager::instance().allOff(false); // First time, log it
             s_relaysOpenedInEstop = true;
         } else if (s_stateTimer - s_lastEstopLogMs >= 1000) {
-            RelayManager::instance().allOff(true); // Silent re-assert for safety
+            // G3: sessiz re-assert artık doğrulama DEĞİL sadece log açısından
+            // sessiz — allOff() içindeki verifyOutputs() geri-okumayı yapar,
+            // uyuşmazsa loglar ve actuator fault'u latch'ler (sürdürür).
+            RelayManager::instance().allOff(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -261,8 +316,15 @@ static void handleEmergencyStop() {
 }
 
 static void handleFault() {
+    // G2 GERÇEĞİ: Motor sürücüsü entegre değil (MOTOR_DRIVER_PRESENT=0). Bu
+    // fazda torque komutu gönderilmiyor; kontaktörler yük altında açılıyor
+    // OLABİLİR. Saha riski: ark/kontak kaynaması. Entegrasyonda
+    // sendTorqueCommand(0) dizisi aktive edilecek.
+    //
+    // Güvenli kapanış sırası: (1) sıfır tork → (2) bekle → (3) kontaktör aç.
     if (s_stateTimer <= TASK_PERIOD_MS) {
-        ESP_LOGW(TAG, "FAULT: zero torque phase started");
+        requestZeroTorque();  // (1) — flag 0 iken gerçek frame üretmez
+        ESP_LOGW(TAG, "FAULT: sifir-tork istegi (motor surucusu yoksa atlanir)");
     }
 
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
@@ -270,7 +332,9 @@ static void handleFault() {
             RelayManager::instance().allOff(false); // First time, log it
             s_relaysOpenedInFault = true;
         } else if (s_stateTimer - s_lastFaultLogMs >= 1000) {
-            RelayManager::instance().allOff(true); // Silent re-assert for safety
+            // G3: allOff() içindeki verifyOutputs() re-assert'i geri-okur;
+            // uyuşmazsa loglar + actuator fault latch'lenir (sürdürülür).
+            RelayManager::instance().allOff(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -283,6 +347,14 @@ static void handleFault() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// P3 güvenli kapanış sırasının 1. adımı: sıfır tork iste. Sink bağlıysa
+// (üretimde CanManager::sendTorqueCommand) çağrılır; MOTOR_DRIVER_PRESENT=0
+// iken orada gerçek frame ÜRETİLMEZ. Sink bağlı değilse istek yok sayılır.
+static void requestZeroTorque() {
+    if (s_torqueSink != nullptr)
+        s_torqueSink(0);
+}
+
 static void transitionTo(VcuState next) {
     VcuState current = s_state.load(std::memory_order_relaxed);
     ESP_LOGI(TAG, "State: %d → %d", static_cast<int>(current),
@@ -354,6 +426,7 @@ static const char* readyRejectReason(const TelemetryData& VCU_data) {
 void resetForTest() {
     s_state.store(VcuState::INIT, std::memory_order_relaxed);
     s_stateTimer = 0;
+    s_uptimeMs = 0;
     s_TEL_latestData = {};
     s_VCU_warningLogged = false;
     s_eStopPending.store(false, std::memory_order_relaxed);
@@ -364,6 +437,7 @@ void resetForTest() {
     s_lastFaultLogMs = 0;
     s_lastReadyRejectReason = nullptr;
     s_lastReadyRejectLogMs = 0;
+    s_torqueSink = nullptr;
 
     // Olay kuyruğunu (queue) boşalt
     if (s_eventQueue != nullptr) {
