@@ -2,7 +2,7 @@
 Python, sanal-saatli simulasyonu.
 
 Bu, AKS firmware kodunun kendisini COPYALAMAZ/CALISTIRMAZ (donanimsiz
-kisitlamasi) — ayni sozlesme davranisini (5 Hz canli TX, kesintide 1 Hz
+kisitlamasi) — ayni sozlesme davranisini (2 Hz canli TX, kesintide 1 Hz
 seyreltilmis ornekleme, link-up sonrasi tik basina <=REPLAY_BURST_PER_TICK
 replay + 1 canli) contract.py sabitleriyle ve OfflineBufferSim ile modelleyip
 her "TX edilen" paket icin GERCEK UKS kabul kurallarindan (contract.
@@ -73,7 +73,7 @@ def run_outage_simulation(
     outage_ms: int = 60000,
     post_live_ms: int | None = None,
 ) -> SimResult:
-    """5 Hz canli -> 60 sn kesinti (1 Hz offline ornekleme) -> link up ->
+    """2 Hz canli -> 60 sn kesinti (1 Hz offline ornekleme) -> link up ->
     tik basina <=REPLAY_BURST_PER_TICK replay + 1 canli TX simulasyonu.
 
     post_live_ms=None birakilirsa, buffer'in tamamen bosalmasina yetecek sure

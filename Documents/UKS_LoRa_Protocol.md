@@ -4,13 +4,17 @@ This document defines the current command and telemetry contract between the UKS
 
 ## Link Assumptions
 
+> **Not (link flapping düzeltmesi):** `LORA_TX_PERIOD_MS` 200'den 500'e
+> (5 Hz → 2 Hz), `LINK_TIMEOUT_MS` ise 3000'den 9000'e çıkarıldı — bkz.
+> `Documents/LoRa_Link_Analysis.md` ve `include/SystemConfig.h`.
+
 - Radio module: E22-400T30D-V2 (SX1268) — pin-compatible successor to the retired E32-433T30D
 - UART mode: transparent mode
 - Selected startup mode: `M0 = 0`, `M1 = 0`
 - UART baud: `9600`
 - Air data rate: `9.6 kbps` (`REG0` bit[2:0] = `100`)
 - Frequency: `433.125 MHz` (channel `23`, `REG2 = 0x17`, base offset `410.125 MHz`)
-- Telemetry transmit period: `200 ms` (`5 Hz`)
+- Telemetry transmit period: `500 ms` (`2 Hz`) — lowered from `200 ms` (`5 Hz`) to fix link flapping: on a single-frequency half-duplex E22 channel, continuous 5 Hz AKS TX left little room for UKS's 1 Hz `0xB0` heartbeat to get through (field logs showed ~5-6 s effective heartbeat interval, shorter than the previous `LINK_TIMEOUT_MS`, causing constant DOWN→UP flapping)
 - No application-layer ACK or retransmission is implemented in AKS at this stage.
 
 Loss handling policy:

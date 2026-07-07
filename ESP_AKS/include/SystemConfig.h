@@ -67,7 +67,14 @@
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
 #define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
-#define LORA_TX_PERIOD_MS 200     // 5 Hz telemetry uplink
+// 2 Hz telemetry uplink (5 Hz'den düşürüldü — saha loglarında tespit edilen
+// link flapping düzeltmesinin parçası). Tek frekanslı yarım-dubleks E22
+// kanalında 5 Hz sürekli AKS TX'i, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
+// girebileceği boşluğu neredeyse hiç bırakmıyordu; heartbeat AKS'e ancak
+// ~5-6 sn'de bir ulaşıyor, LINK_TIMEOUT_MS bu araliktan kisa oldugundan link
+// surekli DOWN->UP flapping yapiyordu. 2 Hz, kanalda heartbeat'in gecebilecegi
+// duzenli bosluklar yaratir.
+#define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
 #define LORA_MODE_NORMAL_M0_LEVEL 0
 #define LORA_MODE_NORMAL_M1_LEVEL 0
@@ -118,7 +125,14 @@
 #define UKS_HEARTBEAT_BYTE     0xB0   // UKS ~1 Hz periyodik heartbeat (stabilizasyon teyidi)
 
 // --- LoRa Link Monitörü ---
-#define LINK_TIMEOUT_MS        3000U  // 3 sn: 1 Hz heartbeat için 3x marj
+// 9 sn: tek frekansli yarim-dubleks E22 kanalinda UKS'in 1 Hz 0xB0
+// heartbeat'i, AKS'in kendi telemetri TX'i ile kanali paylastigindan HER
+// ZAMAN 1 Hz ulasamiyor — saha loglarinda gozlenen fiili heartbeat araligi
+// ~5-6 sn idi (eski LINK_TIMEOUT_MS=3000 bu araliktan kisa oldugu icin link
+// surekli DOWN->UP flapping yapiyordu, bkz. LoRa_Link_Analysis.md). 9 sn,
+// gozlenen ~5-6 sn'lik araliga rahat marj birakir; LORA_TX_PERIOD_MS'in
+// 500'e dusurulmesiyle birlikte heartbeat'in kanala girme sansi da artar.
+#define LINK_TIMEOUT_MS        9000U
 
 // Boot anindan itibaren bu sure icinde HIC heartbeat gelmediyse link DOWN
 // kabul edilir (9.2.e / 9.4.b.vi): arac acildiginda UKS hic yayinda
