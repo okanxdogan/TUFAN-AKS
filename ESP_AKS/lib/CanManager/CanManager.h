@@ -74,6 +74,11 @@ class CanManager {
     bool CAN_hasSeenMotorStatus = false;
     bool CAN_motorTimeoutLogged = false;
 
+    // G9: motor errorFlags debounce sayacı — ardışık hatalı frame sayısı. Temiz
+    // frame gelince sıfırlanır (bkz. MotorFaultDebounce.h). Yalnız handleMotorStatus
+    // yazar/okur (CAN task'ine yerel; ek mutex gerektirmez).
+    uint16_t CAN_motorErrorConsecutive = 0;
+
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
 
@@ -86,10 +91,14 @@ class CanManager {
     // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
     bool CAN_torqueSkipLogged = false;
 
-    // BMS freshness tracking — E000 (packV, doğrulanmış veri kaynağı)
+    // BMS freshness tracking — G12: packV (E000) ve sıcaklık (E001) AYRI
+    // mesaj-ID'leri; freshness ID bazına izlenir. TEL_bmsDataValid /
+    // TEL_bmsTimeoutActive kararı updateBmsValidity'de İKİSİ birleştirilerek
+    // verilir (biri akıp diğeri kesilirse bayat alan maskelenmesin).
     TickType_t CAN_lastBmsE000Tick = 0;
     bool CAN_hasSeen_BmsE000 = false;
-    bool CAN_bmsE000Valid = false;
+    TickType_t CAN_lastBmsE001Tick = 0;
+    bool CAN_hasSeen_BmsE001 = false;
     bool CAN_bmsTimeoutLogged = false;
 
     // Pack voltajı eşik ihlali bayrakları (bit0 = undervoltage,

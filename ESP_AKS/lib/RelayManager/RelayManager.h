@@ -10,6 +10,17 @@
 #define MCP23S17_ADDR 0x40       // SPI opcode, R/W=0 (write)
 #define MCP23S17_ADDR_READ 0x41  // SPI opcode, R/W=1 (read) — G3 geri-okuma yolu
 
+// ---------------------------------------------------------------------------
+// R3 — İş parçacığı (task) güvenliği sözleşmesi:
+//   * s_relayState'e YALNIZCA VCU task'i yazar (setRelay/allOn/allOff üzerinden).
+//     Röle yazımları + SPI transaction'ları zaten VCU tick'inde serileşir, o
+//     yüzden yazma tarafında mutex GEREKMEZ (tek yazar, tek word RMW).
+//   * HMI task'i durumu YALNIZCA okur (getRelayState) ve BAYAT okuma kabul
+//     edilir (bir tick gecikme diagnostikte önemsiz).
+// Okuma tarafını (HMI) yırtılmış okumaya karşı korumak için s_relayState tek
+// word (uint16_t) olduğundan std::atomic yapıldı — mutex'e gerek yok. relaxed
+// order yeterli: bayrak başka veri publish etmiyor, yalnız kendi görünürlüğü.
+// s_actuatorFault de aynı gerekçeyle zaten atomic (VCU/verify yazar, VcuLogic okur).
 class RelayManager {
    public:
     static RelayManager& instance();
@@ -56,7 +67,9 @@ class RelayManager {
     // s_relayState'i re-assert eder. verifyOutputs() uyuşmazlıkta çağırır.
     void reinitAndReassert();
 
-    uint16_t s_relayState = 0;
+    // R3: tek word — HMI okuma tarafı torn-read'e karşı atomic (yukarıdaki
+    // sözleşmeye bakınız). Yalnız VCU task yazar; relaxed order yeterli.
+    std::atomic<uint16_t> s_relayState{0};
     spi_device_handle_t s_spiDev = nullptr;
     bool s_initialized = false;
 

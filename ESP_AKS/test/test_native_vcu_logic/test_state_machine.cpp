@@ -179,6 +179,31 @@ void test_ready_to_fault_on_fault_event(void) {
 }
 
 // ---------------------------------------------------------------------------
+// R1 — FAULT bypass: olay kuyruğu DOLU olsa bile FAULT_DETECTED kaybolmaz.
+// FAULT_DETECTED, E-STOP gibi atomic bir bayrak da set eder; run() her tick
+// (kuyruğa bakmadan, en tepede) bu bayrağı okur. Mevcut E-STOP bypass'ının
+// paralel senaryosu: kuyruğu doldur → fault gönder → bir sonraki tick FAULT.
+// ---------------------------------------------------------------------------
+void test_fault_pending_processed_when_queue_full(void) {
+    primeIdle();
+
+    // Olay kuyruğunu kapasitesine kadar doldur (init xQueueCreate(8)); arada
+    // run() ÇAĞIRMA ki drenaj olmasın. Kuyruk artık TAMAMEN dolu.
+    for (int i = 0; i < 8; i++)
+        VcuLogic::postEvent(VcuEvent::START_REQUEST);
+
+    // FAULT_DETECTED kuyruğu bypass edip atomic bayrağı set eder (E-STOP deseni),
+    // bu yüzden kuyruk dolu olsa bile fault kaybolmaz.
+    VcuLogic::postEvent(VcuEvent::FAULT_DETECTED);
+
+    // Tek tick: bayrak yolu (kuyruk drenajından ÖNCE, en tepede) FAULT'a alır.
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+}
+
+// ---------------------------------------------------------------------------
 // READY/DRIVE'da kritik telemetri otomatik FAULT'a tetikler (run() içinde
 // hasCriticalCondition() kontrolü).
 // ---------------------------------------------------------------------------

@@ -76,6 +76,7 @@ extern void test_idle_to_emergency_stop(void);
 extern void test_drive_to_emergency_stop(void);
 extern void test_idle_to_fault_on_fault_event(void);
 extern void test_ready_to_fault_on_fault_event(void);
+extern void test_fault_pending_processed_when_queue_full(void);
 extern void test_ready_to_fault_on_critical_telemetry(void);
 extern void test_drive_to_fault_on_bms_timeout(void);
 extern void test_fault_to_idle_on_reset_when_clean(void);
@@ -183,6 +184,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_drive_to_emergency_stop);
     RUN_TEST(test_idle_to_fault_on_fault_event);
     RUN_TEST(test_ready_to_fault_on_fault_event);
+    RUN_TEST(test_fault_pending_processed_when_queue_full);
     RUN_TEST(test_ready_to_fault_on_critical_telemetry);
     RUN_TEST(test_drive_to_fault_on_bms_timeout);
     RUN_TEST(test_fault_to_idle_on_reset_when_clean);

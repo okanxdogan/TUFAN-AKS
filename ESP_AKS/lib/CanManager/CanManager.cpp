@@ -1,4 +1,6 @@
 #include "CanManager.h"
+#include "BmsFreshness.h"         // G12: E000+E001 birleşik tazelik (saf)
+#include "MotorFaultDebounce.h"  // G9: motorErrorFaultConfirmed (saf debounce)
 #include "SystemConfig.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -242,25 +244,35 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
         return;
     }
 
-    uint8_t CAN_previousMotorErrorFlags = 0;
+    uint8_t CAN_previousConfirmedFlags = 0;
+    uint8_t CAN_confirmedErrorFlags = 0;
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    CAN_previousMotorErrorFlags = s_motorStatus.errorFlags;
+    // Önceki ONAYLANMIŞ (debounce sonrası) errorFlags — edge-trigger için.
+    CAN_previousConfirmedFlags = s_telemetryData.TEL_motorErrorFlags;
     s_motorStatus = parsed;
     CAN_lastMotorStatusTick = xTaskGetTickCount();
     CAN_hasSeenMotorStatus = true;
     CAN_motorTimeoutLogged = false;
 
+    // G9: geçici (tek/çift frame) errorFlags kontaktör açtırmasın — N ardışık
+    // frame onayı (bkz. MotorFaultDebounce.h + MOTOR_ERROR_DEBOUNCE_FRAMES).
+    // Onaylanana kadar TEL_motorErrorFlags 0 kalır → VcuLogic FAULT'a GEÇMEZ ve
+    // notifyFaultIfNeeded event üretmez; temiz frame gelince sayaç sıfırlanır.
+    const bool CAN_motorFaultConfirmed = motorErrorFaultConfirmed(
+        parsed.errorFlags, CAN_motorErrorConsecutive, MOTOR_ERROR_DEBOUNCE_FRAMES);
+    CAN_confirmedErrorFlags = CAN_motorFaultConfirmed ? parsed.errorFlags : 0;
+
     s_telemetryData.TEL_motorRpm = s_motorStatus.rpm;
    // s_telemetryData.TEL_motorTorqueFeedback = s_motorStatus.torqueFeedback;
-    s_telemetryData.TEL_motorErrorFlags = s_motorStatus.errorFlags;
+    s_telemetryData.TEL_motorErrorFlags = CAN_confirmedErrorFlags;
     s_telemetryData.TEL_motorDataValid = s_motorStatus.isValid;
     s_telemetryData.TEL_motorTimeoutActive = false;
 
     xSemaphoreGive(s_mutex);
 
-    notifyFaultIfNeeded(CAN_previousMotorErrorFlags, s_motorStatus.errorFlags,
+    notifyFaultIfNeeded(CAN_previousConfirmedFlags, CAN_confirmedErrorFlags,
                         "Motor");
 
  //   ESP_LOGD(TAG, "Motor: RPM=%d, Torque=%d", s_motorStatus.rpm,
@@ -310,10 +322,9 @@ void CanManager::handleLbBmsE000(const twai_message_t& msg) {
 
     CAN_lastBmsE000Tick = xTaskGetTickCount();
     CAN_hasSeen_BmsE000 = true;
-    CAN_bmsE000Valid = true;
-    CAN_bmsTimeoutLogged = false;
-    s_telemetryData.TEL_bmsDataValid = CAN_bmsE000Valid;
-    s_telemetryData.TEL_bmsTimeoutActive = false;
+    // G12: TEL_bmsDataValid / TEL_bmsTimeoutActive artık burada TEK BAŞINA
+    // set EDİLMEZ — updateBmsValidity E000 ile E001 tazeliğini BİRLEŞTİRİR
+    // (E000 akarken E001 kesilirse bayat sıcaklık maskelenmesin).
 
     CAN_previousPackFaultFlags = CAN_bmsPackFaultFlags;
     CAN_bmsPackFaultFlags = CAN_newPackFaultFlags;
@@ -357,6 +368,8 @@ void CanManager::handleLbBmsE001(const twai_message_t& msg) {
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     s_telemetryData.TEL_bmsTempHighestC = parsed.TEL_bmsTempHighestC;
     s_telemetryData.TEL_bmsTempLowestC = parsed.TEL_bmsTempLowestC;
+    CAN_lastBmsE001Tick = xTaskGetTickCount();  // G12: E001 freshness izleme
+    CAN_hasSeen_BmsE001 = true;
     xSemaphoreGive(s_mutex);
 
     ESP_LOGD(TAG, "LB-E001: temp1=%d C, temp2=%d C",
@@ -448,38 +461,38 @@ void CanManager::updateBmsValidity() {
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    if (CanParse::isBmsStatusTimedOut(CAN_hasSeen_BmsE000, CAN_bmsE000Valid,
-                                      CAN_nowTick, CAN_lastBmsE000Tick,
-                                      CAN_timeoutTicks)) {
-        CAN_bmsE000Valid = false;
-    }
+    // G12: BMS verisi packV (E000) VE sıcaklık (E001) iki ayrı ID'den beslenir;
+    // biri akıp diğeri kesilirse bayat alan maskelenmesin diye freshness'i ID
+    // bazına birleştir (saf bms_evaluate_freshness). TEL_bmsDataValid ancak İKİSİ
+    // de taze ise true; görülmüş bir ID bayatladıysa TEL_bmsTimeoutActive set
+    // edilir (motor timeout ile aynı yol: VcuLogic hasCriticalCondition() IDLE
+    // dışındaysa FAULT'a geçirir; pre-reception hiç görülmemiş durum tolere
+    // edilir, IDLE->READY zaten isReadyEntryPermitted TEL_bmsDataValid şartıyla
+    // korunur).
+    const BmsFreshnessResult CAN_bmsFresh = bms_evaluate_freshness(
+        CAN_hasSeen_BmsE000, (uint32_t)CAN_lastBmsE000Tick, CAN_hasSeen_BmsE001,
+        (uint32_t)CAN_lastBmsE001Tick, (uint32_t)CAN_nowTick,
+        (uint32_t)CAN_timeoutTicks);
 
-    if (!CAN_bmsE000Valid) {
-        s_telemetryData.TEL_bmsDataValid = false;
-        // KARAR (ekip-karari cozuldu): Post-reception BMS timeout, motor
-        // timeout ile ayni yoldan eskale edilir — TEL_bmsTimeoutActive
-        // set edilir, VcuLogic hasCriticalCondition() IDLE disindaysa
-        // FAULT'a gecirir (allOff). Pre-reception (hic E000 gorulmemis)
-        // durumda bayrak set EDILMEZ ve TEL_bmsDataValid false kalir; arac
-        // BMS'siz baslarken IDLE'da kalir. IDLE->READY gecisi artik
-        // VcuLogic::isReadyEntryPermitted() ile korunuyor (TEL_bmsDataValid
-        // sart), dolayisiyla BMS verisi hic gelmemisken START HV bus'i
-        // enerjilendiremez — bu kontaktor kapama yolu gercekten taze veri gerektirir.
-        if (CAN_hasSeen_BmsE000) {
-            s_telemetryData.TEL_bmsTimeoutActive = true;
-            if (!CAN_bmsTimeoutLogged) {
-                CAN_shouldLogTimeout = true;
-                CAN_bmsTimeoutLogged = true;
-            }
+    s_telemetryData.TEL_bmsDataValid = CAN_bmsFresh.dataValid;
+    s_telemetryData.TEL_bmsTimeoutActive = CAN_bmsFresh.timeoutActive;
+
+    if (CAN_bmsFresh.timeoutActive) {
+        if (!CAN_bmsTimeoutLogged) {
+            CAN_shouldLogTimeout = true;
+            CAN_bmsTimeoutLogged = true;
         }
+    } else {
+        // Yeniden taze (veya hiç bayatlamamış) → sonraki bayatlamada tekrar logla.
+        CAN_bmsTimeoutLogged = false;
     }
 
     xSemaphoreGive(s_mutex);
 
     if (CAN_shouldLogTimeout) {
         ESP_LOGE(TAG,
-                 "BMS status timeout after %d ms — IDLE disinda kritik fault "
-                 "(TEL_bmsTimeoutActive)",
+                 "BMS status timeout after %d ms (E000/E001 freshness) — IDLE "
+                 "disinda kritik fault (TEL_bmsTimeoutActive)",
                  CAN_BMS_STATUS_TIMEOUT_MS);
     }
 }

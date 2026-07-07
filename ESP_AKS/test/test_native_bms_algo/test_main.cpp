@@ -32,6 +32,13 @@ extern void test_cache_init_emits_on_first_nonforced_call(void);
 extern void test_byte_budget_is_respected(void);
 extern void test_valid_to_invalid_data_transition(void);
 
+// G8/M4 — hücre kaynağı doğrulama kapısı (cellDataValid)
+extern void test_unverified_cell_source_returns_no_data(void);
+extern void test_unverified_imbalance_is_not_masked_as_healthy_nor_critical(void);
+extern void test_verified_cell_source_detects_imbalance(void);
+extern void test_cell_data_valid_defaults_true(void);
+extern void test_unverified_pipeline_emits_sentinels_and_no_data_warn(void);
+
 void setUp(void) {
     fake_nextion_reset();
 }
@@ -62,6 +69,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_cache_init_emits_on_first_nonforced_call);
     RUN_TEST(test_byte_budget_is_respected);
     RUN_TEST(test_valid_to_invalid_data_transition);
+
+    RUN_TEST(test_unverified_cell_source_returns_no_data);
+    RUN_TEST(test_unverified_imbalance_is_not_masked_as_healthy_nor_critical);
+    RUN_TEST(test_verified_cell_source_detects_imbalance);
+    RUN_TEST(test_cell_data_valid_defaults_true);
+    RUN_TEST(test_unverified_pipeline_emits_sentinels_and_no_data_warn);
 
     return UNITY_END();
 }

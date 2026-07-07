@@ -91,6 +91,12 @@
 // duzenli bosluklar yaratir.
 #define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
+
+// G10: Serileşmiş telemetri frame'inin (CSV "TEL,...\r\n", bkz. Telemetry.cpp
+// sendStatus) KÖTÜ-DURUM bayt boyutu. Buffer 192 B; alanların maksimum basamak
+// genişliğiyle (10 haneli seq/ts, 11 haneli current, vb.) teorik tavan ~112 B —
+// güvenli tarafta 120 alınır. Link bütçesi static_assert'ı bunu kullanır.
+#define LORA_TEL_FRAME_MAX_BYTES 120
 #define LORA_MODE_NORMAL_M0_LEVEL 0
 #define LORA_MODE_NORMAL_M1_LEVEL 0
 // E22 config modu: M0=0, M1=1 (E32'nin M0=1,M1=1 config modundan FARKLI —
@@ -187,13 +193,64 @@
 // (1 canli + en fazla bu kadar replay / tik) buffer bosaltilir (S1).
 #define REPLAY_BURST_PER_TICK  1
 
+// --- G10: LoRa Link Bütçesi (frame boyutu × oran ≤ UART kapasitesi) ---
+// Tek TX tikinde (her LORA_TX_PERIOD_MS) en fazla (1 canlı + REPLAY_BURST_PER_TICK
+// replay) frame gönderilir. TEPE bayt/sn:
+//     tepe = (1 + REPLAY_BURST_PER_TICK) × LORA_TEL_FRAME_MAX_BYTES × 1000
+//            / LORA_TX_PERIOD_MS
+// UART hattı 8N1 → 10 bit/byte → ham kapasite = LORA_UART_BAUD / 10 [B/s].
+// Heartbeat'in kanala girebilmesi + jitter için %20 EMNİYET PAYI → × 0.8.
+//     KURAL:  tepe ≤ (LORA_UART_BAUD / 10) × 0.8
+// Frame boyutu ve baud UKS sözleşmesidir — DEĞİŞTİRİLEMEZ; bütçe yalnız
+// LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
+// (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
+// (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
+//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir.)
+#ifdef __cplusplus
+static_assert(
+    (1u + (unsigned)REPLAY_BURST_PER_TICK) * (unsigned)LORA_TEL_FRAME_MAX_BYTES *
+            1000u / (unsigned)LORA_TX_PERIOD_MS
+        <= (unsigned)LORA_UART_BAUD * 8u / 100u,  // = baud/10 × 0.8
+    "G10: LoRa link butcesi asildi — LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK / "
+    "LORA_TEL_FRAME_MAX_BYTES uclusu UART kapasitesini (baud/10 x 0.8) asiyor. "
+    "Frame boyutu/baud DEGISTIRME (UKS sozlesmesi); periyodu artir veya replay "
+    "oranini dusur.");
+#endif
+
+// --- G11: LoRa UART init retry emniyeti ---
+// uart_driver_install bu kadar denemede kurulamazsa retry döngüsü SONSUZ
+// beklemez; telemetri "devre dışı" moduna geçer (araç durmaz — bkz. main.cpp
+// EspLoraHal::begin / vTask_LoRa_UKS + lib/LoraLink/UartInitRetry.h).
+#define LORA_UART_MAX_INIT_ATTEMPTS 5
+
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
+
+// --- FreeRTOS Task Öncelikleri (M6) ---
+// Yüksek sayı = yüksek öncelik. GÜVENLİK SIRALAMASI: VCU (durum makinesi/
+// güvenlik) > CAN (güvenlik-kritik alım: BMS/motor freshness, kontaktör) >
+// LoRa (yalnızca telemetri) > HMI (ekran). Telemetri (LoRa) güvenlik-kritik
+// CAN alımını ASLA preempt etmemeli — bu yüzden CAN > LoRa.
+// GERİ ALMA: LoRa öncelik düşüşü heartbeat zamanlamasını bozarsa (kaçırma),
+// TASK_PRIORITY_LORA'yı CAN'in ÜSTÜNE çıkarmak yerine önce LoRa periyodunu/
+// stack'ini gözden geçir; sabitler burada olduğundan tek satırda geri alınır.
+#define TASK_PRIORITY_VCU  10  // en yüksek — güvenlik durum makinesi
+#define TASK_PRIORITY_CAN   8  // güvenlik-kritik CAN alımı (telemetriden yüksek)
+#define TASK_PRIORITY_LORA  5  // telemetri uplink (CAN'in altında)
+#define TASK_PRIORITY_HMI   2  // ekran güncelleme (en düşük)
 
 // --- Motor Sürücüsü Entegrasyon Bayrağı ---
 #ifndef MOTOR_DRIVER_PRESENT
 #define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
 #endif
+
+// --- Motor Error-Flag Debounce (G9) ---
+// Motor errorFlags → FAULT yolu, geçici/tek-seferlik hata bitine (ör. CAN CRC
+// bit hatası) süratle kontaktör açtırmasın diye N ARDIŞIK frame onayı ister.
+// Sayaç, temiz (errorFlags==0) frame gelince sıfırlanır. 2-3 ardışık frame
+// önerilir (parazit filtreleme ile gerçek fault gecikmesi arası denge).
+// Bkz. lib/CanManager/MotorFaultDebounce.h (saf, bayraktan bağımsız).
+#define MOTOR_ERROR_DEBOUNCE_FRAMES 3
 
 // --- Phase 1 Planning Notes ---
 // Torque command generation is intentionally held at zero until the pedal /

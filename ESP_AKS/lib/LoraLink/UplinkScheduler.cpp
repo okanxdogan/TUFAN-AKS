@@ -13,7 +13,7 @@ UplinkScheduler::UplinkScheduler(uint32_t linkTimeoutMs, uint32_t bootGraceMs,
 UplinkScheduler::RxResult UplinkScheduler::onRxByte(uint8_t rxByte,
                                                     uint64_t nowMs) {
     if (lora_classify_rx_byte(rxByte) == LoraRxByteKind::HEARTBEAT) {
-        m_lastHeartbeatMs = nowMs;
+        m_lastHeartbeatMs.store(nowMs, std::memory_order_relaxed);
         return RxResult::HEARTBEAT;
     }
     // Bilinmeyen byte — sayaç her zaman artar, throttled WARN kararı döner.
@@ -28,22 +28,25 @@ UplinkScheduler::RxResult UplinkScheduler::onRxByte(uint8_t rxByte,
 
 UplinkScheduler::LinkTransition UplinkScheduler::updateLink(uint64_t nowMs,
                                                             uint64_t bootMs) {
+    const uint64_t lastHeartbeatMs =
+        m_lastHeartbeatMs.load(std::memory_order_relaxed);
     const bool timeout = link_check_timeout_with_boot_grace(
-        nowMs, m_lastHeartbeatMs, m_linkTimeoutMs, bootMs, m_bootGraceMs);
+        nowMs, lastHeartbeatMs, m_linkTimeoutMs, bootMs, m_bootGraceMs);
 
+    const bool linkDown = m_linkDown.load(std::memory_order_relaxed);
     LinkTransition tr;
-    tr.linkDown = m_linkDown;
+    tr.linkDown = linkDown;
 
-    if (timeout && !m_linkDown) {
-        m_linkDown = true;
+    if (timeout && !linkDown) {
+        m_linkDown.store(true, std::memory_order_relaxed);
         // Yeni kesinti başlıyor — örnekleme saatini ve ts aralığını sıfırla.
         m_lastOfflineSampleMs = 0u;
         m_offlineHasSamples = false;
         tr.changed = true;
         tr.becameDown = true;
         tr.linkDown = true;
-    } else if (!timeout && m_linkDown && m_lastHeartbeatMs != 0u) {
-        m_linkDown = false;
+    } else if (!timeout && linkDown && lastHeartbeatMs != 0u) {
+        m_linkDown.store(false, std::memory_order_relaxed);
         tr.changed = true;
         tr.becameUp = true;
         tr.linkDown = false;

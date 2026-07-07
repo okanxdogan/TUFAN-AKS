@@ -77,7 +77,13 @@ static constexpr uint16_t BMS_CELL_OVERVOLT_WARN_MV = 3550;   // > => WARNING �
 static constexpr int16_t BMS_TEMP_OVERTEMP_WARN_C = 50;       // > => WARNING
 
 // ---------------------------------------------------------------------------
-// Tek anlık görüntüyü yorumla. in.isValid == false ise güvenli taraf seçilir:
-// warningLevel = CRITICAL ve makul (zararsız) varsayılanlar döner.
+// Tek anlık görüntüyü yorumla.
+//   * in.isValid == false        => güvenli taraf: warningLevel = CRITICAL,
+//                                    zararsız varsayılanlar (bayat/yok veri).
+//   * in.cellDataValid == false  => (paket geçerli ama hücre kaynağı DOĞRULANMADI)
+//                                    dengeleme/uyarı HESAPLANMAZ; warningLevel =
+//                                    NO_DATA, hiçbir hücre dengelenmez. Fabrike
+//                                    per-hücre veriye güvenilmez (G8/M4).
+//   * aksi halde                 => gerçek min/max/denge/SoC/uyarı hesaplanır.
 // ---------------------------------------------------------------------------
 BmsComputed computePack(const BmsPackData& in);

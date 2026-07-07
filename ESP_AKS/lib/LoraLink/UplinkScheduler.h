@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 
 #include "LinkMonitor.h"       // link_check_timeout_with_boot_grace (saf)
@@ -54,7 +55,10 @@ class UplinkScheduler {
 
     // --- Link FSM (her ~10 ms tick) ---
     LinkTransition updateLink(uint64_t nowMs, uint64_t bootMs);
-    bool isLinkDown() const { return m_linkDown; }
+    // R2: LoRa task yazar; LoRa_IsLinkDown() ile BAŞKA task'lar okur — atomic
+    // (torn-read yok). Bayrak tek word; relaxed yeterli (senkronizasyon değil,
+    // yalnız yırtılmasız görünürlük).
+    bool isLinkDown() const { return m_linkDown.load(std::memory_order_relaxed); }
 
     // --- OFFLINE mod: canlı paketi 1 Hz'e seyreltilmiş örnekle (buffer'a yaz) ---
     // Döner: bu tick tampona bir örnek yazıldı mı.
@@ -73,13 +77,17 @@ class UplinkScheduler {
     uint8_t m_replayBurstPerTick;
     uint32_t m_unknownByteWarnIntervalMs;
 
-    // Taşınan statikler (tip DEĞİŞMEDİ — P11'in işi; sadece yer değişti):
-    //   s_linkDown -> m_linkDown (volatile bool)
-    //   s_lastHeartbeatMs -> m_lastHeartbeatMs (volatile uint64_t)
-    //   s_unknownRxByteCount -> m_unknownRxByteCount (uint32_t)
-    //   s_lastUnknownRxByteWarnMs -> m_lastUnknownRxByteWarnMs (uint64_t)
-    volatile bool m_linkDown = false;
-    volatile uint64_t m_lastHeartbeatMs = 0u;  // 0 = henüz heartbeat gelmedi
+    // Taşınan statikler (M1'de yer değişti). R2: task-arası paylaşılan ikisi
+    // std::atomic yapıldı — 32-bit Xtensa'da 64-bit volatile okuma ATOMİK
+    // DEĞİL, LoRa_IsLinkDown()/heartbeat okuyan diğer task'larda torn-read
+    // olurdu. relaxed order yeterli: bunlar bağımsız durum bayrakları, başka
+    // veriyi publish etmiyor; yalnız yırtılmasız (tek-word) görünürlük gerek.
+    //   s_linkDown        -> m_linkDown        (std::atomic<bool>)
+    //   s_lastHeartbeatMs -> m_lastHeartbeatMs (std::atomic<uint64_t>)
+    //   s_unknownRxByteCount / s_lastUnknownRxByteWarnMs: yalnız LoRa task'inde
+    //   okunur/yazılır (paylaşılmaz) → düz tip kalır.
+    std::atomic<bool> m_linkDown{false};
+    std::atomic<uint64_t> m_lastHeartbeatMs{0u};  // 0 = henüz heartbeat gelmedi
     uint32_t m_unknownRxByteCount = 0u;
     uint64_t m_lastUnknownRxByteWarnMs = 0u;
 

@@ -50,7 +50,7 @@ bool RelayManager::begin() {
     writeRegister(MCP23S17_IODIRA, 0x00);
     writeRegister(MCP23S17_IODIRB, 0x00);
 
-    s_relayState = 0;
+    s_relayState.store(0, std::memory_order_relaxed);
     s_initialized = true;
     ESP_LOGI(TAG, "RelayManager initialized — all relays OFF");
 
@@ -66,18 +66,21 @@ void RelayManager::setRelay(uint8_t channel, bool state) {
         return;
     }
 
+    // Tek yazar (VCU task); load-modify-store relaxed yeterli (R3 sözleşmesi).
+    uint16_t cur = s_relayState.load(std::memory_order_relaxed);
     if (state)
-        s_relayState |= (1u << channel);
+        cur |= (1u << channel);
     else
-        s_relayState &= ~(1u << channel);
+        cur &= ~(1u << channel);
+    s_relayState.store(cur, std::memory_order_relaxed);
 
     // Hardware is active-low: invert logical state before writing
-    uint16_t hw = ~s_relayState;
+    uint16_t hw = ~cur;
     writeRegister(MCP23S17_OLATA, hw & 0xFF);
     writeRegister(MCP23S17_OLATB, (hw >> 8) & 0xFF);
 
     ESP_LOGD(TAG, "Relay %d → %s (state=0x%03X)", channel, state ? "ON" : "OFF",
-             s_relayState);
+             cur);
 
     verifyOutputs();  // G3: yazma sonrası HEMEN geri-okuma doğrulaması
 }
@@ -87,9 +90,10 @@ void RelayManager::allOn() {
         ESP_LOGW(TAG, "allOn called before begin()");
         return;
     }
-    s_relayState = (1u << RELAY_TOTAL_CHANNELS) - 1;  // bits 0-9 set
+    const uint16_t cur = (1u << RELAY_TOTAL_CHANNELS) - 1;  // bits 0-9 set
+    s_relayState.store(cur, std::memory_order_relaxed);
     // Active-low: all relays ON = all used pins LOW
-    uint16_t hw = ~s_relayState;
+    uint16_t hw = ~cur;
     writeRegister(MCP23S17_OLATA, hw & 0xFF);
     writeRegister(MCP23S17_OLATB, (hw >> 8) & 0xFF);
     ESP_LOGI(TAG, "All %d contactors closed", RELAY_TOTAL_CHANNELS);
@@ -98,7 +102,7 @@ void RelayManager::allOn() {
 }
 
 void RelayManager::allOff(bool silent) {
-    s_relayState = 0;
+    s_relayState.store(0, std::memory_order_relaxed);
     // Active-low: all relays OFF = all pins HIGH
     writeRegister(MCP23S17_OLATA, 0xFF);
     writeRegister(MCP23S17_OLATB, 0xFF);
@@ -114,12 +118,14 @@ void RelayManager::allOff(bool silent) {
 bool RelayManager::getRelayState(uint8_t channel) const {
     if (channel >= RELAY_TOTAL_CHANNELS)
         return false;
-    return (s_relayState >> channel) & 0x01;
+    // R3: HMI okuma tarafı — atomic load (torn-read yok), bayat okuma kabul.
+    uint16_t cur = s_relayState.load(std::memory_order_relaxed);
+    return (cur >> channel) & 0x01;
 }
 
 #ifdef NATIVE_BUILD
 void RelayManager::resetForTest() {
-    s_relayState = 0;
+    s_relayState.store(0, std::memory_order_relaxed);
     s_initialized = false;
     s_spiDev = nullptr;
     s_actuatorFault.store(false, std::memory_order_relaxed);
@@ -178,7 +184,7 @@ void RelayManager::reinitAndReassert() {
     writeRegister(MCP23S17_IODIRA, 0x00);
     writeRegister(MCP23S17_IODIRB, 0x00);
 
-    uint16_t hw = ~s_relayState;
+    uint16_t hw = ~s_relayState.load(std::memory_order_relaxed);
     writeRegister(MCP23S17_OLATA, hw & 0xFF);
     writeRegister(MCP23S17_OLATB, (hw >> 8) & 0xFF);
 }
@@ -187,7 +193,7 @@ bool RelayManager::verifyOutputs() {
     if (!s_initialized || s_spiDev == nullptr)
         return true;  // doğrulanacak bir şey yok / okunamaz
 
-    const uint16_t hw = ~s_relayState;
+    const uint16_t hw = ~s_relayState.load(std::memory_order_relaxed);
     const uint8_t expOlatA = hw & 0xFF;
     const uint8_t expOlatB = (hw >> 8) & 0xFF;
 

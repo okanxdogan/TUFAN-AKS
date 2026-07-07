@@ -6,6 +6,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <atomic>
 #include <cstdio>
 
 #include "DisplayHMI.h"
@@ -15,6 +16,7 @@
 #include "LoraLink.h"
 #include "LoraRxHandler.h"
 #include "OfflineBuffer.h"
+#include "UartInitRetry.h"
 #include "UplinkScheduler.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
@@ -45,6 +47,14 @@ static UplinkScheduler* s_uplink = nullptr;
 
 extern "C" bool LoRa_IsLinkDown(void) {
     return s_uplink != nullptr && s_uplink->isLinkDown();
+}
+
+// G11: UART init N kez başarısız olunca set edilir; LoRa task telemetrisiz moda
+// geçer (araç durmaz). Cross-task okunur (LoRa_IsLinkDown deseni) → atomic.
+static std::atomic<bool> s_loraTelemetryDisabled{false};
+
+extern "C" bool LoRa_IsTelemetryDisabled(void) {
+    return s_loraTelemetryDisabled.load(std::memory_order_relaxed);
 }
 
 static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
@@ -118,12 +128,16 @@ static void CAN_torqueSink(uint16_t torque) {
 namespace {
 class RelayActuatorAdapter : public IRelayActuator {
  public:
-  void closeAllContactors() override { RelayManager::instance().allOn(); }
-  void openAllContactors(bool silent) override {
-    RelayManager::instance().allOff(silent);
+  void allOn() override { RelayManager::instance().allOn(); }
+  void allOff(bool silent) override { RelayManager::instance().allOff(silent); }
+  void setRelay(uint8_t channel, bool state) override {
+    RelayManager::instance().setRelay(channel, state);
   }
   void verifyIfDue(uint32_t nowMs) override {
     RelayManager::instance().verifyIfDue(nowMs);
+  }
+  bool verifyOutputs() override {
+    return RelayManager::instance().verifyOutputs();
   }
   bool hasActuatorFault() const override {
     return RelayManager::instance().hasActuatorFault();
@@ -142,7 +156,11 @@ static void logStackUsage(const char *taskName, uint32_t &lastLogTick) {
   uint32_t now = xTaskGetTickCount();
   if ((now - lastLogTick) >= pdMS_TO_TICKS(STACK_LOG_INTERVAL_MS)) {
     UBaseType_t hwm = uxTaskGetStackHighWaterMark(nullptr);
-    ESP_LOGD(taskName, "Stack high water mark: %u words remaining", hwm);
+    // A) ESP_LOGD default'ta HİÇ basılmıyordu → stack koruması kördü. INFO'ya
+    // çekildi; 30 sn periyot spam yapmaz. Değer WORD cinsindendir (ESP32'de
+    // 1 word = 4 B) — "marj < 512 B" ~= "< 128 word" demektir.
+    ESP_LOGI(taskName, "Stack high water mark: %u words remaining (%u B)", hwm,
+             (unsigned)(hwm * sizeof(StackType_t)));
     lastLogTick = now;
   }
 }
@@ -309,23 +327,31 @@ void vTask_HMI_Display(void *pvParameters) {
             // gitmiyor); ekranda gösterilecekse beklenen birim Nextion tarafından
             // teyit edilecek.
             BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiA * 10;
-            
-            // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
-            // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
-            // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
-            uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
+
+            // G8/M4: Hücre gerilimi kaynağı DOĞRULANMADI
+            // (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=false). Eski kod pack/24
+            // ortalamasını 24 hücrenin HEPSİNE yazıp en yüksek sıcaklığı tüm
+            // hücrelere kopyalıyordu; bu FABRİKASYON gerçek bir hücre
+            // dengesizliğini (tek hücre 2.3 V'a düşse bile) maskeleyip ekranı
+            // SAĞLIKLI gösteriyordu. Fabrikasyon KALDIRILDI: per-hücre alanlara
+            // sentinel yazılır → ekranda hücreler "--", barlar boş, dengeleme
+            // yok. cellDataValid=false olduğundan computePack dengeleme/uyarıyı
+            // "veri yok" (NO_DATA) döndürür.
+            //
+            // Kaynak DOĞRULANDIĞINDA (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=true):
+            // gerçek 24 hücre TEL_data'dan buraya doldurulup cellDataValid=true
+            // yapılacak; o zaman computePack gerçek min/max/denge/uyarıyı hesaplar.
+            BMS_raw.cellDataValid = HMI_CELL_VOLTAGE_SOURCE_VERIFIED;
             for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
-                BMS_raw.cellVoltageMv[i] = avgCellMv;
-                BMS_raw.cellTempC[i] = TEL_data.TEL_bmsTempHighestC;
+                BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_raw.cellTempC[i] = 0;  // ekranda kullanılmaz (sıcaklık ayrı yolla)
             }
 
-            // TODO(dogrulama): Lithium Balance E001-E033 tersine mühendisliği
-            // (reverse engineering) henüz tamamlanmadı (açık iş).
-            // Gerçek max/min hücre gerilimi doğrulanana kadar algoritma uyarı seviyesi
-            // avgCellMv üzerinden (sağlıklı varsayılarak) çalışır.
             BMS_comp = computePack(BMS_raw);
 
-            // Ekranda ise sahte 0 mV yerine sentinel ("--") gösterilir.
+            // Özet min/max hücre gerilimi de per-hücre kaynağa bağlı: doğrulanana
+            // kadar sentinel ("--"). Pack voltajı/sıcaklık/akım GERÇEK ve ayrı
+            // (updateScreen) yolla gösterilir — bunlar fabrikasyon değil.
             if (!HMI_CELL_VOLTAGE_SOURCE_VERIFIED) {
                 BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
                 BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
@@ -422,7 +448,9 @@ static void E22_logHexDump(const char *label, const uint8_t *buf, int len) {
 class EspLoraHal : public ILoraHal {
  public:
   // GPIO mode/aux pinleri + UART (retry) kurulumu — eski task preamble'ı.
-  void begin() {
+  // G11: UART bounded-retry. Kurulursa true; N denemede kurulamazsa false
+  // döner (çağıran telemetrisiz moda geçer, reboot YOK).
+  bool begin() {
     gpio_config_t modePinsConfig = {};
     modePinsConfig.pin_bit_mask = (1ULL << LORA_M0_PIN) | (1ULL << LORA_M1_PIN);
     modePinsConfig.mode = GPIO_MODE_OUTPUT;
@@ -447,27 +475,45 @@ class EspLoraHal : public ILoraHal {
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
     };
-    bool uart_ok = false;
     bool uart_error_logged = false;
-    while (!uart_ok) {
+    int uart_failedAttempts = 0;
+    while (true) {
+      // G11: Retry TUZAĞI düzeltmesi — driver zaten kuruluysa (önceki yarım
+      // kurulum) yeniden install ESP_ERR_INVALID_STATE ile SONSUZA dek
+      // başarısız kalırdı. Önce sil, sonra temiz kur.
+      if (uart_is_driver_installed(LORA_UART_NUM)) {
+        uart_driver_delete(LORA_UART_NUM);
+      }
       esp_err_t err1 = uart_param_config(LORA_UART_NUM, &uartConfig);
       esp_err_t err2 = uart_set_pin(LORA_UART_NUM, LORA_TX_PIN, LORA_RX_PIN,
                                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
       esp_err_t err3 = uart_driver_install(LORA_UART_NUM, 256, 256, 0, nullptr, 0);
       if (err1 == ESP_OK && err2 == ESP_OK && err3 == ESP_OK) {
-        uart_ok = true;
         if (uart_error_logged) {
-          ESP_LOGI(TAG, "LoRa UART basariyla baslatildi");
+          ESP_LOGI(TAG, "LoRa UART basariyla baslatildi (%d. denemede)",
+                   uart_failedAttempts + 1);
         }
-      } else {
-        if (!uart_error_logged) {
-          ESP_LOGE(TAG, "LoRa UART init failed (err1=%d, err2=%d, err3=%d), "
-                        "tekrar deneniyor...", err1, err2, err3);
-          uart_error_logged = true;
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_task_wdt_reset();
+        return true;
       }
+
+      ++uart_failedAttempts;
+      if (!uart_error_logged) {
+        ESP_LOGE(TAG, "LoRa UART init failed (err1=%d, err2=%d, err3=%d), "
+                      "tekrar deneniyor...", err1, err2, err3);
+        uart_error_logged = true;
+      }
+      // G11: N denemeden sonra SONSUZ döngü YERİNE vazgeç → telemetrisiz mod.
+      if (uart_init_retry_decision(uart_failedAttempts,
+                                   LORA_UART_MAX_INIT_ATTEMPTS) ==
+          UartInitDecision::GIVE_UP_DISABLED) {
+        ESP_LOGE(TAG,
+                 "LoRa UART %d denemede kurulamadi — TELEMETRI DEVRE DISI "
+                 "(arac calismaya devam eder; reboot yok)",
+                 uart_failedAttempts);
+        return false;
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      esp_task_wdt_reset();
     }
   }
 
@@ -502,6 +548,10 @@ struct LoRa_TxCtx {
   EspLoraHal *hal;
   bool *auxNotReadyLogged;
 };
+// G10: TX ring buffer dolunca uart_write_bytes'ın BLOKLAMASIYLA ertelenen
+// gönderim sayacı (replay drenajını yavaşlatıp RX/heartbeat'i geciktiren blok
+// yerine tick'i erteliyoruz).
+static uint32_t s_loraTxDeferredCount = 0;
 static bool LoRa_txSend(const TelemetryData &pkt, bool isReplay, void *ctxv) {
   LoRa_TxCtx *c = static_cast<LoRa_TxCtx *>(ctxv);
   if (!c->hal->isAuxReady()) {
@@ -510,6 +560,18 @@ static bool LoRa_txSend(const TelemetryData &pkt, bool isReplay, void *ctxv) {
       *c->auxNotReadyLogged = true;
     }
     return false;  // paket buffer'da KALIR (replay) / atlanır (canlı)
+  }
+  // G10: TX ring'de bir tam frame'lik boş alan yoksa BLOKLAMA — bu tick'in
+  // gönderimini ertele (replay buffer'da kalır / canlı atlanır), say ve bir
+  // sonraki tikte tekrar dene. Böylece heartbeat okuyan RX yolu gecikmez.
+  size_t LO_txFree = 0;
+  if (uart_get_tx_buffer_free_size(LORA_UART_NUM, &LO_txFree) != ESP_OK ||
+      LO_txFree < (size_t)LORA_TEL_FRAME_MAX_BYTES) {
+    if ((s_loraTxDeferredCount++ % 50u) == 0u) {
+      ESP_LOGW(TAG, "LoRa TX ring dolu — gonderim ertelendi (toplam %lu)",
+               (unsigned long)s_loraTxDeferredCount);
+    }
+    return false;
   }
   c->tel->sendStatus(TelemetrySanitize::sanitizeForUplink(pkt));
   *c->auxNotReadyLogged = false;
@@ -528,7 +590,18 @@ void vTask_LoRa_UKS(void *pvParameters) {
   // Donanım kurulumu + E22 boot-config el sıkışması (LoraLink).
   Telemetry LO_telemetry;
   EspLoraHal LO_hal;
-  LO_hal.begin();
+  // G11: UART kurulamazsa (N deneme) telemetrisiz moda geç — aracı DURDURMA
+  // (FAULT yok), esp_restart YOK. Task canlı kalır (wdt beslenir) ama RX/TX
+  // yapmaz; durum LoRa_IsTelemetryDisabled() ile HMI/VcuLogic'e bildirilir.
+  if (!LO_hal.begin()) {
+    s_loraTelemetryDisabled.store(true, std::memory_order_release);
+    ESP_LOGE(TAG, "LoRa telemetri devre disi — task telemetrisiz modda "
+                  "(RX/TX yok, arac etkilenmez)");
+    while (true) {
+      esp_task_wdt_reset();
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
   LoraLink(LO_hal).configureE22();
   LO_telemetry.begin();
 
@@ -613,6 +686,12 @@ void vTask_LoRa_UKS(void *pvParameters) {
 // ---------------------------------------------------------------------------
 #ifndef E22_DIAGNOSTIC_MODE
 extern "C" void app_main() {
+  // A) Log görünürlüğü: ESP-IDF'in ÇALIŞMA-ZAMANI log seviyesini INFO'ya ayarla
+  // (doğru IDF mekanizması — Arduino'ya özgü CORE_DEBUG_LEVEL kaldırıldı). IDF
+  // varsayılan derleme seviyesi de INFO'dur; bu çağrı niyeti açık kılar ve HWM
+  // (ESP_LOGI) dahil INFO ve üstü logların basıldığını garanti eder.
+  esp_log_level_set("*", ESP_LOG_INFO);
+
 #if !VEHICLE_PARAMS_CONFIRMED
   // 9.2.c.i / 9.4.b.iii / 9.2.f: WHEEL_DIAMETER_M / GEAR_RATIO /
   // MOTOR_RPM_IS_WHEEL_RPM henüz gerçek değerlerle teyit edilmedi —
@@ -660,13 +739,19 @@ extern "C" void app_main() {
   ESP_LOGI(TAG, "All subsystems initialized — starting tasks");
 
   // --- FreeRTOS task creation ---
-  xTaskCreatePinnedToCore(vTask_CAN_Comm, "CAN_Task", 4096, nullptr, 5, nullptr,
-                          0);
-  xTaskCreatePinnedToCore(vTask_HMI_Display, "HMI_Task", 4096, nullptr, 2,
-                          nullptr, 0);
-  xTaskCreatePinnedToCore(vTask_VCU_Logic, "VCU_Task", 4096, nullptr, 10,
-                          nullptr, 1);
-  xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr, 8,
-                          nullptr, 0);
+  // M6: Öncelikler SystemConfig.h'de TASK_PRIORITY_* olarak. CAN (güvenlik-
+  // kritik alım) > LoRa (telemetri): telemetri, güvenlik-kritik CAN alımını
+  // preempt edemez. Eskiden CAN=5 < LoRa=8 idi; düzeltildi (CAN=8, LoRa=5).
+  xTaskCreatePinnedToCore(vTask_CAN_Comm, "CAN_Task", 4096, nullptr,
+                          TASK_PRIORITY_CAN, nullptr, 0);
+  xTaskCreatePinnedToCore(vTask_HMI_Display, "HMI_Task", 4096, nullptr,
+                          TASK_PRIORITY_HMI, nullptr, 0);
+  xTaskCreatePinnedToCore(vTask_VCU_Logic, "VCU_Task", 4096, nullptr,
+                          TASK_PRIORITY_VCU, nullptr, 1);
+  // LoRa stack 3072 B: HWM ölçümü artık ESP_LOGI ile GÖRÜNÜR (logStackUsage).
+  // Marj < 512 B (≈128 word "remaining") ise stack'i artır; ölçüm görünmeden
+  // körlemesine büyütme.
+  xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr,
+                          TASK_PRIORITY_LORA, nullptr, 0);
 }
 #endif  // E22_DIAGNOSTIC_MODE

@@ -36,6 +36,10 @@ static inline bool link_check_timeout_with_boot_grace(uint64_t now_ms,
 extern "C" {
 #endif
 bool LoRa_IsLinkDown(void);
+// G11: UART init N kez başarısız olup telemetri devre dışı kaldıysa true. HMI/
+// VcuLogic bildirimi için (LoRa_IsLinkDown ile aynı cross-task query deseni).
+// Telemetri kaybı sürüşü engellemez — bu bayrak FAULT tetiklemez.
+bool LoRa_IsTelemetryDisabled(void);
 #ifdef __cplusplus
 }
 #endif

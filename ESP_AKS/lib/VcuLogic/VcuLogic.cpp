@@ -30,6 +30,14 @@ static SemaphoreHandle_t s_TEL_dataMutex = nullptr;
 // cannot swallow an emergency stop command.
 static std::atomic<bool> s_eStopPending{false};
 
+// R1: FAULT bypass — E-STOP ile AYNI desen. FAULT_DETECTED kuyruğu bypass edip
+// yalnız bu atomic bayrağı set eder; kuyruk dolu olsa bile fault KAYBOLMAZ.
+// TEMİZLENME KURALI: run() her tick exchange(false) ile okur→tüketir; yani
+// bayrak "işlenmemiş fault isteği var mı"yı temsil eder ve okunduğu an temizlenir.
+// İstek, FAULT'a geçilerek (veya zaten FAULT olunduğu için ek geçiş gerekmeden)
+// handle edilmiş sayılır.
+static std::atomic<bool> s_faultPending{false};
+
 // M2: enjekte edilen aktüatör (röle sürücüsü) arayüzü. init() içinde bağlanır;
 // somut RelayManager singleton'ına doğrudan bağımlılık YOK.
 static IRelayActuator* s_relays = nullptr;
@@ -86,7 +94,7 @@ void init(IRelayActuator& relays) {
     }
 
     // Safety first — ensure all relays are off at startup
-    s_relays->openAllContactors(false);
+    s_relays->allOff(false);
 
     transitionTo(VcuState::IDLE);
 }
@@ -102,6 +110,18 @@ void run() {
         }
         // Already in EMERGENCY_STOP — clear flag but let run() continue
         // so handleEmergencyStop() keeps executing (timer must not reset).
+    }
+
+    // R1: FAULT bypass — kuyruk dolu olsa bile kaybolmayan fault isteği. E-STOP'tan
+    // SONRA kontrol edilir (E-STOP daha yüksek öncelikli güvenli durum). Zaten
+    // FAULT ise re-entry yok (timer sıfırlanmaz); değilse FAULT'a geç. Bayrak her
+    // durumda exchange ile tüketilir (temizlenme kuralı — bkz. tanım).
+    if (s_faultPending.exchange(false, std::memory_order_acquire)) {
+        if (s_state.load(std::memory_order_relaxed) != VcuState::FAULT) {
+            ESP_LOGE(TAG, "FAULT pending (atomic bypass) — entering FAULT");
+            transitionTo(VcuState::FAULT);
+            return;
+        }
     }
 
     // G3: hafif periyodik actuator (röle çıkışı) doğrulaması. Aktüatör katmanı
@@ -150,7 +170,10 @@ void run() {
             return;
         }
         if (event == VcuEvent::FAULT_DETECTED) {
-            transitionTo(VcuState::FAULT);
+            // R1: FAULT normalde atomic bayrak yoluyla (kuyruk bypass) işlenir;
+            // bu dal savunma amaçlı fallback'tir. Zaten FAULT ise re-entry yok.
+            if (s_state.load(std::memory_order_relaxed) != VcuState::FAULT)
+                transitionTo(VcuState::FAULT);
             return;
         }
 
@@ -238,6 +261,19 @@ void postEvent(VcuEvent event) {
         s_eStopPending.store(true, std::memory_order_release);
         return;
     }
+    if (event == VcuEvent::FAULT_DETECTED) {
+        // R1: E-STOP ile AYNI desen — kuyruğu BYPASS et, yalnız atomic bayrağı
+        // set et. run() en tepede (kuyruk drenajından önce) bunu okur, böylece
+        // kuyruk dolu olsa bile FAULT kaybolmaz.
+        //
+        // Neden kuyruğa da yazMIYORuz: run() tik başına kuyruktan yalnız BİR
+        // olay çeker; FAULT'un bir kopyası kuyrukta kalırsa, bayrak yolu zaten
+        // FAULT'a aldıktan sonra o bayat kopya bir sonraki tik'i tüketip ardından
+        // gelen olayları (ör. RESET) bir tik geciktirir. E-STOP tam da bu yüzden
+        // kuyruğu bypass eder; FAULT da aynı kanıtlanmış deseni izler.
+        s_faultPending.store(true, std::memory_order_release);
+        return;
+    }
     if (xQueueSend(s_eventQueue, &event, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Event queue full, dropped event %d",
                  static_cast<int>(event));
@@ -272,7 +308,7 @@ static void handleIdle() {
 static void handleReady() {
     // Close all positive contactors on entry (runs once via stateTimer guard)
     if (s_stateTimer <= TASK_PERIOD_MS) {
-        s_relays->closeAllContactors();
+        s_relays->allOn();
         ESP_LOGI(TAG, "All contactors closed — system READY");
     }
     // DRIVE is entered only after an explicit DRIVE_ENABLE command.
@@ -302,13 +338,13 @@ static void handleEmergencyStop() {
     // (2)+(3): torkun sönmesi için bekle, sonra pozitif kontaktör bankını aç.
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
         if (!s_relaysOpenedInEstop) {
-            s_relays->openAllContactors(false); // First time, log it
+            s_relays->allOff(false); // First time, log it
             s_relaysOpenedInEstop = true;
         } else if (s_stateTimer - s_lastEstopLogMs >= 1000) {
             // G3: sessiz re-assert artık doğrulama DEĞİL sadece log açısından
-            // sessiz — openAllContactors() içindeki verifyOutputs() geri-okumayı
-            // yapar, uyuşmazsa loglar ve actuator fault'u latch'ler (sürdürür).
-            s_relays->openAllContactors(true); // Silent (log) re-assert + verify
+            // sessiz — allOff() içindeki verifyOutputs() geri-okumayı yapar,
+            // uyuşmazsa loglar ve actuator fault'u latch'ler (sürdürür).
+            s_relays->allOff(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -334,12 +370,12 @@ static void handleFault() {
 
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
         if (!s_relaysOpenedInFault) {
-            s_relays->openAllContactors(false); // First time, log it
+            s_relays->allOff(false); // First time, log it
             s_relaysOpenedInFault = true;
         } else if (s_stateTimer - s_lastFaultLogMs >= 1000) {
-            // G3: openAllContactors() içindeki verifyOutputs() re-assert'i geri-okur;
+            // G3: allOff() içindeki verifyOutputs() re-assert'i geri-okur;
             // uyuşmazsa loglar + actuator fault latch'lenir (sürdürülür).
-            s_relays->openAllContactors(true); // Silent (log) re-assert + verify
+            s_relays->allOff(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -435,6 +471,7 @@ void resetForTest() {
     s_TEL_latestData = {};
     s_VCU_warningLogged = false;
     s_eStopPending.store(false, std::memory_order_relaxed);
+    s_faultPending.store(false, std::memory_order_relaxed);
     s_relays = nullptr;  // init() yeniden bağlar
 
     s_relaysOpenedInEstop = false;
