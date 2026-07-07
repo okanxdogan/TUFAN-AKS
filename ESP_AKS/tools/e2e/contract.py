@@ -149,12 +149,12 @@ REMOVED_COMMAND_BYTES = [0xA1, 0xA2, 0xA3, 0xA4]
 # P6 offline buffer / replay sabitleri (AKS include/SystemConfig.h)
 # ===========================================================================
 
-LORA_TX_PERIOD_MS = 200          # 5 Hz telemetry uplink tick periyodu
+LORA_TX_PERIOD_MS = 500          # 2 Hz telemetry uplink tick periyodu (link flapping duzeltmesi — bkz. SystemConfig.h)
 OFFLINE_SAMPLE_PERIOD_MS = 1000  # kesinti sirasi buffer ornekleme periyodu (1 Hz)
 OB_CAPACITY = 75                 # offline buffer kapasitesi (60 sn x 1 Hz + %25 marj)
 REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
 BOOT_LINK_GRACE_MS = 5000        # boot'tan itibaren ilk heartbeat icin tanina sure
-LINK_TIMEOUT_MS = 3000           # 1 Hz heartbeat icin 3x marj
+LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-6 sn'lik fiili heartbeat araligina marj (bkz. SystemConfig.h)
 
 
 def build_tel_line(f: dict) -> str:
