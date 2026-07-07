@@ -74,7 +74,7 @@ void test_stubs_do_not_write_telemetry(void) {
     TelemetryData baseline{};
     baseline.TEL_motorRpm = 500;
     baseline.TEL_bmsPackVoltageDeciV = 780;
-    baseline.TEL_bmsCurrentCentiMa = -100000;
+    baseline.TEL_bmsCurrentCentiA = -100000;
     baseline.TEL_bmsSocHundredths = 8000;
     baseline.TEL_bmsTempHighestC = 25;
     baseline.TEL_bmsSystemState = 2;
@@ -88,7 +88,7 @@ void test_stubs_do_not_write_telemetry(void) {
     // Hiçbir alan değişmemiş olmalı
     TEST_ASSERT_EQUAL_UINT16(500, out.TEL_motorRpm);
     TEST_ASSERT_EQUAL_UINT16(780, out.TEL_bmsPackVoltageDeciV);
-    TEST_ASSERT_EQUAL_INT32(-100000, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_EQUAL_INT32(-100000, out.TEL_bmsCurrentCentiA);
     TEST_ASSERT_EQUAL_UINT16(8000, out.TEL_bmsSocHundredths);
     TEST_ASSERT_EQUAL_INT8(25, out.TEL_bmsTempHighestC);
     TEST_ASSERT_EQUAL_UINT8(2, out.TEL_bmsSystemState);

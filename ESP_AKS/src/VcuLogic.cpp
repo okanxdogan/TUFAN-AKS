@@ -31,6 +31,12 @@ static bool s_relaysOpenedInFault = false;
 static uint32_t s_lastEstopLogMs = 0;
 static uint32_t s_lastFaultLogMs = 0;
 
+// READY girişi reddedildiğinde log spam'ini önlemek için: aynı ret nedeni her
+// tick değil, neden değiştiğinde veya en fazla 1 sn'de bir loglanır. Neden
+// string'leri statik literal olduğundan pointer karşılaştırması geçerlidir.
+static const char* s_lastReadyRejectReason = nullptr;
+static uint32_t s_lastReadyRejectLogMs = 0;
+
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
@@ -39,6 +45,7 @@ static bool pollEvent(VcuEvent& out);
 static bool isResetInterlockSatisfied();
 static bool hasWarningCondition();
 static bool hasCriticalCondition();
+static const char* readyRejectReason(const TelemetryData& VCU_data);
 static TelemetryData getTelemetrySnapshot();
 
 static void handleIdle();
@@ -126,8 +133,22 @@ void run() {
         // State-specific event handling
         switch (currentState) {
             case VcuState::IDLE:
-                if (event == VcuEvent::START_REQUEST)
-                    transitionTo(VcuState::READY);
+                if (event == VcuEvent::START_REQUEST) {
+                    // READY 10 kontaktörü kapatıp HV bus'ı enerjilendirir;
+                    // batarya hakkında doğrulanmış/taze veri yoksa geçme.
+                    TelemetryData VCU_snap = getTelemetrySnapshot();
+                    if (isReadyEntryPermitted(VCU_snap)) {
+                        transitionTo(VcuState::READY);
+                    } else {
+                        const char* reason = readyRejectReason(VCU_snap);
+                        if (reason != s_lastReadyRejectReason ||
+                            s_stateTimer - s_lastReadyRejectLogMs >= 1000) {
+                            ESP_LOGW(TAG, "READY reddedildi: %s", reason);
+                            s_lastReadyRejectReason = reason;
+                            s_lastReadyRejectLogMs = s_stateTimer;
+                        }
+                    }
+                }
                 break;
 
             case VcuState::READY:
@@ -307,6 +328,23 @@ static bool hasCriticalCondition() {
     return hasCriticalCondition(getTelemetrySnapshot(), s_state.load(std::memory_order_relaxed));
 }
 
+// isReadyEntryPermitted() reddettiğinde hangi koşulun sağlanmadığını döndürür.
+// Sıralama predicate ile birebir aynı olmalı; loglama için statik literal
+// döndürür (pointer karşılaştırmasıyla "neden değişti mi" tespiti için).
+static const char* readyRejectReason(const TelemetryData& VCU_data) {
+    if (!VCU_data.TEL_bmsDataValid)
+        return "bmsDataValid=0";
+    if (hasCriticalCondition(VCU_data, VcuState::IDLE))
+        return "kritik kosul aktif";
+    if (hasWarningCondition(VCU_data))
+        return "uyari kosulu aktif";
+#if MOTOR_DRIVER_PRESENT
+    if (!VCU_data.TEL_motorDataValid)
+        return "motorDataValid=0";
+#endif
+    return "bilinmiyor";
+}
+
 // Motor timeout detection already lives in CanParse::isMotorStatusTimedOut +
 // CanManager::updateMotorStatusValidity; if the Teknofest spec needs an
 // error-flag bit for this, it should hook into that timeout path, not a
@@ -324,6 +362,8 @@ void resetForTest() {
     s_relaysOpenedInFault = false;
     s_lastEstopLogMs = 0;
     s_lastFaultLogMs = 0;
+    s_lastReadyRejectReason = nullptr;
+    s_lastReadyRejectLogMs = 0;
 
     // Olay kuyruğunu (queue) boşalt
     if (s_eventQueue != nullptr) {

@@ -57,7 +57,7 @@ struct TelemetryData {
 
     // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI)
     uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw * 0.1 = V — DOĞRULANDI
-    int32_t TEL_bmsCurrentCentiMa;     // byte[0:1], raw * 10 = CentiMa (0.01A) — DOĞRULANDI
+    int32_t TEL_bmsCurrentCentiA;     // byte[0:1], raw * 10 = CentiA (0.01A) — DOĞRULANDI
     uint16_t TEL_bmsSocHundredths;     // byte[4:5], raw = 0.01% — DOĞRULANDI
 
     bool TEL_bmsDataValid;

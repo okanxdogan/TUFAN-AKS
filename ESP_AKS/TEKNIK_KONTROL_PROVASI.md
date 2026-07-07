@@ -45,7 +45,7 @@ stub'larında ham byte olarak loglanıyor ama `TelemetryData`'ya hiçbir alan
 yazmıyor. Sonuç:
 
 - `TEL_bmsTempHighestC` / `TEL_bmsTempLowestC` / `TEL_bmsCellVoltageMaxDeciMv`
-  / `TEL_bmsCellVoltageMinDeciMv` / `TEL_bmsCurrentCentiMa` /
+  / `TEL_bmsCellVoltageMinDeciMv` / `TEL_bmsCurrentCentiA` /
   `TEL_bmsSocHundredths` her zaman value-init default'unda (`0`) kalır.
 - `TEL_bmsSystemState` de hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
   bunu `4` (FAULT) yapar — **UKS ekranında BMS her zaman FAULT görünür**,

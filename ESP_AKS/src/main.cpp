@@ -270,8 +270,12 @@ void vTask_HMI_Display(void *pvParameters) {
         BmsComputed BMS_comp = {};
 
         if (bmsValid) {
-            // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
-            BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
+            // TEL_bmsCurrentCentiA birimi centi-Amper (0.01 A) → BmsPackData
+            // .packCurrentMa mA (0.001 A) bekler: 1 centi-A = 10 mA, yani ×10.
+            // TODO(HMI): packCurrentMa şu an hiçbir yerde tüketilmiyor (Nextion'a
+            // gitmiyor); ekranda gösterilecekse beklenen birim Nextion tarafından
+            // teyit edilecek.
+            BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiA * 10;
             
             // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
             // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 

@@ -254,7 +254,7 @@ void CanManager::handleLbBmsE000(const twai_message_t& msg) {
     s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
 
     // DOĞRULANDI: Akım ve SoC değerleri TelemetryData'ya aktarılıyor
-    s_telemetryData.TEL_bmsCurrentCentiMa = parsed.TEL_bmsCurrentCentiMa;
+    s_telemetryData.TEL_bmsCurrentCentiA = parsed.TEL_bmsCurrentCentiA;
     s_telemetryData.TEL_bmsSocHundredths = parsed.TEL_bmsSocHundredths;
 
     CAN_lastBmsE000Tick = xTaskGetTickCount();
@@ -409,8 +409,11 @@ void CanManager::updateBmsValidity() {
         // timeout ile ayni yoldan eskale edilir — TEL_bmsTimeoutActive
         // set edilir, VcuLogic hasCriticalCondition() IDLE disindaysa
         // FAULT'a gecirir (allOff). Pre-reception (hic E000 gorulmemis)
-        // durumda bayrak set EDILMEZ; arac BMS'siz baslarken IDLE'da
-        // kalabilir, READY/DRIVE'a gecis zaten taze veri gerektirir.
+        // durumda bayrak set EDILMEZ ve TEL_bmsDataValid false kalir; arac
+        // BMS'siz baslarken IDLE'da kalir. IDLE->READY gecisi artik
+        // VcuLogic::isReadyEntryPermitted() ile korunuyor (TEL_bmsDataValid
+        // sart), dolayisiyla BMS verisi hic gelmemisken START HV bus'i
+        // enerjilendiremez — bu kontaktor kapama yolu gercekten taze veri gerektirir.
         if (CAN_hasSeen_BmsE000) {
             s_telemetryData.TEL_bmsTimeoutActive = true;
             if (!CAN_bmsTimeoutLogged) {

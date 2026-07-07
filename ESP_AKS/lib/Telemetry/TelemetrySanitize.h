@@ -51,7 +51,7 @@ inline TelemetryData sanitizeForUplink(const TelemetryData& raw) {
     TelemetryData out = raw;
     out.TEL_bmsSystemState     = sanitizeSystemState(out.TEL_bmsSystemState);
     out.TEL_bmsSocHundredths   = sanitizeSoc(out.TEL_bmsSocHundredths);
-    out.TEL_bmsCurrentCentiMa  = sanitizeCurrent(out.TEL_bmsCurrentCentiMa);
+    out.TEL_bmsCurrentCentiA  = sanitizeCurrent(out.TEL_bmsCurrentCentiA);
     return out;
 }
 

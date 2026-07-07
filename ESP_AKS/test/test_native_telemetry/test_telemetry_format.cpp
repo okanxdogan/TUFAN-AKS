@@ -25,7 +25,7 @@ TelemetryData makeDistinctData() {
     d.TEL_bmsTempLowestC  = 31;
     d.TEL_bmsSystemState  = 2;              // IDLE
     d.TEL_bmsPackVoltageDeciV = 780;        // 78.0 V
-    d.TEL_bmsCurrentCentiMa = -181610;      // -1816.10 mA
+    d.TEL_bmsCurrentCentiA = -181610;      // ham centi-A (format testi; ölçek önemsiz)
     d.TEL_bmsSocHundredths = 6283;          // 62.83%
     d.TEL_bmsDataValid = true;
     d.TEL_timestampMs = 12345;
@@ -129,7 +129,7 @@ void test_negative_current_is_formatted(void) {
     Telemetry tel;
     tel.begin();
     TelemetryData d = makeZeroData();
-    d.TEL_bmsCurrentCentiMa = -128;
+    d.TEL_bmsCurrentCentiA = -128;
     tel.sendStatus(d);
 
     TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",-128,"));

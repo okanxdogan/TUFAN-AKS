@@ -65,14 +65,14 @@ void test_sanitize_for_uplink_passthrough_when_all_valid(void) {
     TelemetryData d = {};
     d.TEL_bmsSystemState = 2;
     d.TEL_bmsSocHundredths = 6283;
-    d.TEL_bmsCurrentCentiMa = -181610;
+    d.TEL_bmsCurrentCentiA = -181610;
     d.TEL_motorRpm = 1234;  // sanitize kapsamı dışı alan — dokunulmamalı
 
     const TelemetryData out = TelemetrySanitize::sanitizeForUplink(d);
 
     TEST_ASSERT_EQUAL_UINT8(2, out.TEL_bmsSystemState);
     TEST_ASSERT_EQUAL_UINT16(6283, out.TEL_bmsSocHundredths);
-    TEST_ASSERT_EQUAL_INT32(-181610, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_EQUAL_INT32(-181610, out.TEL_bmsCurrentCentiA);
     TEST_ASSERT_EQUAL_UINT16(1234, out.TEL_motorRpm);
 }
 
@@ -96,11 +96,11 @@ void test_sanitize_for_uplink_corrects_soc_and_current_together(void) {
     TelemetryData d = {};
     d.TEL_bmsSystemState = 0;             // -> 4
     d.TEL_bmsSocHundredths = 65535;       // -> 10000
-    d.TEL_bmsCurrentCentiMa = INT32_MIN;  // -> INT32_MIN + 1
+    d.TEL_bmsCurrentCentiA = INT32_MIN;  // -> INT32_MIN + 1
 
     const TelemetryData out = TelemetrySanitize::sanitizeForUplink(d);
 
     TEST_ASSERT_EQUAL_UINT8(4, out.TEL_bmsSystemState);
     TEST_ASSERT_EQUAL_UINT16(10000, out.TEL_bmsSocHundredths);
-    TEST_ASSERT_EQUAL_INT32(INT32_MIN + 1, out.TEL_bmsCurrentCentiMa);
+    TEST_ASSERT_EQUAL_INT32(INT32_MIN + 1, out.TEL_bmsCurrentCentiA);
 }

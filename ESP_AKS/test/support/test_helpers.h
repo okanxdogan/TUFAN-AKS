@@ -25,7 +25,7 @@ inline TelemetryData makeTelemetryDataValid() {
     d.TEL_bmsTempLowestC  = 23;
     d.TEL_bmsSystemState  = 2;               // IDLE — güvenli başlangıç
     d.TEL_bmsPackVoltageDeciV = 800;         // 80.0 V — bandın ortası
-    d.TEL_bmsCurrentCentiMa = 0;
+    d.TEL_bmsCurrentCentiA = 0;
     d.TEL_bmsSocHundredths = 8000;           // %80.00
     d.TEL_bmsDataValid = true;
     return d;

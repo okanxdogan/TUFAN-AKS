@@ -11,18 +11,19 @@ using VcuLogic::isCurrentWarning;
 using VcuLogic::VcuState;
 
 // ---------------------------------------------------------------------------
-// isCurrentCritical — şarj tarafı (eşik: BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA = 100 000)
+// Birim: centi-Amper (0.01 A) — parser çıktısıyla aynı ölçek (G5 sonrası).
+// isCurrentCritical — şarj tarafı (eşik: BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A = 100)
 // ---------------------------------------------------------------------------
 void test_isCurrentCritical_charge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentCritical(90000));   // 0.9 A — altında
+    TEST_ASSERT_FALSE(isCurrentCritical(90));   // 0.9 A — altında
 }
 
 void test_isCurrentCritical_charge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(100000));   // 1.0 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentCritical(100));   // 1.0 A — eşikte
 }
 
 void test_isCurrentCritical_charge_above_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(110000));   // 1.1 A — üstünde
+    TEST_ASSERT_TRUE(isCurrentCritical(110));   // 1.1 A — üstünde
 }
 
 void test_isCurrentCritical_zero_is_safe(void) {
@@ -30,37 +31,37 @@ void test_isCurrentCritical_zero_is_safe(void) {
 }
 
 // ---------------------------------------------------------------------------
-// isCurrentCritical — deşarj tarafı (eşik: -1 500 000)
+// isCurrentCritical — deşarj tarafı (eşik: -1500 centi-A = -15.0 A)
 // ---------------------------------------------------------------------------
 void test_isCurrentCritical_discharge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentCritical(-1490000));  // 14.9 A — altında
+    TEST_ASSERT_FALSE(isCurrentCritical(-1490));  // 14.9 A — altında
 }
 
 void test_isCurrentCritical_discharge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(-1500000));   // 15.0 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentCritical(-1500));   // 15.0 A — eşikte
 }
 
 void test_isCurrentCritical_discharge_above_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(-2000000));   // 20.0 A — üstünde
+    TEST_ASSERT_TRUE(isCurrentCritical(-2000));   // 20.0 A — üstünde
 }
 
 // ---------------------------------------------------------------------------
-// isCurrentWarning — şarj / deşarj (eşikler: 90 000 / -900 000)
+// isCurrentWarning — şarj / deşarj (eşikler: 90 / -900 centi-A = 0.9 A / -9.0 A)
 // ---------------------------------------------------------------------------
 void test_isCurrentWarning_charge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentWarning(80000));   // 0.8 A
+    TEST_ASSERT_FALSE(isCurrentWarning(80));   // 0.8 A
 }
 
 void test_isCurrentWarning_charge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentWarning(90000));    // 0.9 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentWarning(90));    // 0.9 A — eşikte
 }
 
 void test_isCurrentWarning_discharge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentWarning(-890000)); // 8.9 A
+    TEST_ASSERT_FALSE(isCurrentWarning(-890)); // 8.9 A
 }
 
 void test_isCurrentWarning_discharge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentWarning(-900000));  // 9.0 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentWarning(-900));  // 9.0 A — eşikte
 }
 
 // ---------------------------------------------------------------------------
@@ -79,10 +80,10 @@ void test_unverified_temp_not_wired(void) {
 
 void test_unverified_current_not_wired(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = -2000000;  // 20 A — ama sinyal DOĞRULANMADI
+    d.TEL_bmsCurrentCentiA = -2000;  // 20 A — ama sinyal DOĞRULANMADI
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
-    d.TEL_bmsCurrentCentiMa = 120000;    // 1.2 A şarj
+    d.TEL_bmsCurrentCentiA = 120;    // 1.2 A şarj
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
@@ -204,7 +205,7 @@ void test_warning_bms_invalid_skips_thresholds(void) {
     d.TEL_bmsDataValid = false;
     d.TEL_bmsTempHighestC = 99;
     d.TEL_bmsPackVoltageDeciV = 500;
-    d.TEL_bmsCurrentCentiMa = -2500000;
+    d.TEL_bmsCurrentCentiA = -2500;
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }

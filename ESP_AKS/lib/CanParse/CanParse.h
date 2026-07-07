@@ -45,7 +45,7 @@ bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out);
 //   byte[4:5] = SoC 1, big-endian uint16, raw * 0.01 = % — DOĞRULANDI
 //   byte[6:7] = SoC 2, big-endian uint16, raw * 0.01 = % — DOĞRULANDI (Henüz kullanılmıyor)
 // DLC ≥ 8 olmalı; aksi halde false döner.
-// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsCurrentCentiMa, TEL_bmsSocHundredths, TEL_bmsDataValid (=true).
+// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsCurrentCentiA, TEL_bmsSocHundredths, TEL_bmsDataValid (=true).
 bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
 
 // 0x1806E5F4 — Charger komut frame'i (BMS -> Charger; AKS yalnızca dinler).

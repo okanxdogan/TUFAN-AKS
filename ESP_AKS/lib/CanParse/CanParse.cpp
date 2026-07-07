@@ -24,9 +24,11 @@ bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8)
         return false;
 
-    // DOĞRULANDI: byte[0:1] = Pack Current, int16_t, Çarpan 0.1A
+    // DOĞRULANDI: byte[0:1] = Pack Current, int16_t, Çarpan 0.1A.
+    // raw (0.1A birimli) × 10 = centi-Amper (0.01 A) → TEL_bmsCurrentCentiA;
+    // SystemConfig.h akım eşikleri (BMS_*_CENTI_A) aynı birimde (G5 hizalaması).
     int16_t raw_current = static_cast<int16_t>((msg.data[0] << 8) | msg.data[1]);
-    out.TEL_bmsCurrentCentiMa = static_cast<int32_t>(raw_current) * 10;
+    out.TEL_bmsCurrentCentiA = static_cast<int32_t>(raw_current) * 10;
 
     // DOĞRULANDI: byte[2:3] = Pack Voltage, uint16_t, Çarpan 0.1V
     out.TEL_bmsPackVoltageDeciV = static_cast<uint16_t>((msg.data[2] << 8) | msg.data[3]);

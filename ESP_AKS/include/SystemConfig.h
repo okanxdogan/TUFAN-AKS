@@ -155,6 +155,11 @@
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
 
+// --- Motor Sürücüsü Entegrasyon Bayrağı ---
+#ifndef MOTOR_DRIVER_PRESENT
+#define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
+#endif
+
 // --- Phase 1 Planning Notes ---
 // Torque command generation is intentionally held at zero until the pedal /
 // brake input model is finalized. READY -> DRIVE enable is now command-driven,
@@ -198,13 +203,17 @@
 // hasWarning/hasCriticalCondition'a BAĞLANMAMALI.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
-// Current thresholds in centi-mA (0.01 mA units).
-// Not: CAN_BMS_CURRENT akımı doğrulanmıştır ve TEL_bmsCurrentCentiMa
+// Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
+// TEL_bmsCurrentCentiA ile AYNI birim (raw 0.1A × 10 = centi-A). Böylece
+// eşikler parser ölçeğiyle uçtan uca hizalı; aşırı akım koruması gerçek
+// değerlerde tetiklenebilir (G5 düzeltmesi — eski centi-mA yorumu 1000× kör
+// bırakıyordu).
+// Not: CAN_BMS_CURRENT akımı doğrulanmıştır ve TEL_bmsCurrentCentiA
 // üzerinden erişilebilir.
-#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA    90000    // 0.9 A
-#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA 100000  // 1.0 A
-#define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA  900000  // 9.0 A
-#define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA 1500000 // 15.0 A
+#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A       90    // 0.9 A
+#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A   100   // 1.0 A
+#define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
+#define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
 // (2.50 V / 3.65 V per hücre).
 // TODO: source signal not yet verified — TEL_bmsCellVoltageMin/MaxDeciMv

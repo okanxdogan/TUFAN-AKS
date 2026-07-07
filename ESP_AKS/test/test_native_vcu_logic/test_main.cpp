@@ -68,6 +68,9 @@ extern void test_reset_interlock_unverified_bms_system_state_does_not_block(void
 // Faz 2 — state machine geçişleri
 extern void test_init_transitions_to_idle_and_calls_allOff(void);
 extern void test_idle_to_ready_on_start_request(void);
+extern void test_idle_start_rejected_when_bms_never_valid(void);
+extern void test_idle_start_permitted_when_bms_valid_and_clean(void);
+extern void test_idle_start_rejected_when_warning_active(void);
 extern void test_ready_to_drive_on_drive_enable(void);
 extern void test_idle_to_emergency_stop(void);
 extern void test_drive_to_emergency_stop(void);
@@ -159,6 +162,9 @@ int main(int /*argc*/, char ** /*argv*/) {
     // Faz 2 — state machine
     RUN_TEST(test_init_transitions_to_idle_and_calls_allOff);
     RUN_TEST(test_idle_to_ready_on_start_request);
+    RUN_TEST(test_idle_start_rejected_when_bms_never_valid);
+    RUN_TEST(test_idle_start_permitted_when_bms_valid_and_clean);
+    RUN_TEST(test_idle_start_rejected_when_warning_active);
     RUN_TEST(test_ready_to_drive_on_drive_enable);
     RUN_TEST(test_idle_to_emergency_stop);
     RUN_TEST(test_drive_to_emergency_stop);

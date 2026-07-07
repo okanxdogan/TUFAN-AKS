@@ -56,6 +56,61 @@ void test_idle_to_ready_on_start_request(void) {
 }
 
 // ---------------------------------------------------------------------------
+// G1 interlock: BMS verisi hic gelmemisken (bmsDataValid=false) START gelirse
+// READY'ye GECILMEZ — HV bus batarya hakkinda sifir bilgiyle enerjilenmez.
+// ---------------------------------------------------------------------------
+void test_idle_start_rejected_when_bms_never_valid(void) {
+    primeIdle();
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsDataValid = false;  // BMS CAN'a hic frame gelmemis (pre-reception)
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(0, g_fake_relay_allOn_count);
+}
+
+// ---------------------------------------------------------------------------
+// G1 interlock: bmsDataValid=true + kritik yok + uyari yok → READY'ye gecer.
+// ---------------------------------------------------------------------------
+void test_idle_start_permitted_when_bms_valid_and_clean(void) {
+    primeIdle();
+
+    TelemetryData d = makeTelemetryDataValid();  // bmsDataValid=true, temiz
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(1, g_fake_relay_allOn_count);
+}
+
+// ---------------------------------------------------------------------------
+// G1 interlock: bmsDataValid=true ama uyari kosulu aktifken (WARN bandi pack
+// voltaji) START gelirse READY'ye GECILMEZ, IDLE'da kalir.
+// ---------------------------------------------------------------------------
+void test_idle_start_rejected_when_warning_active(void) {
+    primeIdle();
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsPackVoltageDeciV = 715;  // <= 720 dV WARN low (kritik degil, >600)
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(0, g_fake_relay_allOn_count);
+}
+
+// ---------------------------------------------------------------------------
 // READY → DRIVE on DRIVE_ENABLE.
 // ---------------------------------------------------------------------------
 void test_ready_to_drive_on_drive_enable(void) {
