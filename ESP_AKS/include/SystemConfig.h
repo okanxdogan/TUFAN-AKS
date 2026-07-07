@@ -42,6 +42,21 @@
 #define CAN_TX_PIN GPIO_NUM_5
 #define CAN_RX_PIN GPIO_NUM_4
 
+// --- CAN RX Yolu Sertleştirme (G6) ---
+// TWAI sürücüsünün donanım RX kuyruğu derinliği. Varsayılan 5 idi; 100 Hz
+// işleme × 5 = 500 frame/s tavan yaratıyordu. 500 kbps bus ~3800 frame/s
+// taşıyabilir ve BMS 9+ ID'yi 10 ms penceresinde art arda basınca kuyruk
+// ALARMSIZ taşıyordu. 32'ye çıkarıldı + TWAI_ALERT_RX_QUEUE_FULL etkin.
+// Bellek maliyeti: TWAI sürücüsü her slot için ~sizeof(twai_hal_frame_t)
+// (~16 B) ayırır → 32 slot ≈ ~0.5 KB RAM (varsayılan 5'e göre ~430 B fazla).
+#define CAN_RX_QUEUE_LEN 32
+// processRxMessages tek çağrıda kuyruğu boşalana kadar okur; bu üst sınır
+// task açlığına / sonsuz döngüye karşı emniyet (kuyruk derinliğiyle aynı).
+#define CAN_RX_DRAIN_MAX CAN_RX_QUEUE_LEN
+// RX_QUEUE_FULL / drop istatistiklerini oran-sınırlı loglama aralığı (özet):
+// her olayda değil, en fazla bu sürede bir WARN.
+#define CAN_RX_STATS_LOG_INTERVAL_MS 1000U
+
 // --- Nextion HMI (UART) ---
 #define HMI_UART_NUM UART_NUM_1
 // Not: J8 konnektöründe screen_TX'in ekranın mı yoksa ESP'nin mi TX'i olduğuna

@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <climits>
 
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3)
 
 namespace TelemetrySanitize {
 

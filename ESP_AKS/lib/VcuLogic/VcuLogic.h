@@ -1,7 +1,8 @@
 #pragma once
 #include <cstdint>
+#include "IRelayActuator.h"
 #include "SystemConfig.h"
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3)
 
 namespace VcuLogic {
 
@@ -130,7 +131,11 @@ inline bool isReadyEntryPermitted(const TelemetryData& VCU_data) {
 // ---------------------------------------------------------------------------
 // Stateful API
 // ---------------------------------------------------------------------------
-void init();
+// init() aktüatör katmanını REFERANS ile enjekte eder (M2). VcuLogic somut
+// RelayManager'a bağlı değildir; üretimde main.cpp bir adapter, testler bir
+// mock geçirir. Referans init() süresince ve sonrasında geçerli kalmalıdır
+// (üretimde singleton adapter, testte statik mock — ikisi de kalıcı ömürlü).
+void init(IRelayActuator& relays);
 void run();
 void postEvent(VcuEvent event);
 VcuState getState();
@@ -146,10 +151,12 @@ void setTelemetryData(const TelemetryData& TEL_data);
 using TorqueSink = void (*)(uint16_t torque);
 void setTorqueSink(TorqueSink sink);
 
-#ifdef VCU_LOGIC_TESTABLE
-// Yalnız native test build'inde aktif. Tüm modül-içi state'i (durum, timer,
-// son telemetri, queue) sıfırlar; setUp() içinde çağrılarak testler arası
-// izolasyon sağlanır. Üretim build'inde tanımlı değildir.
+#ifdef NATIVE_BUILD
+// Yalnız native test build'inde aktif (RelayManager::resetForTest ile aynı
+// NATIVE_BUILD deseni). Tüm modül-içi state'i (durum, timer, son telemetri,
+// queue, enjekte edilen aktüatör pointer'ı) sıfırlar; setUp()/prime içinde
+// çağrılarak testler arası izolasyon sağlanır. Üretim build'inde tanımlı
+// değildir.
 void resetForTest();
 #endif
 

@@ -2,7 +2,12 @@
 
 #include <cstdint>
 
+#include "VehicleData.h"    // TelemetryData (saf veri sözleşmesi — M3)
 #include "VehicleParams.h"  // WHEEL_DIAMETER_M / GEAR_RATIO / MOTOR_RPM_IS_WHEEL_RPM — TEK doğruluk kaynağı
+// NOT (M3): VehicleParams bağımlılığı BİLEREK burada — yalnız aşağıdaki hız
+// hesabı (rpmToSpeedKmhX10) buna ihtiyaç duyar. TelemetryData artık
+// VehicleData.h'de olduğundan CanParse/OfflineBuffer/VcuLogic vb. bu LoRa
+// header'ını (ve dolayısıyla VehicleParams'ı) ARTIK ÇEKMEZ.
 
 #define TEL_SPD_X10_MAX 3000  // UKS telemetry.c sanity siniri ile senkron
                               // — degistirilecekse iki tarafta birlikte
@@ -38,37 +43,7 @@ static inline uint16_t rpmToSpeedKmhX10(uint16_t rpm) {
                                 MOTOR_RPM_IS_WHEEL_RPM);
 }
 
-struct TelemetryData {
-    uint16_t TEL_motorRpm;
-    int16_t TEL_motorTorqueFeedback;
-    uint8_t TEL_motorErrorFlags;
-    bool TEL_motorDataValid;
-    bool TEL_motorTimeoutActive;
-
-    // Lithium Balance c-BMS — alanlar henüz çözülmemiş ID'lerden gelecek
-    // Bu alanlar TelemetryData yapısında kalıyor çünkü telemetri, HMI ve
-    // VcuLogic tüketici kodları bunları kullanıyor. İlgili CAN ID'lerin
-    // reverse-engineering'i tamamlandıkça parse edilecek.
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempHighestC;            // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempLowestC;             // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint8_t TEL_bmsSystemState;            // DOĞRULANMADI — kaynak ID bilinmiyor
-
-    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI)
-    uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw * 0.1 = V — DOĞRULANDI
-    int32_t TEL_bmsCurrentCentiA;     // byte[0:1], raw * 10 = CentiA (0.01A) — DOĞRULANDI
-    uint16_t TEL_bmsSocHundredths;     // byte[4:5], raw = 0.01% — DOĞRULANDI
-
-    bool TEL_bmsDataValid;
-    // Post-reception E000 freshness kaybı (krş. TEL_motorTimeoutActive).
-    // En az bir E000 görüldükten sonra CAN_BMS_STATUS_TIMEOUT_MS içinde yeni
-    // frame gelmezse true olur; VcuLogic IDLE dışında kritik fault sayar.
-    bool TEL_bmsTimeoutActive;
-
-    uint32_t TEL_timestampMs   = 0;   // ms since boot — stamped when packet is created
-    uint16_t TEL_speedKmhX10  = 0;   // vehicle speed ×10 km/h, filled via rpmToSpeedKmhX10()
-};
+// TelemetryData artık VehicleData.h'de (yukarıda include edildi) — M3.
 
 class Telemetry {
    public:

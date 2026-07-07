@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include "CanParse.h"
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
 #include "TelemetrySanitize.h"
 #include "driver/gpio.h"
 #include "driver/twai.h"
@@ -76,6 +76,12 @@ class CanManager {
 
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
+
+    // G6: RX yolu sertleştirme sayaçları (sibling counter'larla aynı CAN_
+    // önek konvansiyonu). RX_QUEUE_FULL alarmı ve atılan remote (RTR) frame'ler.
+    uint32_t CAN_rxQueueFullCount = 0;
+    uint32_t CAN_rxRemoteFrameCount = 0;
+    TickType_t CAN_lastRxQueueFullLogTick = 0;
 
     // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
     bool CAN_torqueSkipLogged = false;

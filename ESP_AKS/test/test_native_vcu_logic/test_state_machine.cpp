@@ -1,8 +1,9 @@
 #include <unity.h>
 
+#include "MotorTorque.h"
 #include "VcuLogic.h"
 #include "fake_freertos.h"
-#include "fake_relay_manager.h"
+#include "mock_relay_actuator.h"
 #include "test_helpers.h"
 
 using test_helpers::makeTelemetryDataValid;
@@ -17,7 +18,7 @@ void primeIdle() {
     VcuLogic::resetForTest();
     fake_freertos_reset();
     fake_relay_reset();
-    VcuLogic::init();
+    VcuLogic::init(g_mockRelay);
     VcuLogic::setTelemetryData(makeTelemetryDataValid());
     TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
                           static_cast<int>(VcuLogic::getState()));
@@ -34,7 +35,7 @@ void test_init_transitions_to_idle_and_calls_allOff(void) {
     fake_freertos_reset();
     fake_relay_reset();
 
-    VcuLogic::init();
+    VcuLogic::init(g_mockRelay);
 
     TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
                           static_cast<int>(VcuLogic::getState()));
@@ -429,4 +430,86 @@ void test_reset_from_fault_clears_actuator_fault(void) {
                           static_cast<int>(VcuLogic::getState()));
     TEST_ASSERT_EQUAL_UINT(clearsBefore + 1, g_fake_relay_clearFault_count);
     TEST_ASSERT_FALSE(g_fake_relay_actuatorFault);
+}
+
+// ===========================================================================
+// G2 — E-STOP/FAULT güvenli kapanış sırası: sıfır-tork ÖNCE, kontaktör açma
+// SONRA. Torque isteği bir spy sink ile, kontaktör açma fake allOff ile
+// kaydedilir; paylaşılan monoton sayaç sırayı doğrular.
+// ===========================================================================
+
+namespace {
+unsigned s_torqueCount = 0;
+unsigned s_torqueFirstSeq = 0;
+uint16_t s_lastTorque = 0xFFFF;
+
+void torqueSpy(uint16_t torque) {
+    ++s_torqueCount;
+    s_lastTorque = torque;
+    if (s_torqueFirstSeq == 0)
+        s_torqueFirstSeq = ++g_fake_call_seq;
+}
+
+// Spy + sıra sayaçlarını temiz başlat (primeIdle'daki init allOff'unu da izole
+// etmek için fake_relay_reset burada TEKRAR çağrılır).
+void primeEstopOrder() {
+    s_torqueCount = 0;
+    s_torqueFirstSeq = 0;
+    s_lastTorque = 0xFFFF;
+    fake_relay_reset();               // g_fake_call_seq / allOff_firstSeq = 0
+    VcuLogic::setTorqueSink(torqueSpy);
+}
+}  // namespace
+
+void test_estop_requests_zero_torque_before_opening_contactors(void) {
+    primeIdle();
+    primeEstopOrder();
+
+    VcuLogic::postEvent(VcuEvent::EMERGENCY_STOP);
+    VcuLogic::run();  // transitionTo ESTOP (handler bu tick çalışmaz)
+    VcuLogic::run();  // handler: (1) torque(0) → (2) delay doldu → (3) allOff
+
+    // (a) sıfır tork tam olarak bir kez ve değer 0 ile istendi (E-STOP spam yok)
+    TEST_ASSERT_EQUAL_UINT(1, s_torqueCount);
+    TEST_ASSERT_EQUAL_UINT16(0, s_lastTorque);
+    // (b) hem tork hem röle açma gerçekleşti
+    TEST_ASSERT_TRUE(s_torqueFirstSeq > 0);
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_firstSeq > 0);
+    // (c) SIRA: torque(0) kontaktör açmadan ÖNCE
+    TEST_ASSERT_TRUE(s_torqueFirstSeq < g_fake_relay_allOff_firstSeq);
+}
+
+void test_fault_requests_zero_torque_before_opening_contactors(void) {
+    primeIdle();
+    primeEstopOrder();
+
+    VcuLogic::postEvent(VcuEvent::FAULT_DETECTED);
+    VcuLogic::run();  // transitionTo FAULT (t=0, henüz açma yok)
+    VcuLogic::run();  // handler: torque(0) → allOff
+
+    TEST_ASSERT_EQUAL_UINT(1, s_torqueCount);
+    TEST_ASSERT_EQUAL_UINT16(0, s_lastTorque);
+    TEST_ASSERT_TRUE(s_torqueFirstSeq > 0);
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_firstSeq > 0);
+    TEST_ASSERT_TRUE(s_torqueFirstSeq < g_fake_relay_allOff_firstSeq);
+}
+
+// Sink bağlı değilken E-STOP çökmemeli (istek sessizce yok sayılır) ve
+// kontaktörler yine de açılmalı.
+void test_estop_without_torque_sink_still_opens_contactors(void) {
+    primeIdle();
+    fake_relay_reset();
+    VcuLogic::setTorqueSink(nullptr);
+
+    VcuLogic::postEvent(VcuEvent::EMERGENCY_STOP);
+    VcuLogic::run();
+    VcuLogic::run();
+
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_count > 0);
+}
+
+// Bayrak 0 (varsayılan native build) iken torque frame'i ÜRETİLMEZ: gate saf
+// yardımcısı false döner (CanManager::sendTorqueCommand bunu kullanır).
+void test_flag0_torque_frame_disabled(void) {
+    TEST_ASSERT_FALSE(MotorTorque::frameEnabled());
 }

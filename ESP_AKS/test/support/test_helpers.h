@@ -1,5 +1,5 @@
 #pragma once
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3)
 
 namespace test_helpers {
 

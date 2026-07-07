@@ -93,6 +93,12 @@ extern void test_ready_to_fault_on_actuator_fault(void);
 extern void test_drive_to_fault_on_actuator_fault(void);
 extern void test_reset_from_fault_clears_actuator_fault(void);
 
+// G2 — E-STOP/FAULT sıfır-tork → delay → kontaktör açma sırası
+extern void test_estop_requests_zero_torque_before_opening_contactors(void);
+extern void test_fault_requests_zero_torque_before_opening_contactors(void);
+extern void test_estop_without_torque_sink_still_opens_contactors(void);
+extern void test_flag0_torque_frame_disabled(void);
+
 // Faz 0 sanity
 static void test_smoke_arithmetic(void) {
     TEST_ASSERT_EQUAL_INT(2, 1 + 1);
@@ -192,6 +198,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ready_to_fault_on_actuator_fault);
     RUN_TEST(test_drive_to_fault_on_actuator_fault);
     RUN_TEST(test_reset_from_fault_clears_actuator_fault);
+
+    RUN_TEST(test_estop_requests_zero_torque_before_opening_contactors);
+    RUN_TEST(test_fault_requests_zero_torque_before_opening_contactors);
+    RUN_TEST(test_estop_without_torque_sink_still_opens_contactors);
+    RUN_TEST(test_flag0_torque_frame_disabled);
 
     return UNITY_END();
 }

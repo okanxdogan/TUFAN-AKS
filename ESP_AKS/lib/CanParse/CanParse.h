@@ -7,7 +7,7 @@
 // mantığını izole eder.
 //
 #include <cstdint>
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3: LoRa/VehicleParams bağımlılığı yok)
 #include "driver/twai.h"
 #include "freertos/FreeRTOS.h"
 

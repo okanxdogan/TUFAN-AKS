@@ -1,0 +1,46 @@
+#pragma once
+
+#include <cstdint>
+
+// VehicleData.h — TEK veri-sözleşmesi (M3: katman ihlali düzeltmesi).
+//
+// TelemetryData üç rolü taşır: (1) CAN parse çıktısı, (2) task-arası kuyruk
+// yükü, (3) LoRa frame kaynağı. Eskiden bu struct LoRa TX sınıfının header'ı
+// olan Telemetry.h içinde yaşıyordu ve Telemetry.h → VehicleParams.h çektiği
+// için saf CAN parser'ı (CanParse) derlemek tekerlek çapı sabitine ve LoRa
+// katmanına bağımlı oluyordu.
+//
+// Bu header YALNIZCA saf veri sözleşmesidir: donanım, LoRa, VehicleParams ve
+// hız hesabı bağımlılığı YOKTUR. Hız/tur hesabı (VehicleParams'a ihtiyaç duyan
+// tek yer) LoRa tarafında Telemetry.h'de kalır. Alan adları DEĞİŞMEDİ.
+struct TelemetryData {
+    uint16_t TEL_motorRpm;
+    int16_t TEL_motorTorqueFeedback;
+    uint8_t TEL_motorErrorFlags;
+    bool TEL_motorDataValid;
+    bool TEL_motorTimeoutActive;
+
+    // Lithium Balance c-BMS — alanlar henüz çözülmemiş ID'lerden gelecek
+    // Bu alanlar TelemetryData yapısında kalıyor çünkü telemetri, HMI ve
+    // VcuLogic tüketici kodları bunları kullanıyor. İlgili CAN ID'lerin
+    // reverse-engineering'i tamamlandıkça parse edilecek.
+    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
+    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
+    int8_t TEL_bmsTempHighestC;            // DOĞRULANMADI — kaynak ID bilinmiyor
+    int8_t TEL_bmsTempLowestC;             // DOĞRULANMADI — kaynak ID bilinmiyor
+    uint8_t TEL_bmsSystemState;            // DOĞRULANMADI — kaynak ID bilinmiyor
+
+    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI)
+    uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw * 0.1 = V — DOĞRULANDI
+    int32_t TEL_bmsCurrentCentiA;     // byte[0:1], raw * 10 = CentiA (0.01A) — DOĞRULANDI
+    uint16_t TEL_bmsSocHundredths;     // byte[4:5], raw = 0.01% — DOĞRULANDI
+
+    bool TEL_bmsDataValid;
+    // Post-reception E000 freshness kaybı (krş. TEL_motorTimeoutActive).
+    // En az bir E000 görüldükten sonra CAN_BMS_STATUS_TIMEOUT_MS içinde yeni
+    // frame gelmezse true olur; VcuLogic IDLE dışında kritik fault sayar.
+    bool TEL_bmsTimeoutActive;
+
+    uint32_t TEL_timestampMs   = 0;   // ms since boot — stamped when packet is created
+    uint16_t TEL_speedKmhX10  = 0;   // vehicle speed ×10 km/h, filled via rpmToSpeedKmhX10()
+};

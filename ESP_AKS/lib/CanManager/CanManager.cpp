@@ -26,7 +26,11 @@ bool CanManager::begin() {
         return false;
     }
 
-    g_config.alerts_enabled = TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED;
+    // G6: RX kuyruğunu derinleştir (varsayılan 5 → 32) ve kuyruk-dolu
+    // alarmını etkinleştir; böylece BMS burst'lerinde ALARMSIZ frame düşmez.
+    g_config.rx_queue_len = CAN_RX_QUEUE_LEN;
+    g_config.alerts_enabled = TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED |
+                              TWAI_ALERT_RX_QUEUE_FULL;
     esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "twai_driver_install failed: %s", esp_err_to_name(err));
@@ -83,6 +87,13 @@ bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
 #endif
 }
 
+// G6 test notu: Bu fonksiyonun drain-döngüsü + RTR filtresi native'de test
+// EDİLMİYOR. CanManager platformio.ini'de native `lib_ignore` altındadır ve
+// idf_stubs twai_message_t yalnız `flags` alanına sahiptir (rtr/extd union'ı
+// yok); twai_receive/driver API fake'i de yoktur. Bu davranışı doğrulamak,
+// tam bir TWAI sürücü fake'i + scriptable RX kuyruğu gerektirir ki bu, Faz 3
+// CanManager orkestrasyon testi KAPSAMINDADIR (bu değişiklikte bilinçli olarak
+// yapılmadı). Değişiklik esp32dev derlemesi ile doğrulanır.
 void CanManager::processRxMessages() {
     if (!isInitialized)
         return;
@@ -105,17 +116,43 @@ void CanManager::processRxMessages() {
             }
             twai_start();
         }
+        if (alerts & TWAI_ALERT_RX_QUEUE_FULL) {
+            // Kuyruk taştı → donanım frame düşürdü. Sayaç tut, oran-sınırlı
+            // özet logla (her olayda değil, en fazla 1 WARN / interval).
+            CAN_rxQueueFullCount++;
+            TickType_t CAN_now = xTaskGetTickCount();
+            if (CAN_now - CAN_lastRxQueueFullLogTick >=
+                pdMS_TO_TICKS(CAN_RX_STATS_LOG_INTERVAL_MS)) {
+                ESP_LOGW(TAG,
+                         "RX queue full — frame düştü (toplam olay=%lu, "
+                         "atlanan remote=%lu)",
+                         (unsigned long)CAN_rxQueueFullCount,
+                         (unsigned long)CAN_rxRemoteFrameCount);
+                CAN_lastRxQueueFullLogTick = CAN_now;
+            }
+        }
     }
 
     twai_message_t msg;
-    // Process up to 5 messages per call to avoid blocking the task
-    for (int i = 0; i < 5; i++) {
+    // G6: Kuyruğu bu tick'te boşalana kadar işle; üst sınır CAN_RX_DRAIN_MAX
+    // (task açlığı / sonsuz döngü emniyeti). rx_queue_len=CAN_RX_QUEUE_LEN
+    // olduğundan tek tick'te tüm kuyruk tahliye edilebilir.
+    for (int i = 0; i < CAN_RX_DRAIN_MAX; i++) {
         esp_err_t err = twai_receive(&msg, 0);  // non-blocking
         if (err == ESP_ERR_TIMEOUT)
             break;  // no more messages
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "RX error: %s", esp_err_to_name(err));
             break;
+        }
+
+        // G6: Remote frame (RTR) — data alanı TANIMSIZ; DLC≥4 olsa bile parse
+        // ETME. Say ve atla. (Beklenen DLC minimum kontrolü ise mesaja özel
+        // olarak zaten her CanParse::parse* fonksiyonunun başında yapılır —
+        // örn. parseLbBmsE000 DLC<8'i, parseMotorStatus DLC<4'ü reddeder.)
+        if (msg.rtr) {
+            CAN_rxRemoteFrameCount++;
+            continue;
         }
 
         if (msg.extd) {

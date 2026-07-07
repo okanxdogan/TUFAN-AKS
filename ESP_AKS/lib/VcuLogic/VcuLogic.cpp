@@ -1,8 +1,8 @@
 #include <atomic>
 
 #include "VcuLogic.h"
+#include "IRelayActuator.h"
 #include "SystemConfig.h"
-#include "RelayManager.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -19,9 +19,9 @@ namespace VcuLogic {
 static std::atomic<VcuState> s_state{VcuState::INIT};
 static QueueHandle_t s_eventQueue = nullptr;
 static uint32_t s_stateTimer = 0;
-// Monotonic uptime (transition'da SIFIRLANMAZ) — RelayManager periyodik
-// actuator verify'ının zamanlaması için (s_stateTimer state geçişinde
-// sıfırlandığından periyot ölçümüne uygun değil).
+// Monotonic uptime (transition'da SIFIRLANMAZ) — aktüatör periyodik verify'ının
+// zamanlaması için (s_stateTimer state geçişinde sıfırlandığından periyot
+// ölçümüne uygun değil).
 static uint32_t s_uptimeMs = 0;
 static TelemetryData s_TEL_latestData = {};
 static bool s_VCU_warningLogged = false;
@@ -29,6 +29,10 @@ static SemaphoreHandle_t s_TEL_dataMutex = nullptr;
 // E-STOP bypass: set atomically in postEvent so queue saturation
 // cannot swallow an emergency stop command.
 static std::atomic<bool> s_eStopPending{false};
+
+// M2: enjekte edilen aktüatör (röle sürücüsü) arayüzü. init() içinde bağlanır;
+// somut RelayManager singleton'ına doğrudan bağımlılık YOK.
+static IRelayActuator* s_relays = nullptr;
 
 static bool s_relaysOpenedInEstop = false;
 static bool s_relaysOpenedInFault = false;
@@ -66,7 +70,9 @@ static void handleFault();
 // ---------------------------------------------------------------------------
 // Public
 // ---------------------------------------------------------------------------
-void init() {
+void init(IRelayActuator& relays) {
+    s_relays = &relays;
+
     s_eventQueue = xQueueCreate(8, sizeof(VcuEvent));
     if (s_eventQueue == nullptr) {
         ESP_LOGE(TAG, "Failed to create event queue");
@@ -80,7 +86,7 @@ void init() {
     }
 
     // Safety first — ensure all relays are off at startup
-    RelayManager::instance().allOff();
+    s_relays->openAllContactors(false);
 
     transitionTo(VcuState::IDLE);
 }
@@ -98,11 +104,11 @@ void run() {
         // so handleEmergencyStop() keeps executing (timer must not reset).
     }
 
-    // G3: hafif periyodik actuator (röle çıkışı) doğrulaması. RelayManager
+    // G3: hafif periyodik actuator (röle çıkışı) doğrulaması. Aktüatör katmanı
     // RELAY_VERIFY_PERIOD_MS'den seyrek olmayacak şekilde OLAT/IODIR'i geri
     // okur; uyuşmazlıkta re-init + re-assert eder ve kalıcı atomic fault
     // bayrağını set eder.
-    RelayManager::instance().verifyIfDue(s_uptimeMs);
+    s_relays->verifyIfDue(s_uptimeMs);
 
     // Actuator fault kalıcı bayrağını HER tick oku (R1: düşen event tuzağı
     // yok). HV bus canlıyken (READY/DRIVE) gelen fault, mevcut fault yoluna
@@ -111,7 +117,7 @@ void run() {
     {
         VcuState st = s_state.load(std::memory_order_relaxed);
         if ((st == VcuState::READY || st == VcuState::DRIVE) &&
-            RelayManager::instance().hasActuatorFault()) {
+            s_relays->hasActuatorFault()) {
             ESP_LOGE(TAG, "Actuator fault while HV live — entering FAULT");
             transitionTo(VcuState::FAULT);
             return;
@@ -147,7 +153,7 @@ void run() {
             transitionTo(VcuState::FAULT);
             return;
         }
-        
+
         currentState = s_state.load(std::memory_order_relaxed);
         if (event == VcuEvent::RESET &&
             (currentState == VcuState::FAULT ||
@@ -158,7 +164,7 @@ void run() {
             }
             // Actuator fault'u temizle; donanım hâlâ bozuksa bir sonraki
             // periyodik verify yeniden latch'ler ve READY tekrar bloklanır.
-            RelayManager::instance().clearActuatorFault();
+            s_relays->clearActuatorFault();
             transitionTo(VcuState::IDLE);
             return;
         }
@@ -171,11 +177,10 @@ void run() {
                     // batarya hakkında doğrulanmış/taze veri yoksa geçme.
                     // Actuator fault guard'ı isReadyEntryPermitted'ın DIŞINDA
                     // tutuldu: o predicate saf/donanımsız (yalnız TelemetryData);
-                    // röle donanım sağlığı ayrı bir global okuma olduğundan
-                    // burada ayrı guard olarak kontrol edilir.
+                    // röle donanım sağlığı ayrı bir enjekte edilmiş sorgu
+                    // olduğundan burada ayrı guard olarak kontrol edilir.
                     TelemetryData VCU_snap = getTelemetrySnapshot();
-                    bool actuatorFault =
-                        RelayManager::instance().hasActuatorFault();
+                    bool actuatorFault = s_relays->hasActuatorFault();
                     if (isReadyEntryPermitted(VCU_snap) && !actuatorFault) {
                         transitionTo(VcuState::READY);
                     } else {
@@ -267,7 +272,7 @@ static void handleIdle() {
 static void handleReady() {
     // Close all positive contactors on entry (runs once via stateTimer guard)
     if (s_stateTimer <= TASK_PERIOD_MS) {
-        RelayManager::instance().allOn();
+        s_relays->closeAllContactors();
         ESP_LOGI(TAG, "All contactors closed — system READY");
     }
     // DRIVE is entered only after an explicit DRIVE_ENABLE command.
@@ -297,13 +302,13 @@ static void handleEmergencyStop() {
     // (2)+(3): torkun sönmesi için bekle, sonra pozitif kontaktör bankını aç.
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
         if (!s_relaysOpenedInEstop) {
-            RelayManager::instance().allOff(false); // First time, log it
+            s_relays->openAllContactors(false); // First time, log it
             s_relaysOpenedInEstop = true;
         } else if (s_stateTimer - s_lastEstopLogMs >= 1000) {
             // G3: sessiz re-assert artık doğrulama DEĞİL sadece log açısından
-            // sessiz — allOff() içindeki verifyOutputs() geri-okumayı yapar,
-            // uyuşmazsa loglar ve actuator fault'u latch'ler (sürdürür).
-            RelayManager::instance().allOff(true); // Silent (log) re-assert + verify
+            // sessiz — openAllContactors() içindeki verifyOutputs() geri-okumayı
+            // yapar, uyuşmazsa loglar ve actuator fault'u latch'ler (sürdürür).
+            s_relays->openAllContactors(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -329,12 +334,12 @@ static void handleFault() {
 
     if (s_stateTimer >= VCU_CONTACTOR_OPEN_DELAY_MS) {
         if (!s_relaysOpenedInFault) {
-            RelayManager::instance().allOff(false); // First time, log it
+            s_relays->openAllContactors(false); // First time, log it
             s_relaysOpenedInFault = true;
         } else if (s_stateTimer - s_lastFaultLogMs >= 1000) {
-            // G3: allOff() içindeki verifyOutputs() re-assert'i geri-okur;
+            // G3: openAllContactors() içindeki verifyOutputs() re-assert'i geri-okur;
             // uyuşmazsa loglar + actuator fault latch'lenir (sürdürülür).
-            RelayManager::instance().allOff(true); // Silent (log) re-assert + verify
+            s_relays->openAllContactors(true); // Silent (log) re-assert + verify
         }
     }
 
@@ -422,7 +427,7 @@ static const char* readyRejectReason(const TelemetryData& VCU_data) {
 // error-flag bit for this, it should hook into that timeout path, not a
 // separate one here (separate task).
 
-#ifdef VCU_LOGIC_TESTABLE
+#ifdef NATIVE_BUILD
 void resetForTest() {
     s_state.store(VcuState::INIT, std::memory_order_relaxed);
     s_stateTimer = 0;
@@ -430,6 +435,7 @@ void resetForTest() {
     s_TEL_latestData = {};
     s_VCU_warningLogged = false;
     s_eStopPending.store(false, std::memory_order_relaxed);
+    s_relays = nullptr;  // init() yeniden bağlar
 
     s_relaysOpenedInEstop = false;
     s_relaysOpenedInFault = false;
