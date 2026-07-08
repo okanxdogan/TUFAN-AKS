@@ -40,7 +40,8 @@ static inline uint16_t rpmToSpeedKmhX10(uint16_t rpm) {
 
 struct TelemetryData {
     uint16_t TEL_motorRpm;
-    int16_t TEL_motorTorqueFeedback;
+    int16_t TEL_motorTorqueFeedback;          // KALDIRILDI — gerçek donanımda torque feedback yok
+    uint16_t TEL_motorVoltageDeciV;            // Motor sürücü voltajı (raw * 0.1 = V) (72V için 720 olabilir, 16-bit)
     uint8_t TEL_motorErrorFlags;
     bool TEL_motorDataValid;
     bool TEL_motorTimeoutActive;

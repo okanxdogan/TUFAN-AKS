@@ -4,17 +4,17 @@
 // Tanımlar test_motor_status_parse.cpp, test_bms_config_parse.cpp,
 // test_bms_live_parse.cpp ve test_motor_timeout.cpp içindedir.
 
-// Motor status
+// Motor status (MSTest/mock_motor doğrulanmış 8-byte payload)
 extern void test_motor_status_dlc_too_short(void);
-extern void test_motor_status_dlc_4_no_error_flag(void);
-extern void test_motor_status_dlc_5_with_error_flag(void);
-extern void test_motor_status_dlc_8_ok(void);
+extern void test_motor_status_dlc_7_too_short(void);
+extern void test_motor_status_dlc_8_valid(void);
 extern void test_motor_status_rpm_big_endian(void);
 extern void test_motor_status_rpm_zero(void);
 extern void test_motor_status_rpm_max(void);
-extern void test_motor_status_torque_negative(void);
-extern void test_motor_status_torque_positive(void);
-extern void test_motor_status_torque_min_int16(void);
+extern void test_motor_status_voltage_parsing(void);
+extern void test_motor_status_error_flags_byte7(void);
+extern void test_motor_status_motor_running_flag(void);
+extern void test_motor_status_motor_stopped_flag(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
 
 // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)
@@ -58,17 +58,17 @@ void tearDown(void) {}
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
 
-    // Motor status parse
+    // Motor status parse (MSTest/mock_motor doğrulanmış format)
     RUN_TEST(test_motor_status_dlc_too_short);
-    RUN_TEST(test_motor_status_dlc_4_no_error_flag);
-    RUN_TEST(test_motor_status_dlc_5_with_error_flag);
-    RUN_TEST(test_motor_status_dlc_8_ok);
+    RUN_TEST(test_motor_status_dlc_7_too_short);
+    RUN_TEST(test_motor_status_dlc_8_valid);
     RUN_TEST(test_motor_status_rpm_big_endian);
     RUN_TEST(test_motor_status_rpm_zero);
     RUN_TEST(test_motor_status_rpm_max);
-    RUN_TEST(test_motor_status_torque_negative);
-    RUN_TEST(test_motor_status_torque_positive);
-    RUN_TEST(test_motor_status_torque_min_int16);
+    RUN_TEST(test_motor_status_voltage_parsing);
+    RUN_TEST(test_motor_status_error_flags_byte7);
+    RUN_TEST(test_motor_status_motor_running_flag);
+    RUN_TEST(test_motor_status_motor_stopped_flag);
     RUN_TEST(test_motor_status_invalid_does_not_modify_out);
 
     // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)

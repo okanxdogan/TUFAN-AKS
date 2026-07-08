@@ -200,7 +200,7 @@ TelemetryData CanManager::getTelemetryData() const {
 void CanManager::handleMotorStatus(const twai_message_t& msg) {
     MotorStatus parsed{};
     if (!CanParse::parseMotorStatus(msg, parsed)) {
-        ESP_LOGW(TAG, "Motor status DLC too short: %d", msg.data_length_code);
+        ESP_LOGW(TAG, "Motor status DLC too short: %d (expected >= 8)", msg.data_length_code);
         return;
     }
 
@@ -220,7 +220,7 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
     CAN_motorTimeoutLogged = false;
 
     s_telemetryData.TEL_motorRpm = s_motorStatus.rpm;
-   // s_telemetryData.TEL_motorTorqueFeedback = s_motorStatus.torqueFeedback;
+    s_telemetryData.TEL_motorVoltageDeciV = s_motorStatus.motorVoltageDeciV;
     s_telemetryData.TEL_motorErrorFlags = s_motorStatus.errorFlags;
     s_telemetryData.TEL_motorDataValid = s_motorStatus.isValid;
     s_telemetryData.TEL_motorTimeoutActive = false;
@@ -230,8 +230,10 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
     notifyFaultIfNeeded(CAN_previousMotorErrorFlags, s_motorStatus.errorFlags,
                         "Motor");
 
- //   ESP_LOGD(TAG, "Motor: RPM=%d, Torque=%d", s_motorStatus.rpm,
-  //           s_motorStatus.torqueFeedback);
+    ESP_LOGD(TAG, "Motor: RPM=%d, Voltage=%.1fV, Flags=0x%02X",
+             s_motorStatus.rpm,
+             s_motorStatus.motorVoltageDeciV * 0.1f,
+             s_motorStatus.errorFlags);
 }
 
 // =========================================================================

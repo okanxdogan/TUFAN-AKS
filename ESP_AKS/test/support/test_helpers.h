@@ -14,7 +14,7 @@ namespace test_helpers {
 inline TelemetryData makeTelemetryDataValid() {
     TelemetryData d{};
     d.TEL_motorRpm = 0;
-    d.TEL_motorTorqueFeedback = 0;
+    d.TEL_motorVoltageDeciV = 0;
     d.TEL_motorErrorFlags = 0;
     d.TEL_motorDataValid = true;
     d.TEL_motorTimeoutActive = false;
