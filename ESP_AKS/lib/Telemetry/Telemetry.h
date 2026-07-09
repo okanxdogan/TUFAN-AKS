@@ -27,18 +27,19 @@
 // degerlerle (D=0.5, GR=1.0) rpm~3184 ustunde bu sinir asilir ve clamp
 // olmadan UKS Decode_Line paketin tamamini reddeder (Parse_Int f[18]
 // 0..3000 sinirini asar).
-static inline uint16_t rpmToSpeedKmhX10Impl(uint16_t rpm, float wheelDiameterM,
+static inline uint16_t rpmToSpeedKmhX10Impl(int16_t rpm, float wheelDiameterM,
                                             float gearRatio,
                                             bool motorRpmIsWheelRpm) {
+    const float absRpm = (rpm < 0) ? (float)(-rpm) : (float)rpm;
     const float wheelRpm =
-        motorRpmIsWheelRpm ? (float)rpm : ((float)rpm / gearRatio);
+        motorRpmIsWheelRpm ? absRpm : (absRpm / gearRatio);
     const float km_h = wheelRpm * 3.14159265f * wheelDiameterM * 60.0f / 1000.0f;
     const float spd_x10 = km_h * 10.0f;
     if (spd_x10 >= (float)TEL_SPD_X10_MAX) return TEL_SPD_X10_MAX;
     return (uint16_t)spd_x10;
 }
 
-static inline uint16_t rpmToSpeedKmhX10(uint16_t rpm) {
+static inline uint16_t rpmToSpeedKmhX10(int16_t rpm) {
     return rpmToSpeedKmhX10Impl(rpm, WHEEL_DIAMETER_M, GEAR_RATIO,
                                 MOTOR_RPM_IS_WHEEL_RPM);
 }
