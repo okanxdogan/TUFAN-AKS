@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3)
 
 // Dairesel FIFO tampon — bağlantı kesikliğinde telemetri paketlerini saklar.
 // Statik bellek, dinamik tahsis YOK. Thread-safe DEĞİL; çağıran senkronize eder.

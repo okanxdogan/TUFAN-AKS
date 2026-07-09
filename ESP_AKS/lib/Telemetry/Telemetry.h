@@ -2,7 +2,12 @@
 
 #include <cstdint>
 
+#include "VehicleData.h"    // TelemetryData (saf veri sözleşmesi — M3)
 #include "VehicleParams.h"  // WHEEL_DIAMETER_M / GEAR_RATIO / MOTOR_RPM_IS_WHEEL_RPM — TEK doğruluk kaynağı
+// NOT (M3): VehicleParams bağımlılığı BİLEREK burada — yalnız aşağıdaki hız
+// hesabı (rpmToSpeedKmhX10) buna ihtiyaç duyar. TelemetryData artık
+// VehicleData.h'de olduğundan CanParse/OfflineBuffer/VcuLogic vb. bu LoRa
+// header'ını (ve dolayısıyla VehicleParams'ı) ARTIK ÇEKMEZ.
 
 #define TEL_SPD_X10_MAX 3000  // UKS telemetry.c sanity siniri ile senkron
                               // — degistirilecekse iki tarafta birlikte
@@ -22,52 +27,23 @@
 // degerlerle (D=0.5, GR=1.0) rpm~3184 ustunde bu sinir asilir ve clamp
 // olmadan UKS Decode_Line paketin tamamini reddeder (Parse_Int f[18]
 // 0..3000 sinirini asar).
-static inline uint16_t rpmToSpeedKmhX10Impl(int16_t rpm, float wheelDiameterM,
+static inline uint16_t rpmToSpeedKmhX10Impl(uint16_t rpm, float wheelDiameterM,
                                             float gearRatio,
                                             bool motorRpmIsWheelRpm) {
-    // Geri vites/negatif RPM durumunda hız mutlak değer (skaler) olarak hesaplanmalıdır
-    const float absRpm = (rpm < 0) ? (float)(-rpm) : (float)rpm;
     const float wheelRpm =
-        motorRpmIsWheelRpm ? absRpm : (absRpm / gearRatio);
+        motorRpmIsWheelRpm ? (float)rpm : ((float)rpm / gearRatio);
     const float km_h = wheelRpm * 3.14159265f * wheelDiameterM * 60.0f / 1000.0f;
     const float spd_x10 = km_h * 10.0f;
     if (spd_x10 >= (float)TEL_SPD_X10_MAX) return TEL_SPD_X10_MAX;
     return (uint16_t)spd_x10;
 }
 
-static inline uint16_t rpmToSpeedKmhX10(int16_t rpm) {
+static inline uint16_t rpmToSpeedKmhX10(uint16_t rpm) {
     return rpmToSpeedKmhX10Impl(rpm, WHEEL_DIAMETER_M, GEAR_RATIO,
                                 MOTOR_RPM_IS_WHEEL_RPM);
 }
 
-struct TelemetryData {
-    int16_t TEL_motorRpm;
-    int16_t TEL_motorTorqueFeedback;          // KALDIRILDI — gerçek donanımda torque feedback yok
-    uint16_t TEL_motorVoltageDeciV;            // Motor sürücü voltajı (raw * 0.1 = V) (72V için 720 olabilir, 16-bit)
-    uint8_t TEL_motorErrorFlags;
-    bool TEL_motorDataValid;
-    bool TEL_motorTimeoutActive;
-
-    // Lithium Balance c-BMS — alanlar henüz çözülmemiş ID'lerden gelecek
-    // Bu alanlar TelemetryData yapısında kalıyor çünkü telemetri, HMI ve
-    // VcuLogic tüketici kodları bunları kullanıyor. İlgili CAN ID'lerin
-    // reverse-engineering'i tamamlandıkça parse edilecek.
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempHighestC;            // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempLowestC;             // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint8_t TEL_bmsSystemState;            // DOĞRULANMADI — kaynak ID bilinmiyor
-
-    // Lithium Balance c-BMS — CAN ID 0xE000 byte[2:3] (DOĞRULANDI)
-    uint16_t TEL_bmsPackVoltageDeciV;  // raw * 0.1 = V — DOĞRULANDI
-    int32_t TEL_bmsCurrentCentiMa;     // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint16_t TEL_bmsSocHundredths;     // DOĞRULANMADI — kaynak ID bilinmiyor
-
-    bool TEL_bmsDataValid;
-
-    uint32_t TEL_timestampMs   = 0;   // ms since boot — stamped when packet is created
-    uint16_t TEL_speedKmhX10  = 0;   // vehicle speed ×10 km/h, filled via rpmToSpeedKmhX10()
-};
+// TelemetryData artık VehicleData.h'de (yukarıda include edildi) — M3.
 
 class Telemetry {
    public:

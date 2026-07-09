@@ -1,3 +1,6 @@
+#ifndef VEHICLE_PARAMS_H
+#define VEHICLE_PARAMS_H
+
 #pragma once
 
 // Tekerlek çapı (metre). Kaynak: mekanik ekip — yüklü araçta (sürücü +
@@ -28,3 +31,4 @@
 #if !VEHICLE_PARAMS_CONFIRMED
 #warning "ARAC PARAMETRELERI TEYITSIZ — hiz/enerji verisi gecersiz (VehicleParams.h)"
 #endif
+#endif // VEHICLE_PARAMS_H

@@ -26,6 +26,14 @@ extern void test_begin_writes_in_safe_order(void);
 extern void test_begin_returns_true_on_success(void);
 extern void test_begin_initializes_state_to_zero(void);
 
+// G3 — geri-okuma / çıkış doğrulama (verifyOutputs)
+extern void test_verify_readback_match_no_fault(void);
+extern void test_verify_detects_olat_corruption_reasserts_and_faults(void);
+extern void test_verify_detects_iodir_reset_to_input(void);
+extern void test_clear_actuator_fault(void);
+extern void test_verifyIfDue_throttles_to_period(void);
+extern void test_readRegister_returns_written_values(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -52,6 +60,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_begin_writes_in_safe_order);
     RUN_TEST(test_begin_returns_true_on_success);
     RUN_TEST(test_begin_initializes_state_to_zero);
+
+    RUN_TEST(test_verify_readback_match_no_fault);
+    RUN_TEST(test_verify_detects_olat_corruption_reasserts_and_faults);
+    RUN_TEST(test_verify_detects_iodir_reset_to_input);
+    RUN_TEST(test_clear_actuator_fault);
+    RUN_TEST(test_verifyIfDue_throttles_to_period);
+    RUN_TEST(test_readRegister_returns_written_values);
 
     return UNITY_END();
 }

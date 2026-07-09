@@ -2,7 +2,7 @@
 Python, sanal-saatli simulasyonu.
 
 Bu, AKS firmware kodunun kendisini COPYALAMAZ/CALISTIRMAZ (donanimsiz
-kisitlamasi) — ayni sozlesme davranisini (5 Hz canli TX, kesintide 1 Hz
+kisitlamasi) — ayni sozlesme davranisini (2 Hz canli TX, kesintide 1 Hz
 seyreltilmis ornekleme, link-up sonrasi tik basina <=REPLAY_BURST_PER_TICK
 replay + 1 canli) contract.py sabitleriyle ve OfflineBufferSim ile modelleyip
 her "TX edilen" paket icin GERCEK UKS kabul kurallarindan (contract.
@@ -13,6 +13,7 @@ Gercek zaman beklenmez — nowMs bir Python int sayaci olarak ilerletilir.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import contract
@@ -70,15 +71,25 @@ def _sanitize(reading: dict) -> dict:
 def run_outage_simulation(
     pre_live_ms: int = 1000,
     outage_ms: int = 60000,
-    post_live_ms: int = 6000,
+    post_live_ms: int | None = None,
 ) -> SimResult:
-    """5 Hz canli -> 60 sn kesinti (1 Hz offline ornekleme) -> link up ->
+    """2 Hz canli -> 60 sn kesinti (1 Hz offline ornekleme) -> link up ->
     tik basina <=REPLAY_BURST_PER_TICK replay + 1 canli TX simulasyonu.
+
+    post_live_ms=None birakilirsa, buffer'in tamamen bosalmasina yetecek sure
+    contract sabitlerinden (OFFLINE_SAMPLE_PERIOD_MS, REPLAY_BURST_PER_TICK,
+    LORA_TX_PERIOD_MS) turetilir (+%50 marj) — REPLAY_BURST_PER_TICK ileride
+    tekrar degisirse sabit bir varsayimin sessizce bayatlamasini onler.
 
     Donus: TX SIRASINA GORE tum emitted paketler (her biri gercek
     contract.parse_uks_frame() kabulunden gecmis, UKS'in kabul edecegi
     field dict'i tasir) + kesinti sirasinda buffer'a giren ts listesi.
     """
+    if post_live_ms is None:
+        max_buffered = outage_ms // contract.OFFLINE_SAMPLE_PERIOD_MS
+        ticks_needed = math.ceil(max_buffered / contract.REPLAY_BURST_PER_TICK)
+        post_live_ms = int(ticks_needed * contract.LORA_TX_PERIOD_MS * 1.5)  # %50 marj
+
     result = SimResult()
     buffer = OfflineBufferSim(contract.OB_CAPACITY)
 

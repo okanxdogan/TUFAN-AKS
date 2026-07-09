@@ -30,27 +30,36 @@ void test_reset_interlock_bms_error_blocks(void) {
     TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
-void test_reset_interlock_critical_temperature_blocks(void) {
+void test_reset_interlock_unverified_bms_system_state_does_not_block(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 75;  // > 70°C critical
-    TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
+    d.TEL_bmsSystemState = 4;  // FAULT shaped output
+    d.TEL_bmsDataValid = false;
+    TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
+}
+
+// DOĞRULANMAMIŞ sinyaller (sıcaklık/akım) karar mantığına bağlı olmadığı
+// için reset'i de BLOKLAMAMALI (Ek B güven kuralı).
+void test_reset_interlock_unverified_temp_does_not_block(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTempHighestC = 75;  // sinyal DOĞRULANMADI — karar dışı
+    TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
+}
+
+void test_reset_interlock_unverified_current_does_not_block(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsCurrentCentiA = -2000;  // 20 A — sinyal DOĞRULANMADI — karar dışı
+    TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
 void test_reset_interlock_critical_voltage_low_blocks(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 650;  // < 700 dV critical
+    d.TEL_bmsPackVoltageDeciV = 590;  // < 600 dV critical (24S LiFePO4 spec min)
     TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
 void test_reset_interlock_critical_voltage_high_blocks(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsPackVoltageDeciV = 900;  // > 870 dV critical
-    TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
-}
-
-void test_reset_interlock_critical_current_blocks(void) {
-    TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = -2000000;  // 20 A discharge — critical
+    d.TEL_bmsPackVoltageDeciV = 900;  // > 876 dV critical (spec maks)
     TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
@@ -62,9 +71,17 @@ void test_reset_interlock_motor_timeout_in_fault_blocks(void) {
     TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
+// BMS timeout da motor timeout ile aynı şekilde reset'i bloklar.
+void test_reset_interlock_bms_timeout_in_fault_blocks(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTimeoutActive = true;
+    d.TEL_bmsDataValid = false;
+    TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
+}
+
 // Sadece warning seviyesindeki bir koşul reset'i bloklamamalı.
 void test_reset_interlock_warning_level_passes(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 60;  // warning ama critical değil
+    d.TEL_bmsPackVoltageDeciV = 720;  // warn eşiğinde ama critical değil
     TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }

@@ -45,8 +45,8 @@ void test_build_write_command(void) {
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[7]);  // REG1
     TEST_ASSERT_EQUAL_HEX8(0x17, buf[8]);  // REG2
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[9]);  // REG3
-    TEST_ASSERT_EQUAL_HEX8(0x00, buf[10]); // CRYPT_H
-    TEST_ASSERT_EQUAL_HEX8(0x00, buf[11]); // CRYPT_L
+    TEST_ASSERT_EQUAL_HEX8(0x5A, buf[10]); // CRYPT_H (G7: sıfır-dışı, E22_CRYPT_KEY=0x5A3C)
+    TEST_ASSERT_EQUAL_HEX8(0x3C, buf[11]); // CRYPT_L
 }
 
 void test_build_write_command_buffer_too_small(void) {

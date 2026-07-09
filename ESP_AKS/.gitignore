@@ -30,3 +30,6 @@ TUFAN-AKS.code-workspace
 
 #cache files
 .cache/
+# can_replay: gercek sniffer oturum loglari yerel kalir (fixtures/ haric)
+tools/can_replay/*.log
+tools/can_replay/can_replay

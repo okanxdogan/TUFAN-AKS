@@ -38,6 +38,16 @@ extern void test_text_force_writes_even_when_unchanged(void);
 extern void test_text_terminated_with_end_bytes(void);
 extern void test_sendEndBytes_writes_three_ff(void);
 
+// "Veri yok" gösterimi (UNVERIFIED SOC/sıcaklık sentinelleri)
+extern void test_battery_unverified_source_returns_no_data(void);
+extern void test_temp_unverified_source_returns_no_data(void);
+extern void test_production_source_verified_flags_are_true(void);
+extern void test_battery_invalid_bms_returns_no_data(void);
+extern void test_temp_invalid_bms_returns_no_data(void);
+extern void test_battery_verified_valid_converts_hundredths_to_percent(void);
+extern void test_battery_verified_valid_clamps_above_100(void);
+extern void test_temp_verified_valid_passes_through(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -75,6 +85,15 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_text_force_writes_even_when_unchanged);
     RUN_TEST(test_text_terminated_with_end_bytes);
     RUN_TEST(test_sendEndBytes_writes_three_ff);
+
+    RUN_TEST(test_battery_unverified_source_returns_no_data);
+    RUN_TEST(test_temp_unverified_source_returns_no_data);
+    RUN_TEST(test_production_source_verified_flags_are_true);
+    RUN_TEST(test_battery_invalid_bms_returns_no_data);
+    RUN_TEST(test_temp_invalid_bms_returns_no_data);
+    RUN_TEST(test_battery_verified_valid_converts_hundredths_to_percent);
+    RUN_TEST(test_battery_verified_valid_clamps_above_100);
+    RUN_TEST(test_temp_verified_valid_passes_through);
 
     return UNITY_END();
 }

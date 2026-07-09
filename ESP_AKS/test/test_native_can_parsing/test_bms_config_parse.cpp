@@ -1,13 +1,10 @@
 #include <unity.h>
 
 #include "CanParse.h"
+#include "VcuLogic.h"  // isCurrentCritical + BMS_*_CENTI_A eşikleri (ölçek round-trip)
 
 // =========================================================================
-// Lithium Balance c-BMS — CAN ID 0xE000 (parseLbBmsE000)
-// DOĞRULANMIŞ alanlar:
-//   byte[2:3] = Pack Voltage, big-endian uint16, raw * 0.1 = V
-// DOĞRULANMAMIŞ alanlar:
-//   byte[0:1] ve byte[4:5] — bilinmiyor, TelemetryData'ya yazılmıyor
+// Lithium Balance c-BMS — CAN ID 0xE000 ve 0xE001 Doğrulanmış Testleri
 // =========================================================================
 
 namespace {
@@ -15,7 +12,8 @@ namespace {
 twai_message_t makeE000Msg(uint8_t dlc,
                            uint8_t b0, uint8_t b1,
                            uint8_t pv_hi, uint8_t pv_lo,
-                           uint8_t b4, uint8_t b5) {
+                           uint8_t soc_hi, uint8_t soc_lo,
+                           uint8_t b6, uint8_t b7) {
     twai_message_t m{};
     m.identifier = 0x0000E000;
     m.data_length_code = dlc;
@@ -23,68 +21,94 @@ twai_message_t makeE000Msg(uint8_t dlc,
     m.data[1] = b1;
     m.data[2] = pv_hi;
     m.data[3] = pv_lo;
-    m.data[4] = b4;
-    m.data[5] = b5;
+    m.data[4] = soc_hi;
+    m.data[5] = soc_lo;
+    if (dlc > 6) m.data[6] = b6;
+    if (dlc > 7) m.data[7] = b7;
+    return m;
+}
+
+twai_message_t makeE001Msg(uint8_t dlc, uint8_t t1, uint8_t t2) {
+    twai_message_t m{};
+    m.identifier = 0x0000E001;
+    m.data_length_code = dlc;
+    if (dlc > 6) m.data[6] = t1;
+    if (dlc > 7) m.data[7] = t2;
     return m;
 }
 
 }  // namespace
 
 void test_e000_dlc_too_short(void) {
-    // DLC < 6 → false, hiçbir alan yazılmamalı
-    twai_message_t m = makeE000Msg(5, 0x00, 0x00, 0x02, 0x0E, 0x00, 0x00);
+    // DLC < 8 → false, hiçbir alan yazılmamalı
+    twai_message_t m = makeE000Msg(7, 0x00, 0x00, 0x02, 0x0E, 0x00, 0x00, 0x00, 0x00);
     TelemetryData out{};
     TEST_ASSERT_FALSE(CanParse::parseLbBmsE000(m, out));
     TEST_ASSERT_FALSE(out.TEL_bmsDataValid);
 }
 
-void test_e000_packv_big_endian(void) {
-    // CAN sniffer doğrulaması: byte[2]=0x02, byte[3]=0x0E → 0x020E = 526 → 52.6 V
-    twai_message_t m = makeE000Msg(6, 0x00, 0x00, 0x02, 0x0E, 0x00, 0x00);
+void test_e000_parsing_nominal(void) {
+    // Akım: 0x00 0x0A (10) -> 10 * 0.1A = 1A -> 100 CentiA
+    // Voltaj: 0x02 0x0E (526) -> 52.6V -> 526 deciV
+    // SoC: 0x27 0x10 (10000) -> 100.00% -> 10000 hundredths
+    twai_message_t m = makeE000Msg(8, 0x00, 0x0A, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
     TelemetryData out{};
     TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
-    TEST_ASSERT_EQUAL_UINT16(0x020E, out.TEL_bmsPackVoltageDeciV);
-}
-
-void test_e000_packv_zero(void) {
-    twai_message_t m = makeE000Msg(6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-    TelemetryData out{};
-    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
-    TEST_ASSERT_EQUAL_UINT16(0, out.TEL_bmsPackVoltageDeciV);
-}
-
-void test_e000_packv_max_uint16(void) {
-    // Teorik maksimum: 0xFFFF = 65535 deciV = 6553.5 V (pratikte görülmez ama parser'ın taşmaması test edilir)
-    twai_message_t m = makeE000Msg(6, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00);
-    TelemetryData out{};
-    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
-    TEST_ASSERT_EQUAL_UINT16(0xFFFF, out.TEL_bmsPackVoltageDeciV);
-}
-
-void test_e000_packv_nominal_78v(void) {
-    // 78.0 V = 780 deciV = 0x030C
-    twai_message_t m = makeE000Msg(8, 0x12, 0x34, 0x03, 0x0C, 0x56, 0x78);
-    TelemetryData out{};
-    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
-    TEST_ASSERT_EQUAL_UINT16(780, out.TEL_bmsPackVoltageDeciV);
-}
-
-void test_e000_sets_valid_flag(void) {
-    twai_message_t m = makeE000Msg(6, 0x00, 0x00, 0x03, 0x0C, 0x00, 0x00);
-    TelemetryData out{};
-    out.TEL_bmsDataValid = false;
-    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
+    TEST_ASSERT_EQUAL_INT32(100, out.TEL_bmsCurrentCentiA);
+    TEST_ASSERT_EQUAL_UINT16(526, out.TEL_bmsPackVoltageDeciV);
+    TEST_ASSERT_EQUAL_UINT16(10000, out.TEL_bmsSocHundredths);
     TEST_ASSERT_TRUE(out.TEL_bmsDataValid);
 }
 
+void test_e000_parsing_negative_current(void) {
+    // Akım: 0xFF 0xF6 (-10) -> -1A -> -100 CentiA
+    twai_message_t m = makeE000Msg(8, 0xFF, 0xF6, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    TelemetryData out{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
+    TEST_ASSERT_EQUAL_INT32(-100, out.TEL_bmsCurrentCentiA);
+}
+
+// =========================================================================
+// G5 ölçek round-trip: parser çıktısı (centi-A) ile SystemConfig eşikleri
+// (centi-A) UÇTAN UCA hizalı olmalı. Eşik yorumuna değil, parser'ın gerçek
+// ölçeğine bağlı test — 1.0 A kritik eşiği parser çıktısı 100 ile tetiklenir.
+// =========================================================================
+void test_e000_current_scale_round_trip(void) {
+    // raw=10 (0.1A birimli) -> 10 * 0.1A = 1.0 A -> parser 100 centi-A
+    twai_message_t mp = makeE000Msg(8, 0x00, 0x0A, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    TelemetryData outp{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(mp, outp));
+    TEST_ASSERT_EQUAL_INT32(100, outp.TEL_bmsCurrentCentiA);  // 1.0 A
+
+    // raw=-10 -> -1.0 A -> parser -100 centi-A (işaretli yol)
+    twai_message_t mn = makeE000Msg(8, 0xFF, 0xF6, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    TelemetryData outn{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(mn, outn));
+    TEST_ASSERT_EQUAL_INT32(-100, outn.TEL_bmsCurrentCentiA);  // -1.0 A
+}
+
+void test_e000_current_1A_trips_critical_threshold(void) {
+    // 1.0 A şarj: raw=10 -> parser 100 centi-A. BMS_CRITICAL_MAX_CHARGE_
+    // CURRENT_CENTI_A = 100 olduğundan kritik eşiği GERÇEKTEN tetikler.
+    twai_message_t m = makeE000Msg(8, 0x00, 0x0A, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    TelemetryData out{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
+    TEST_ASSERT_EQUAL_INT32(BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A,
+                            out.TEL_bmsCurrentCentiA);
+    TEST_ASSERT_TRUE(VcuLogic::isCurrentCritical(out.TEL_bmsCurrentCentiA));
+
+    // Kontrast: 0.9 A (raw=9) -> parser 90 centi-A, kritik eşiğin ALTINDA.
+    twai_message_t mb = makeE000Msg(8, 0x00, 0x09, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    TelemetryData outb{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(mb, outb));
+    TEST_ASSERT_EQUAL_INT32(90, outb.TEL_bmsCurrentCentiA);
+    TEST_ASSERT_FALSE(VcuLogic::isCurrentCritical(outb.TEL_bmsCurrentCentiA));
+}
+
 void test_e000_preserves_other_fields(void) {
-    // parseLbBmsE000 yalnızca TEL_bmsPackVoltageDeciV ve TEL_bmsDataValid yazar,
-    // diğer alanlara dokunmamalı.
-    twai_message_t m = makeE000Msg(6, 0x00, 0x00, 0x03, 0x10, 0x00, 0x00);
+    twai_message_t m = makeE000Msg(8, 0x00, 0x00, 0x03, 0x10, 0x00, 0x00, 0x00, 0x00);
     TelemetryData out{};
     out.TEL_motorRpm = 1234;
-    out.TEL_bmsCurrentCentiMa = -50000;
-    out.TEL_bmsSocHundredths = 7500;
     out.TEL_bmsCellVoltageMaxDeciMv = 40000;
     out.TEL_bmsTempHighestC = 25;
     out.TEL_bmsSystemState = 2;
@@ -92,27 +116,36 @@ void test_e000_preserves_other_fields(void) {
     CanParse::parseLbBmsE000(m, out);
 
     TEST_ASSERT_EQUAL_UINT16(1234, out.TEL_motorRpm);
-    TEST_ASSERT_EQUAL_INT32(-50000, out.TEL_bmsCurrentCentiMa);
-    TEST_ASSERT_EQUAL_UINT16(7500, out.TEL_bmsSocHundredths);
     TEST_ASSERT_EQUAL_UINT16(40000, out.TEL_bmsCellVoltageMaxDeciMv);
     TEST_ASSERT_EQUAL_INT8(25, out.TEL_bmsTempHighestC);
     TEST_ASSERT_EQUAL_UINT8(2, out.TEL_bmsSystemState);
 }
 
-void test_e000_dlc_8_extra_bytes_ignored(void) {
-    // DLC 8 ile geldiğinde byte[6:7] olsa bile parse yalnızca byte[2:3]'e bakar.
-    twai_message_t m{};
-    m.identifier = 0x0000E000;
-    m.data_length_code = 8;
-    m.data[0] = 0xAA;
-    m.data[1] = 0xBB;
-    m.data[2] = 0x03;
-    m.data[3] = 0x0C;
-    m.data[4] = 0xCC;
-    m.data[5] = 0xDD;
-    m.data[6] = 0xEE;
-    m.data[7] = 0xFF;
+void test_e001_dlc_too_short(void) {
+    twai_message_t m = makeE001Msg(7, 20, 25);
     TelemetryData out{};
-    TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
-    TEST_ASSERT_EQUAL_UINT16(780, out.TEL_bmsPackVoltageDeciV);
+    TEST_ASSERT_FALSE(CanParse::parseLbBmsE001(m, out));
+}
+
+void test_e001_parsing_temps(void) {
+    // Temp 1 (Highest): 40 (0x28)
+    // Temp 2 (Lowest): -5 (0xFB)
+    twai_message_t m = makeE001Msg(8, 0x28, 0xFB);
+    TelemetryData out{};
+    TEST_ASSERT_TRUE(CanParse::parseLbBmsE001(m, out));
+    TEST_ASSERT_EQUAL_INT8(40, out.TEL_bmsTempHighestC);
+    TEST_ASSERT_EQUAL_INT8(-5, out.TEL_bmsTempLowestC);
+}
+
+int main(int argc, char** argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_e000_dlc_too_short);
+    RUN_TEST(test_e000_parsing_nominal);
+    RUN_TEST(test_e000_parsing_negative_current);
+    RUN_TEST(test_e000_current_scale_round_trip);
+    RUN_TEST(test_e000_current_1A_trips_critical_threshold);
+    RUN_TEST(test_e000_preserves_other_fields);
+    RUN_TEST(test_e001_dlc_too_short);
+    RUN_TEST(test_e001_parsing_temps);
+    return UNITY_END();
 }

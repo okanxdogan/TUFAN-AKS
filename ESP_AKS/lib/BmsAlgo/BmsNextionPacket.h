@@ -54,5 +54,25 @@ using BmsNextionEmit = void (*)(const char* cmd, size_t len, void* ctx);
 //                                            MINMAX) gerçek BMS verisiyle sürülür)
 //   - warn.val=<0|1|2>                      (uyarı seviyesi, sayısal)
 // emit nullptr ise hiçbir şey yapılmaz.
+struct BmsNextionCache {
+    uint16_t cellVoltageMv[BMS_CELL_COUNT];
+    uint8_t cellBarFill[BMS_CELL_COUNT];
+    uint8_t balanceFlag[BMS_CELL_COUNT];
+    uint16_t cellMaxMv = 0;
+    uint16_t cellMinMv = 0;
+    uint8_t warningLevel = 255;
+    bool isWarm = false;
+
+    BmsNextionCache() {
+        for (int i = 0; i < BMS_CELL_COUNT; ++i) {
+            cellVoltageMv[i] = 0;
+            cellBarFill[i] = 255;
+            balanceFlag[i] = 255;
+        }
+    }
+};
+
 void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
-                             BmsNextionEmit emit, void* ctx);
+                             BmsNextionEmit emit, void* ctx,
+                             BmsNextionCache& cache, bool forceFullRefresh, bool updateCells,
+                             size_t maxBytes = 90);

@@ -6,14 +6,19 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <atomic>
 #include <cstdio>
+#include <cmath>
 
 #include "DisplayHMI.h"
 #include "CanManager.h"
 #include "E22Config.h"
 #include "LinkMonitor.h"
+#include "LoraLink.h"
 #include "LoraRxHandler.h"
 #include "OfflineBuffer.h"
+#include "UartInitRetry.h"
+#include "UplinkScheduler.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
 #include "Telemetry.h"
@@ -34,16 +39,23 @@ static constexpr uint32_t STACK_LOG_INTERVAL_MS = 30000;
 
 QueueHandle_t TEL_sensorDataQueue = nullptr;
 
-// --- LoRa link monitörü (vTask_LoRa_UKS yazar, diğer task'lar okur) ---
-static volatile bool   s_linkDown        = false;
-static volatile uint64_t s_lastHeartbeatMs = 0u;  // ms; 0 = henüz heartbeat gelmedi
-
-// --- LoRa RX tanısı: 9.2.a sonrası heartbeat dışı her byte "bilinmeyen" ---
-static uint32_t s_unknownRxByteCount      = 0u;
-static uint64_t s_lastUnknownRxByteWarnMs = 0u;
+// --- LoRa link monitörü (M1 refactor) ---
+// s_linkDown / s_lastHeartbeatMs / s_unknownRxByteCount / s_lastUnknownRxByteWarnMs
+// statikleri UplinkScheduler'a taşındı (tipler DEĞİŞMEDİ — P11'in işi). Cross-
+// task LoRa_IsLinkDown() API'si, task'in kurduğu scheduler örneğine bu file-
+// scope pointer üzerinden erişir (task ömür boyu çalışır → pointer geçerli).
+static UplinkScheduler* s_uplink = nullptr;
 
 extern "C" bool LoRa_IsLinkDown(void) {
-    return s_linkDown;
+    return s_uplink != nullptr && s_uplink->isLinkDown();
+}
+
+// G11: UART init N kez başarısız olunca set edilir; LoRa task telemetrisiz moda
+// geçer (araç durmaz). Cross-task okunur (LoRa_IsLinkDown deseni) → atomic.
+static std::atomic<bool> s_loraTelemetryDisabled{false};
+
+extern "C" bool LoRa_IsTelemetryDisabled(void) {
+    return s_loraTelemetryDisabled.load(std::memory_order_relaxed);
 }
 
 static HMI_VcuState HMI_mapVcuState(VcuLogic::VcuState HMI_state) {
@@ -96,6 +108,48 @@ static void CAN_handleEvent(CAN_Event CAN_event, void* CAN_context) {
   }
 }
 
+// VcuLogic torque sink → CanManager köprüsü. `can` CAN task'ine ait olduğundan
+// (task-yerel), sink çağrıldığında geçerli örneğe bu file-scope pointer ile
+// erişilir; CAN task başlamadan/örnek kurulmadan çağrılırsa güvenle atlanır.
+// G2 iskeleti: MOTOR_DRIVER_PRESENT=0 iken sendTorqueCommand gerçek frame
+// üretmez. TODO(motor entegrasyonu): bayrak 1 olduğunda torque'un CAN task'i
+// DIŞINDAN (VCU task'inden) gönderilmesinin thread-safety'si ele alınmalı
+// (bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md).
+static CanManager* s_canForTorque = nullptr;
+static void CAN_torqueSink(uint16_t torque) {
+  if (s_canForTorque != nullptr)
+    s_canForTorque->sendTorqueCommand(torque);
+}
+
+// M2: VcuLogic → RelayManager köprüsü (kompozisyon kökü adapteri). VcuLogic
+// artık somut RelayManager singleton'ına değil IRelayActuator arayüzüne bağlı;
+// bu ince adapter gerçek RelayManager çağrılarını arayüze uydurur. Böylece
+// RelayManager saf donanım sürücüsü kalır (VcuLogic'ten haberi olmaz) ve
+// enjeksiyon burada, tek yerde yapılır.
+namespace {
+class RelayActuatorAdapter : public IRelayActuator {
+ public:
+  void allOn() override { RelayManager::instance().allOn(); }
+  void allOff(bool silent) override { RelayManager::instance().allOff(silent); }
+  void setRelay(uint8_t channel, bool state) override {
+    RelayManager::instance().setRelay(channel, state);
+  }
+  void verifyIfDue(uint32_t nowMs) override {
+    RelayManager::instance().verifyIfDue(nowMs);
+  }
+  bool verifyOutputs() override {
+    return RelayManager::instance().verifyOutputs();
+  }
+  bool hasActuatorFault() const override {
+    return RelayManager::instance().hasActuatorFault();
+  }
+  void clearActuatorFault() override {
+    RelayManager::instance().clearActuatorFault();
+  }
+};
+RelayActuatorAdapter g_relayActuator;
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // Helper: log stack high-water-mark periodically
 // ---------------------------------------------------------------------------
@@ -103,7 +157,11 @@ static void logStackUsage(const char *taskName, uint32_t &lastLogTick) {
   uint32_t now = xTaskGetTickCount();
   if ((now - lastLogTick) >= pdMS_TO_TICKS(STACK_LOG_INTERVAL_MS)) {
     UBaseType_t hwm = uxTaskGetStackHighWaterMark(nullptr);
-    ESP_LOGD(taskName, "Stack high water mark: %u words remaining", hwm);
+    // A) ESP_LOGD default'ta HİÇ basılmıyordu → stack koruması kördü. INFO'ya
+    // çekildi; 30 sn periyot spam yapmaz. Değer WORD cinsindendir (ESP32'de
+    // 1 word = 4 B) — "marj < 512 B" ~= "< 128 word" demektir.
+    ESP_LOGI(taskName, "Stack high water mark: %u words remaining (%u B)", hwm,
+             (unsigned)(hwm * sizeof(StackType_t)));
     lastLogTick = now;
   }
 }
@@ -116,6 +174,7 @@ void vTask_CAN_Comm(void *pvParameters) {
 
   CanManager can(CAN_TX_PIN, CAN_RX_PIN);
   can.setEventCallback(CAN_handleEvent, nullptr);
+  s_canForTorque = &can;  // VcuLogic torque sink'inin köprüleyeceği örnek
 
   if (!can.begin()) {
     ESP_LOGE(TAG, "Failed to initialize CAN bus");
@@ -124,10 +183,13 @@ void vTask_CAN_Comm(void *pvParameters) {
     return;
   }
 
-  // Phase 1.2 placeholder:
-  // keep propulsion torque at zero until the pedal / brake conversion model
-  // is defined and validated with vehicle controls.
-  //uint16_t CAN_torqueCmd = 0;
+  // G2 GERÇEĞİ: Motor sürücüsü entegre değil (MOTOR_DRIVER_PRESENT=0). Bu
+  // fazda torque komutu GÖNDERİLMİYOR; kontaktörler yük altında açılıyor
+  // OLABİLİR. Saha riski: ark/kontak kaynaması. Entegrasyonda
+  // sendTorqueCommand(0) dizisi (VcuLogic E-STOP/FAULT güvenli kapanış sırası
+  // üzerinden) aktive edilecek. Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md.
+  // NOT: Torque komutu artık bu döngüde DEĞİL, VcuLogic handleEmergencyStop/
+  // handleFault içinden sink hook ile çağrılıyor (doğru güvenlik sırası için).
   uint32_t lastStackLog = 0;
 
   while (true) {
@@ -136,17 +198,7 @@ void vTask_CAN_Comm(void *pvParameters) {
     // 1. Read incoming messages and dispatch them
     can.processRxMessages();
 
-    /* // 2. Send torque command if in DRIVE state
-    if (VcuLogic::getState() == VcuLogic::VcuState::DRIVE) {
-      // TODO: Get actual torque value from control logic
-      can.sendTorqueCommand(CAN_torqueCmd);
-    } else {
-      // Not in drive — send zero torque for safety
-      can.sendTorqueCommand(0);
-    }
-    */
-
-    // 3. Push the latest telemetry snapshot to the shared queue
+    // 2. Push the latest telemetry snapshot to the shared queue
     if (TEL_sensorDataQueue != nullptr) {
       TelemetryData TEL_data = can.getTelemetryData();
       TEL_data.TEL_speedKmhX10  = rpmToSpeedKmhX10(TEL_data.TEL_motorRpm);
@@ -193,31 +245,44 @@ void vTask_HMI_Display(void *pvParameters) {
   uint32_t lastStackLog = 0;
 
   DisplayHMI HMI_display;
-  if (!HMI_display.begin()) {
-    ESP_LOGE(TAG, "DisplayHMI init failed — HMI task terminating");
-    esp_task_wdt_delete(nullptr);
-    vTaskDelete(nullptr);
-    return;
+  bool hmi_ok = false;
+  int retry_count = 0;
+  while (!hmi_ok && retry_count < 5) {
+      if (HMI_display.begin()) {
+          hmi_ok = true;
+      } else {
+          if (retry_count == 0) {
+              ESP_LOGW(TAG, "DisplayHMI baslatilamadi, tekrar deneniyor...");
+          }
+          retry_count++;
+          vTaskDelay(pdMS_TO_TICKS(1000));
+          esp_task_wdt_reset();
+      }
+  }
+
+  if (!hmi_ok) {
+      ESP_LOGE(TAG, "DisplayHMI 5 denemede baslatilamadi, HMI task uykuya geciyor (degraded mode)");
+      while (true) {
+          vTaskDelay(pdMS_TO_TICKS(1000));
+          esp_task_wdt_reset();
+      }
   }
 
   uint8_t HMI_incomingCommand = 0;
-
-  // EMA (Üstel Hareketli Ortalama) filtresi değişkenleri (İbrenin akıcı hareket etmesi için)
-  float HMI_smoothedRpm = 0.0f;
-  float HMI_smoothedSpeed = 0.0f;
-  const float HMI_EMA_ALPHA = 0.15f; // Bu değer (0.0 ile 1.0 arası) küçüldükçe ibre daha yavaş ve yumuşak kalkar.
 
   while (true) {
     esp_task_wdt_reset();
 
     HMI_DisplayData HMI_screenData = {};
+    // Kuyruk boşken de "veri yok" ("--") görünmeli — sahte %0/0°C değil.
+    HMI_screenData.HMI_currentBattery = HMI_BATTERY_NO_DATA;
+    HMI_screenData.HMI_bmsTemperatureC = HMI_TEMP_NO_DATA;
 
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
         if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            
             // Hedef RPM'i alırken negatif devirlere karşı mutlak değer alıyoruz
-            float targetRpm = (float)abs(TEL_data.TEL_motorRpm);
+            float targetRpm = (TEL_data.TEL_motorRpm < 0) ? (float)(-TEL_data.TEL_motorRpm) : (float)TEL_data.TEL_motorRpm;
             // Gerçek hızı km/h cinsinden hesaplıyoruz (Teknofest Şartnamesi)
             float targetSpeed = (float)TEL_data.TEL_speedKmhX10 / 10.0f;
             
@@ -226,8 +291,14 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_smoothedSpeed = (HMI_EMA_ALPHA * targetSpeed) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedSpeed);
 
             HMI_screenData.HMI_currentSpeed = static_cast<uint16_t>(HMI_smoothedSpeed);
-            HMI_screenData.HMI_currentBattery =
-                static_cast<uint8_t>(TEL_data.TEL_bmsSocHundredths / 100);
+            // SOC/sıcaklık kaynak sinyalleri DOĞRULANMADI (hiç parse
+            // edilmiyor, hep 0) — sürücüye sahte "%0 batarya / 0°C"
+            // göstermemek için sentinel gönderilir. Kaynak sinyal
+            // DOĞRULANDIĞINDA HMI_*_SOURCE_VERIFIED true yapılıp bu geçici
+            // yol kaldırılacak (bkz. HMIHelpers.h "Veri yok gösterimi").
+            HMI_screenData.HMI_currentBattery = HMI_batteryDisplayValue(
+                HMI_SOC_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
+                TEL_data.TEL_bmsSocHundredths);
             HMI_screenData.HMI_motorRpm = static_cast<uint16_t>(HMI_smoothedRpm);
          //   HMI_screenData.HMI_motorTorqueFeedback =
        //         TEL_data.TEL_motorTorqueFeedback;
@@ -235,8 +306,9 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_screenData.HMI_motorDataValid = TEL_data.TEL_motorDataValid;
             HMI_screenData.HMI_motorTimeoutActive =
                 TEL_data.TEL_motorTimeoutActive;
-            HMI_screenData.HMI_bmsTemperatureC =
-                TEL_data.TEL_bmsTempHighestC;
+            HMI_screenData.HMI_bmsTemperatureC = HMI_temperatureDisplayValue(
+                HMI_TEMP_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
+                TEL_data.TEL_bmsTempHighestC);
             HMI_screenData.HMI_bmsPackVoltageDeciV =
                 TEL_data.TEL_bmsPackVoltageDeciV;
         }
@@ -250,37 +322,85 @@ void vTask_HMI_Display(void *pvParameters) {
     // 24-hücre BMS verisini Nextion'a gönder
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
-        if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            if (TEL_data.TEL_bmsDataValid) {
-                BmsPackData BMS_raw = {};
-                BMS_raw.isValid = true;
-                // TEL_bmsCurrentCentiMa: raw * 0.01 = mA -> mA için /100.
-                BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiMa / 100;
-                
-                // Lithium Balance c-BMS'ten 24 hücre verisi henüz ayrı ayrı çözülmedi, sadece packV doğrulandı.
-                // Ekranda (Nextion) 24 hücre barının tümünün hata vermemesi ve sahte (rastgele) veri 
-                // üretmemek adına tüm hücrelere ortalama gerilimi atıyoruz.
-                uint16_t avgCellMv = (TEL_data.TEL_bmsPackVoltageDeciV * 100) / BMS_CELL_COUNT;
-                for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
-                    BMS_raw.cellVoltageMv[i] = avgCellMv;
-                    BMS_raw.cellTempC[i] = TEL_data.TEL_bmsTempHighestC;
-                }
+        bool hasData = (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE);
+        bool bmsValid = hasData && TEL_data.TEL_bmsDataValid;
 
-                // İlk iki hücreye gerçek max ve min değerini yazarak algoritmanın
-                // uyarı seviyesini doğru hesaplamasını sağlıyoruz.
-                BMS_raw.cellVoltageMv[0] = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
-                BMS_raw.cellVoltageMv[1] = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
+        BmsPackData BMS_raw = {};
+        BMS_raw.isValid = bmsValid;
 
-                BmsComputed BMS_comp = computePack(BMS_raw);
+        BmsComputed BMS_comp = {};
 
-                // Algoritma hesapladıktan sonra ekrana gönderilecek max/min değerlerini
-                // her ihtimale karşı doğrudan gerçek CAN verisinden eziyoruz.
+        if (bmsValid) {
+            // TEL_bmsCurrentCentiA birimi centi-Amper (0.01 A) → BmsPackData
+            // .packCurrentMa mA (0.001 A) bekler: 1 centi-A = 10 mA, yani ×10.
+            // TODO(HMI): packCurrentMa şu an hiçbir yerde tüketilmiyor (Nextion'a
+            // gitmiyor); ekranda gösterilecekse beklenen birim Nextion tarafından
+            // teyit edilecek.
+            BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiA * 10;
+
+            // G8/M4: Hücre gerilimi kaynağı DOĞRULANMADI
+            // (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=false). Eski kod pack/24
+            // ortalamasını 24 hücrenin HEPSİNE yazıp en yüksek sıcaklığı tüm
+            // hücrelere kopyalıyordu; bu FABRİKASYON gerçek bir hücre
+            // dengesizliğini (tek hücre 2.3 V'a düşse bile) maskeleyip ekranı
+            // SAĞLIKLI gösteriyordu. Fabrikasyon KALDIRILDI: per-hücre alanlara
+            // sentinel yazılır → ekranda hücreler "--", barlar boş, dengeleme
+            // yok. cellDataValid=false olduğundan computePack dengeleme/uyarıyı
+            // "veri yok" (NO_DATA) döndürür.
+            //
+            // Kaynak DOĞRULANDIĞINDA (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=true):
+            // gerçek 24 hücre TEL_data'dan buraya doldurulup cellDataValid=true
+            // yapılacak; o zaman computePack gerçek min/max/denge/uyarıyı hesaplar.
+            BMS_raw.cellDataValid = HMI_CELL_VOLTAGE_SOURCE_VERIFIED;
+            for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_raw.cellTempC[i] = 0;  // ekranda kullanılmaz (sıcaklık ayrı yolla)
+            }
+
+            BMS_comp = computePack(BMS_raw);
+
+            // Özet min/max hücre gerilimi de per-hücre kaynağa bağlı: doğrulanana
+            // kadar sentinel ("--"). Pack voltajı/sıcaklık/akım GERÇEK ve ayrı
+            // (updateScreen) yolla gösterilir — bunlar fabrikasyon değil.
+            if (!HMI_CELL_VOLTAGE_SOURCE_VERIFIED) {
+                BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
+            } else {
                 BMS_comp.cellMaxMv = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
                 BMS_comp.cellMinMv = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
-
-                buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr);
             }
+        } else {
+            // Geçersiz/bayat veri durumu: Ekranda son değerlerin donup kalmaması
+            // için "--" (sentinel) ve boş bar gönderilir. Uyarı durumu CRITICAL yapılır.
+            for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
+                BMS_comp.balanceFlag[i] = false;
+            }
+            BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
+            BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
+            BMS_comp.warningLevel = BMS_WARN_CRITICAL;
         }
+
+        static BmsNextionCache BMS_hmiCache = {};
+        static uint32_t BMS_lastCellUpdateMs = 0;
+        static bool BMS_firstRun = true;
+        
+        uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
+        bool updateCells = false;
+        bool forceRefresh = false;
+
+        if (BMS_firstRun) {
+            forceRefresh = true;
+            updateCells = true;
+            BMS_firstRun = false;
+            BMS_lastCellUpdateMs = nowMs;
+        } else if (nowMs - BMS_lastCellUpdateMs >= 1000) {
+            updateCells = true;
+            BMS_lastCellUpdateMs = nowMs;
+        }
+
+        buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr,
+                                BMS_hmiCache, forceRefresh, updateCells);
     }
 
     if (HMI_display.readTouchCommand(HMI_incomingCommand)) {
@@ -330,320 +450,237 @@ static void E22_logHexDump(const char *label, const uint8_t *buf, int len) {
 }
 
 // ---------------------------------------------------------------------------
-// LoRa UART task — reads UKS commands and posts events to VcuLogic
+// M1 refactor: ILoraHal'in gerçek ESP-IDF implementasyonu. LoraLink'in donanım
+// primitiflerini (GPIO/UART/zaman/watchdog) buraya bağlar; native tarafta bu
+// dosya derlenmez (build_src_filter = -<*>). E22REG hex dump format string'i
+// (contract-drift bekçisi) bilinçli olarak burada — main.cpp'de — kalır.
+// ---------------------------------------------------------------------------
+class EspLoraHal : public ILoraHal {
+ public:
+  // GPIO mode/aux pinleri + UART (retry) kurulumu — eski task preamble'ı.
+  // G11: UART bounded-retry. Kurulursa true; N denemede kurulamazsa false
+  // döner (çağıran telemetrisiz moda geçer, reboot YOK).
+  bool begin() {
+    gpio_config_t modePinsConfig = {};
+    modePinsConfig.pin_bit_mask = (1ULL << LORA_M0_PIN) | (1ULL << LORA_M1_PIN);
+    modePinsConfig.mode = GPIO_MODE_OUTPUT;
+    modePinsConfig.pull_up_en = GPIO_PULLUP_DISABLE;
+    modePinsConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    modePinsConfig.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&modePinsConfig));
+
+    gpio_config_t auxPinConfig = {};
+    auxPinConfig.pin_bit_mask = (1ULL << LORA_AUX_PIN);
+    auxPinConfig.mode = GPIO_MODE_INPUT;
+    auxPinConfig.pull_up_en = GPIO_PULLUP_DISABLE;
+    auxPinConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    auxPinConfig.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&auxPinConfig));
+
+    // UART init — config modunda da 9600 8N1 kullanıldığından önce başlatılıyor
+    uart_config_t uartConfig = {
+        .baud_rate = LORA_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    bool uart_error_logged = false;
+    int uart_failedAttempts = 0;
+    while (true) {
+      // G11: Retry TUZAĞI düzeltmesi — driver zaten kuruluysa (önceki yarım
+      // kurulum) yeniden install ESP_ERR_INVALID_STATE ile SONSUZA dek
+      // başarısız kalırdı. Önce sil, sonra temiz kur.
+      if (uart_is_driver_installed(LORA_UART_NUM)) {
+        uart_driver_delete(LORA_UART_NUM);
+      }
+      esp_err_t err1 = uart_param_config(LORA_UART_NUM, &uartConfig);
+      esp_err_t err2 = uart_set_pin(LORA_UART_NUM, LORA_TX_PIN, LORA_RX_PIN,
+                                    UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+      esp_err_t err3 = uart_driver_install(LORA_UART_NUM, 256, 256, 0, nullptr, 0);
+      if (err1 == ESP_OK && err2 == ESP_OK && err3 == ESP_OK) {
+        if (uart_error_logged) {
+          ESP_LOGI(TAG, "LoRa UART basariyla baslatildi (%d. denemede)",
+                   uart_failedAttempts + 1);
+        }
+        return true;
+      }
+
+      ++uart_failedAttempts;
+      if (!uart_error_logged) {
+        ESP_LOGE(TAG, "LoRa UART init failed (err1=%d, err2=%d, err3=%d), "
+                      "tekrar deneniyor...", err1, err2, err3);
+        uart_error_logged = true;
+      }
+      // G11: N denemeden sonra SONSUZ döngü YERİNE vazgeç → telemetrisiz mod.
+      if (uart_init_retry_decision(uart_failedAttempts,
+                                   LORA_UART_MAX_INIT_ATTEMPTS) ==
+          UartInitDecision::GIVE_UP_DISABLED) {
+        ESP_LOGE(TAG,
+                 "LoRa UART %d denemede kurulamadi — TELEMETRI DEVRE DISI "
+                 "(arac calismaya devam eder; reboot yok)",
+                 uart_failedAttempts);
+        return false;
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      esp_task_wdt_reset();
+    }
+  }
+
+  void setModePins(int m0Level, int m1Level) override {
+    gpio_set_level(LORA_M0_PIN, m0Level);
+    gpio_set_level(LORA_M1_PIN, m1Level);
+  }
+  bool isAuxReady() override {
+    return gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL;
+  }
+  int auxRawLevel() override { return gpio_get_level(LORA_AUX_PIN); }
+  void uartFlush() override { uart_flush(LORA_UART_NUM); }
+  int uartWrite(const uint8_t *data, size_t len) override {
+    return uart_write_bytes(LORA_UART_NUM, (const char *)data, len);
+  }
+  int uartRead(uint8_t *buf, size_t len, uint32_t timeoutMs) override {
+    return uart_read_bytes(LORA_UART_NUM, buf, len, pdMS_TO_TICKS(timeoutMs));
+  }
+  void delayMs(uint32_t ms) override { vTaskDelay(pdMS_TO_TICKS(ms)); }
+  uint64_t nowMs() override { return (uint64_t)(esp_timer_get_time() / 1000LL); }
+  void feedWatchdog() override { esp_task_wdt_reset(); }
+  void hexDumpE22(const char *label, const uint8_t *buf, int len) override {
+    E22_logHexDump(label, buf, len);
+  }
+};
+
+// UplinkScheduler'ın gönderim callback'i: AUX kapısı + sanitize + gerçek TX.
+// Eski task içindeki AUX-not-ready tek-sefer logu ve replay sonrası watchdog
+// beslemesi burada korunur.
+struct LoRa_TxCtx {
+  Telemetry *tel;
+  EspLoraHal *hal;
+  bool *auxNotReadyLogged;
+};
+// G10: TX ring buffer dolunca uart_write_bytes'ın BLOKLAMASIYLA ertelenen
+// gönderim sayacı (replay drenajını yavaşlatıp RX/heartbeat'i geciktiren blok
+// yerine tick'i erteliyoruz).
+static uint32_t s_loraTxDeferredCount = 0;
+static bool LoRa_txSend(const TelemetryData &pkt, bool isReplay, void *ctxv) {
+  LoRa_TxCtx *c = static_cast<LoRa_TxCtx *>(ctxv);
+  if (!c->hal->isAuxReady()) {
+    if (!*c->auxNotReadyLogged) {
+      ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
+      *c->auxNotReadyLogged = true;
+    }
+    return false;  // paket buffer'da KALIR (replay) / atlanır (canlı)
+  }
+  // G10: TX ring'de bir tam frame'lik boş alan yoksa BLOKLAMA — bu tick'in
+  // gönderimini ertele (replay buffer'da kalır / canlı atlanır), say ve bir
+  // sonraki tikte tekrar dene. Böylece heartbeat okuyan RX yolu gecikmez.
+  size_t LO_txFree = 0;
+  if (uart_get_tx_buffer_free_size(LORA_UART_NUM, &LO_txFree) != ESP_OK ||
+      LO_txFree < (size_t)LORA_TEL_FRAME_MAX_BYTES) {
+    if ((s_loraTxDeferredCount++ % 50u) == 0u) {
+      ESP_LOGW(TAG, "LoRa TX ring dolu — gonderim ertelendi (toplam %lu)",
+               (unsigned long)s_loraTxDeferredCount);
+    }
+    return false;
+  }
+  c->tel->sendStatus(TelemetrySanitize::sanitizeForUplink(pkt));
+  *c->auxNotReadyLogged = false;
+  if (isReplay) {
+    c->hal->feedWatchdog();  // eski: her başarılı replay sonrası esp_task_wdt_reset
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// LoRa UART task — ince orkestrasyon: LoraLink (donanım) + UplinkScheduler (saf)
 // ---------------------------------------------------------------------------
 void vTask_LoRa_UKS(void *pvParameters) {
   esp_task_wdt_add(nullptr);
 
+  // Donanım kurulumu + E22 boot-config el sıkışması (LoraLink).
   Telemetry LO_telemetry;
-  int LO_auxLevel = 0;
-
-  gpio_config_t LO_modePinsConfig = {};
-  LO_modePinsConfig.pin_bit_mask =
-      (1ULL << LORA_M0_PIN) | (1ULL << LORA_M1_PIN);
-  LO_modePinsConfig.mode = GPIO_MODE_OUTPUT;
-  LO_modePinsConfig.pull_up_en = GPIO_PULLUP_DISABLE;
-  LO_modePinsConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  LO_modePinsConfig.intr_type = GPIO_INTR_DISABLE;
-  ESP_ERROR_CHECK(gpio_config(&LO_modePinsConfig));
-
-  gpio_config_t LO_auxPinConfig = {};
-  LO_auxPinConfig.pin_bit_mask = (1ULL << LORA_AUX_PIN);
-  LO_auxPinConfig.mode = GPIO_MODE_INPUT;
-  LO_auxPinConfig.pull_up_en = GPIO_PULLUP_DISABLE;
-  LO_auxPinConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  LO_auxPinConfig.intr_type = GPIO_INTR_DISABLE;
-  ESP_ERROR_CHECK(gpio_config(&LO_auxPinConfig));
-
-  // UART init — config modunda da 9600 8N1 kullanıldığından önce başlatılıyor
-  uart_config_t LO_uartConfig = {
-      .baud_rate = LORA_UART_BAUD,
-      .data_bits = UART_DATA_8_BITS,
-      .parity = UART_PARITY_DISABLE,
-      .stop_bits = UART_STOP_BITS_1,
-      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-  };
-  uart_param_config(LORA_UART_NUM, &LO_uartConfig);
-  uart_set_pin(LORA_UART_NUM, LORA_TX_PIN, LORA_RX_PIN, UART_PIN_NO_CHANGE,
-               UART_PIN_NO_CHANGE);
-  uart_driver_install(LORA_UART_NUM, 256, 256, 0, nullptr, 0);
-
-  // --- E22 boot konfigürasyonu: oku + gerekirse yaz + doğrula ---
-  gpio_set_level(LORA_M0_PIN, LORA_MODE_CONFIG_M0_LEVEL);
-  gpio_set_level(LORA_M1_PIN, LORA_MODE_CONFIG_M1_LEVEL);
-  ESP_LOGI(TAG, "E22: config moduna giriliyor (M0=%d M1=%d)",
-           LORA_MODE_CONFIG_M0_LEVEL, LORA_MODE_CONFIG_M1_LEVEL);
-
-  {
-    // Config modunda AUX HIGH bekle
-    const TickType_t LO_modeT0 = xTaskGetTickCount();
-    bool LO_auxCfgReady = false;
-    while ((xTaskGetTickCount() - LO_modeT0) <
-           pdMS_TO_TICKS(LORA_AUX_MODE_TIMEOUT_MS)) {
-      if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-        LO_auxCfgReady = true;
-        break;
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    if (!LO_auxCfgReady) {
-      ESP_LOGE(TAG, "E22 AUX timeout (%d ms): config moduna girilemedi, "
-                    "normal moda devam ediliyor",
-               LORA_AUX_MODE_TIMEOUT_MS);
-    } else {
-      // 1. Mevcut bloğu oku (0xC1 <start> <len>) — bench teyidi için hex dump
-      uart_flush(LORA_UART_NUM);
-      uint8_t LO_readCmd[3];
-      const size_t LO_readCmdLen =
-          e22_buildReadAllCommand(LO_readCmd, sizeof(LO_readCmd));
-      uart_write_bytes(LORA_UART_NUM, (const char *)LO_readCmd, LO_readCmdLen);
-
-      uint8_t LO_readResp[3 + E22_REG_BLOCK_LEN] = {};
-      const int LO_readLen =
-          uart_read_bytes(LORA_UART_NUM, LO_readResp, sizeof(LO_readResp),
-                           pdMS_TO_TICKS(LORA_CFG_READ_TIMEOUT_MS));
-      E22_logHexDump("E22 mevcut config yaniti", LO_readResp,
-                      LO_readLen > 0 ? LO_readLen : 0);
-
-      bool LO_needsWrite = true;
-      if (LO_readLen > 0 &&
-          e22_isErrorResponse(LO_readResp, (size_t)LO_readLen)) {
-        ESP_LOGE(TAG, "E22 okuma reddedildi (FF FF FF) — yazma denenecek");
-      } else {
-        E22RegValues LO_current = {};
-        if (e22_parseRegResponse(LO_readResp, (size_t)LO_readLen,
-                                  LO_current)) {
-          if (e22_regsEqual(LO_current, E22_CONTRACT_REGS)) {
-            ESP_LOGI(TAG, "E22 config zaten sozlesmeyle uyumlu, yazma "
-                          "atlaniyor");
-            LO_needsWrite = false;
-          } else {
-            ESP_LOGW(TAG, "E22 mevcut config sozlesmeden farkli — yaziliyor");
-          }
-        } else {
-          ESP_LOGE(TAG, "E22 okuma yaniti eksik/hatali (%d byte) — yazma "
-                        "denenecek",
-                   LO_readLen);
-        }
-      }
-
-      // 2. Fark varsa (ya da okunamadıysa) kalıcı yazma komutu gönder
-      if (LO_needsWrite) {
-        uart_flush(LORA_UART_NUM);
-        uint8_t LO_writeCmd[3 + E22_REG_BLOCK_LEN];
-        const size_t LO_writeCmdLen = e22_buildWriteCommand(
-            E22_CONTRACT_REGS, LO_writeCmd, sizeof(LO_writeCmd));
-        uart_write_bytes(LORA_UART_NUM, (const char *)LO_writeCmd,
-                          LO_writeCmdLen);
-
-        // Flash yazımının bitmesini bekle: AUX LOW→HIGH geçişi (~200ms tipik)
-        vTaskDelay(pdMS_TO_TICKS(50));  // modülün LOW'a geçmesine zaman ver
-        const TickType_t LO_flashT0 = xTaskGetTickCount();
-        bool LO_flashDone = false;
-        while ((xTaskGetTickCount() - LO_flashT0) <
-               pdMS_TO_TICKS(LORA_AUX_CFG_TIMEOUT_MS)) {
-          if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-            LO_flashDone = true;
-            break;
-          }
-          vTaskDelay(pdMS_TO_TICKS(10));
-        }
-
-        if (!LO_flashDone) {
-          ESP_LOGE(TAG, "E22 flash AUX timeout (%d ms): config yazildi ancak "
-                        "dogrulanamadi, devam ediliyor",
-                   LORA_AUX_CFG_TIMEOUT_MS);
-        } else {
-          // 3. Yazma sonrası onay: E22, C0 değil C1 formatıyla yanıt verir
-          uint8_t LO_confirm[3 + E22_REG_BLOCK_LEN] = {};
-          const int LO_confirmLen = uart_read_bytes(
-              LORA_UART_NUM, LO_confirm, sizeof(LO_confirm),
-              pdMS_TO_TICKS(LORA_CFG_READ_TIMEOUT_MS));
-          E22_logHexDump("E22 yazma onay yaniti", LO_confirm,
-                          LO_confirmLen > 0 ? LO_confirmLen : 0);
-
-          if (LO_confirmLen > 0 &&
-              e22_isErrorResponse(LO_confirm, (size_t)LO_confirmLen)) {
-            ESP_LOGE(TAG, "E22 config yazma reddedildi (FF FF FF) — modul "
-                          "eski config ile devam ediyor olabilir, gorevde "
-                          "kaliniyor");
-          } else {
-            E22RegValues LO_written = {};
-            if (e22_parseRegResponse(LO_confirm, (size_t)LO_confirmLen,
-                                      LO_written) &&
-                e22_regsEqual(LO_written, E22_CONTRACT_REGS)) {
-              ESP_LOGI(TAG,
-                       "E22 config dogrulandi: NETID=0x%02X REG0=0x%02X "
-                       "REG1=0x%02X REG2=0x%02X REG3=0x%02X",
-                       LO_written.netid, LO_written.reg0, LO_written.reg1,
-                       LO_written.reg2, LO_written.reg3);
-            } else {
-              ESP_LOGE(TAG, "E22 config yazma onayi uyusmuyor (%d byte) — "
-                            "gorevde kaliniyor",
-                       LO_confirmLen);
-            }
-          }
-        }
-      }
+  EspLoraHal LO_hal;
+  // G11: UART kurulamazsa (N deneme) telemetrisiz moda geç — aracı DURDURMA
+  // (FAULT yok), esp_restart YOK. Task canlı kalır (wdt beslenir) ama RX/TX
+  // yapmaz; durum LoRa_IsTelemetryDisabled() ile HMI/VcuLogic'e bildirilir.
+  if (!LO_hal.begin()) {
+    s_loraTelemetryDisabled.store(true, std::memory_order_release);
+    ESP_LOGE(TAG, "LoRa telemetri devre disi — task telemetrisiz modda "
+                  "(RX/TX yok, arac etkilenmez)");
+    while (true) {
+      esp_task_wdt_reset();
+      vTaskDelay(pdMS_TO_TICKS(1000));
     }
   }
-
-  // Normal transparan moda dön; AUX HIGH gelene kadar TX/RX başlatma
-  gpio_set_level(LORA_M0_PIN, LORA_MODE_NORMAL_M0_LEVEL);
-  gpio_set_level(LORA_M1_PIN, LORA_MODE_NORMAL_M1_LEVEL);
-  {
-    const TickType_t LO_normT0 = xTaskGetTickCount();
-    while ((xTaskGetTickCount() - LO_normT0) <
-           pdMS_TO_TICKS(LORA_AUX_MODE_TIMEOUT_MS)) {
-      if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) break;
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-  }
-  LO_auxLevel = gpio_get_level(LORA_AUX_PIN);
-  ESP_LOGI(TAG, "E22: normal mod (M0=%d M1=%d AUX=%d)",
-           LORA_MODE_NORMAL_M0_LEVEL, LORA_MODE_NORMAL_M1_LEVEL, LO_auxLevel);
-
+  LoraLink(LO_hal).configureE22();
   LO_telemetry.begin();
+
+  // Saf uplink beyni (link FSM + offline örnekleme + replay); sabitler
+  // eskisiyle birebir, taşınan statikler (s_linkDown vb.) artık içinde.
+  UplinkScheduler LO_sched(LINK_TIMEOUT_MS, BOOT_LINK_GRACE_MS,
+                           OFFLINE_SAMPLE_PERIOD_MS, REPLAY_BURST_PER_TICK,
+                           LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS);
+  s_uplink = &LO_sched;  // cross-task LoRa_IsLinkDown() köprüsü
+
+  // Boot-grace (9.2.e / 9.4.b.vi, S3): boot'tan sonra hiç heartbeat gelmezse
+  // link DOWN → buffer'a yazım hemen başlar (veri kaybolmaz).
+  const uint64_t LO_bootMs = LO_hal.nowMs();
+
+  bool LO_auxNotReadyLogged = false;
+  LoRa_TxCtx LO_txCtx{&LO_telemetry, &LO_hal, &LO_auxNotReadyLogged};
 
   uint8_t LO_rxBuffer[4];
   uint32_t lastStackLog = 0;
   TickType_t LO_lastTelemetryTick = 0;
-  bool LO_auxNotReadyLogged = false;
-
-  // Boot-grace (9.2.e / 9.4.b.vi, S3): boot anindan itibaren BOOT_LINK_GRACE_MS
-  // icinde hic heartbeat gelmezse link DOWN kabul edilir (bkz.
-  // link_check_timeout_with_boot_grace) — araç açıldığında UKS hiç yayında
-  // değilse buffer'a yazım hemen başlar, veri kaybolmaz.
-  const uint64_t LO_bootMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-
-  // Kesinti örnekleme durumu (S2): 1 Hz'e seyreltilmiş push + ts araligi
-  // (DOWN→UP log satırı için, madde 5).
-  uint64_t LO_lastOfflineSampleMs = 0u;  // 0 = bu kesintide henüz örnek yok
-  uint32_t LO_offlineFirstTs = 0u;
-  uint32_t LO_offlineLastTs  = 0u;
-  bool LO_offlineHasSamples  = false;
 
   while (true) {
     esp_task_wdt_reset();
 
-    int LO_rxLength = uart_read_bytes(LORA_UART_NUM, LO_rxBuffer,
-                                      sizeof(LO_rxBuffer),
-                                      pdMS_TO_TICKS(LORA_RX_TIMEOUT_MS));
+    // 1. RX (9.2.a: uzaktan komut yok — heartbeat dışı her byte "bilinmeyen").
+    int LO_rxLength = LO_hal.uartRead(LO_rxBuffer, sizeof(LO_rxBuffer),
+                                      LORA_RX_TIMEOUT_MS);
     for (int LO_i = 0; LO_i < LO_rxLength; LO_i++) {
-      // 9.2.a: EMERGENCY_STOP / START_REQUEST / RESET / DRIVE_ENABLE icin
-      // uzaktan (LoRa) tetik kaldirildi — HMI tetigi mevcut (bkz. vTask_HMI
-      // içindeki HMI_CMD_* switch'i).
-      switch (lora_classify_rx_byte(LO_rxBuffer[LO_i])) {
-      case LoraRxByteKind::HEARTBEAT:
-        s_lastHeartbeatMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-        break;
-      case LoraRxByteKind::UNKNOWN: {
-        const uint64_t LO_nowMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-        if (lora_note_unknown_byte(LO_nowMs, &s_unknownRxByteCount,
-                                    &s_lastUnknownRxByteWarnMs,
-                                    LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS)) {
-          ESP_LOGW(TAG,
-                   "LoRa RX: bilinmeyen byte 0x%02X (toplam %lu) — RF gurultu "
-                   "olabilir",
-                   LO_rxBuffer[LO_i], (unsigned long)s_unknownRxByteCount);
-        }
-        break;
-      }
+      if (LO_sched.onRxByte(LO_rxBuffer[LO_i], LO_hal.nowMs()) ==
+          UplinkScheduler::RxResult::UNKNOWN_WARN) {
+        ESP_LOGW(TAG,
+                 "LoRa RX: bilinmeyen byte 0x%02X (toplam %lu) — RF gurultu "
+                 "olabilir",
+                 LO_rxBuffer[LO_i], (unsigned long)LO_sched.unknownByteCount());
       }
     }
 
-    // Link durumu kontrolü — her 10 ms döngüde çalışır
-    {
-      const uint64_t LO_nowMs = (uint64_t)(esp_timer_get_time() / 1000LL);
-      const bool LO_timeout = link_check_timeout_with_boot_grace(
-          LO_nowMs, s_lastHeartbeatMs, LINK_TIMEOUT_MS, LO_bootMs,
-          BOOT_LINK_GRACE_MS);
-      if (LO_timeout && !s_linkDown) {
-        s_linkDown = true;
-        // Yeni kesinti başlıyor — örnekleme saatini ve ts aralığını sıfırla.
-        LO_lastOfflineSampleMs = 0u;
-        LO_offlineHasSamples = false;
-        ESP_LOGW("LINK", "UKS heartbeat timeout — link DOWN");
-      } else if (!LO_timeout && s_linkDown && s_lastHeartbeatMs != 0u) {
-        s_linkDown = false;
-        // 9.4.b.vi: kesinti kaydı + devamlılık zaman damgasıyla denetlenir —
-        // jüri denetiminde gösterilecek tek satırlık DOWN→UP kaydı (madde 5).
-        if (LO_offlineHasSamples) {
-          ESP_LOGI("LINK",
-                   "Heartbeat alindi — link UP: %d paket, ts araligi [%lu..%lu] "
-                   "replay ediliyor",
-                   ob_count(), (unsigned long)LO_offlineFirstTs,
-                   (unsigned long)LO_offlineLastTs);
-        } else {
-          ESP_LOGI("LINK", "Heartbeat alindi — link UP: 0 paket replay edilecek");
-        }
+    // 2. Link FSM — DOWN/UP geçiş logunu burada bas.
+    const UplinkScheduler::LinkTransition LO_tr =
+        LO_sched.updateLink(LO_hal.nowMs(), LO_bootMs);
+    if (LO_tr.becameDown) {
+      ESP_LOGW("LINK", "UKS heartbeat timeout — link DOWN");
+    } else if (LO_tr.becameUp) {
+      if (LO_tr.hadSamples) {
+        ESP_LOGI("LINK",
+                 "Heartbeat alindi — link UP: %d paket, ts araligi [%lu..%lu] "
+                 "replay ediliyor",
+                 LO_tr.bufferedCount, (unsigned long)LO_tr.firstTs,
+                 (unsigned long)LO_tr.lastTs);
+      } else {
+        ESP_LOGI("LINK", "Heartbeat alindi — link UP: 0 paket replay edilecek");
       }
     }
 
+    // 3. TX tik'i (LORA_TX_PERIOD_MS): link UP → replay+canlı; DOWN → örnekle.
     const TickType_t LO_nowTick = xTaskGetTickCount();
     if ((LO_nowTick - LO_lastTelemetryTick) >=
         pdMS_TO_TICKS(LORA_TX_PERIOD_MS)) {
       LO_lastTelemetryTick = LO_nowTick;
-
       if (TEL_sensorDataQueue != nullptr) {
-        if (!LoRa_IsLinkDown()) {
-          // --- NORMAL MOD: throttled replay + canlı paket (S1) ---
-          // seq (Telemetry::sendStatus içinde artar) yalnızca burada, gerçek
-          // TX anında ilerler — offline'da hiç artmaz. Replay edilen paketler
-          // TX sırasına göre ardışık YENİ seq alır; TUFAN-Monitor'ün
-          // new-boot tespiti (seq artar, ts geriye gider = replay) buna
-          // dayanır (madde 4) — peek/drop_front bu sırayı bozmaz.
-          for (int LO_burst = 0; LO_burst < REPLAY_BURST_PER_TICK; LO_burst++) {
-            TelemetryData LO_replay = {};
-            if (!ob_peek(LO_replay)) break;
-            if (gpio_get_level(LORA_AUX_PIN) != LORA_AUX_READY_LEVEL) {
-              // AUX meşgul: paket buffer'da KALIR, kaybolmaz — sıradaki
-              // tik'te tekrar denenir.
-              if (!LO_auxNotReadyLogged) {
-                ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
-                LO_auxNotReadyLogged = true;
-              }
-              break;
-            }
-            LO_telemetry.sendStatus(TelemetrySanitize::sanitizeForUplink(LO_replay));
-            ob_drop_front();
-            LO_auxNotReadyLogged = false;
-            esp_task_wdt_reset();
-          }
+        if (!LO_sched.isLinkDown()) {
           TelemetryData LO_live = {};
-          if (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE) {
-            if (gpio_get_level(LORA_AUX_PIN) == LORA_AUX_READY_LEVEL) {
-              LO_telemetry.sendStatus(TelemetrySanitize::sanitizeForUplink(LO_live));
-              LO_auxNotReadyLogged = false;
-            } else {
-              if (!LO_auxNotReadyLogged) {
-                ESP_LOGW(TAG, "LoRa AUX not ready, telemetry TX skipped");
-                LO_auxNotReadyLogged = true;
-              }
-            }
-          }
+          const bool LO_haveLive =
+              (xQueuePeek(TEL_sensorDataQueue, &LO_live, 0) == pdTRUE);
+          LO_sched.onTxTickLinkUp(LO_haveLive, LO_live, &LoRa_txSend, &LO_txCtx);
         } else {
-          // --- OFFLINE MOD: canlı TX yok; 1 Hz'e seyreltilmiş örnekle
-          // buffer'a yaz (S2, 9.2.h'ye 5x marj) ---
-          // TEL_timestampMs paket üretildiğinde (CAN task) zaten set edildi;
-          // kesinti aralığının zaman damgasıyla ispatı (9.2.e / 9.4.b.vi)
-          // buna dayanır — burada DEĞİŞTİRİLMEZ.
           TelemetryData LO_buffered = {};
           if (xQueuePeek(TEL_sensorDataQueue, &LO_buffered, 0) == pdTRUE) {
-            const uint64_t LO_nowMsSample =
-                (uint64_t)(esp_timer_get_time() / 1000LL);
-            if (offline_should_sample(LO_nowMsSample, LO_lastOfflineSampleMs,
-                                       LO_offlineHasSamples,
-                                       OFFLINE_SAMPLE_PERIOD_MS)) {
-              LO_lastOfflineSampleMs = LO_nowMsSample;
-              ob_push(LO_buffered);
-              if (!LO_offlineHasSamples) {
-                LO_offlineFirstTs = LO_buffered.TEL_timestampMs;
-                LO_offlineHasSamples = true;
-              }
-              LO_offlineLastTs = LO_buffered.TEL_timestampMs;
-            }
+            LO_sched.offlineSample(LO_hal.nowMs(), LO_buffered);
           }
         }
       }
@@ -659,6 +696,12 @@ void vTask_LoRa_UKS(void *pvParameters) {
 // ---------------------------------------------------------------------------
 #ifndef E22_DIAGNOSTIC_MODE
 extern "C" void app_main() {
+  // A) Log görünürlüğü: ESP-IDF'in ÇALIŞMA-ZAMANI log seviyesini INFO'ya ayarla
+  // (doğru IDF mekanizması — Arduino'ya özgü CORE_DEBUG_LEVEL kaldırıldı). IDF
+  // varsayılan derleme seviyesi de INFO'dur; bu çağrı niyeti açık kılar ve HWM
+  // (ESP_LOGI) dahil INFO ve üstü logların basıldığını garanti eder.
+  esp_log_level_set("*", ESP_LOG_INFO);
+
 #if !VEHICLE_PARAMS_CONFIRMED
   // 9.2.c.i / 9.4.b.iii / 9.2.f: WHEEL_DIAMETER_M / GEAR_RATIO /
   // MOTOR_RPM_IS_WHEEL_RPM henüz gerçek değerlerle teyit edilmedi —
@@ -689,8 +732,12 @@ extern "C" void app_main() {
     return;
   }
 
-  // 2. Initialize VCU state machine (event queue, safety allOff, INIT→IDLE)
-  VcuLogic::init();
+  // 2. Initialize VCU state machine (event queue, safety allOff, INIT→IDLE).
+  //    Aktüatör katmanı RelayManager adapteri ile enjekte edilir (M2).
+  VcuLogic::init(g_relayActuator);
+  // E-STOP/FAULT güvenli kapanış sırasındaki sıfır-tork isteğini CanManager'a
+  // yönlendir (G2 iskeleti; flag 0 iken gerçek frame üretmez).
+  VcuLogic::setTorqueSink(CAN_torqueSink);
 
   // 3. Create sensor data queue for inter-task communication
   TEL_sensorDataQueue = xQueueCreate(1, sizeof(TelemetryData));
@@ -702,13 +749,19 @@ extern "C" void app_main() {
   ESP_LOGI(TAG, "All subsystems initialized — starting tasks");
 
   // --- FreeRTOS task creation ---
-  xTaskCreatePinnedToCore(vTask_CAN_Comm, "CAN_Task", 4096, nullptr, 5, nullptr,
-                          0);
-  xTaskCreatePinnedToCore(vTask_HMI_Display, "HMI_Task", 4096, nullptr, 2,
-                          nullptr, 0);
-  xTaskCreatePinnedToCore(vTask_VCU_Logic, "VCU_Task", 4096, nullptr, 10,
-                          nullptr, 1);
-  xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr, 8,
-                          nullptr, 0);
+  // M6: Öncelikler SystemConfig.h'de TASK_PRIORITY_* olarak. CAN (güvenlik-
+  // kritik alım) > LoRa (telemetri): telemetri, güvenlik-kritik CAN alımını
+  // preempt edemez. Eskiden CAN=5 < LoRa=8 idi; düzeltildi (CAN=8, LoRa=5).
+  xTaskCreatePinnedToCore(vTask_CAN_Comm, "CAN_Task", 4096, nullptr,
+                          TASK_PRIORITY_CAN, nullptr, 0);
+  xTaskCreatePinnedToCore(vTask_HMI_Display, "HMI_Task", 4096, nullptr,
+                          TASK_PRIORITY_HMI, nullptr, 0);
+  xTaskCreatePinnedToCore(vTask_VCU_Logic, "VCU_Task", 4096, nullptr,
+                          TASK_PRIORITY_VCU, nullptr, 1);
+  // LoRa stack 3072 B: HWM ölçümü artık ESP_LOGI ile GÖRÜNÜR (logStackUsage).
+  // Marj < 512 B (≈128 word "remaining") ise stack'i artır; ölçüm görünmeden
+  // körlemesine büyütme.
+  xTaskCreatePinnedToCore(vTask_LoRa_UKS, "LoRa_Task", 3072, nullptr,
+                          TASK_PRIORITY_LORA, nullptr, 0);
 }
 #endif  // E22_DIAGNOSTIC_MODE

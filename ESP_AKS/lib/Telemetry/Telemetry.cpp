@@ -39,7 +39,7 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
         static_cast<int>(TEL_data.TEL_bmsTempLowestC),
         TEL_data.TEL_bmsSystemState,
         TEL_data.TEL_bmsPackVoltageDeciV,
-        static_cast<long>(TEL_data.TEL_bmsCurrentCentiMa),
+        static_cast<long>(TEL_data.TEL_bmsCurrentCentiA),
         TEL_data.TEL_bmsSocHundredths,
         TEL_data.TEL_bmsDataValid ? 1u : 0u,
         static_cast<unsigned long>(TEL_data.TEL_timestampMs),

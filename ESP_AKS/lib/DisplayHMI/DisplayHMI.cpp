@@ -123,18 +123,50 @@ void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
 bool DisplayHMI::readTouchCommand(uint8_t& HMI_command) {
     if (!HMI_isInitialized) return false;
 
-    uint8_t HMI_rxBuf[1];
-    int HMI_rxBytes = uart_read_bytes(HMI_UART_NUM, HMI_rxBuf, 1, pdMS_TO_TICKS(10));
+    // --- HMI Command Frame Format ---
+    // The HMI must send commands as a 3-byte frame to ensure integrity:
+    // [HEADER] [COMMAND] [CHECKSUM]
+    // HEADER   = 0x5A
+    // COMMAND  = HMI_CMD_... (e.g. 0x01 for START)
+    // CHECKSUM = ~COMMAND (bitwise NOT of COMMAND)
+    // 
+    // Example START frame: 0x5A 0x01 0xFE
+    
+    static int rxState = 0;
+    static uint8_t pendingCmd = 0;
 
-    if (HMI_rxBytes <= 0) return false;
+    uint8_t rxByte;
+    // Timeout pdMS_TO_TICKS(10) ile en az 1 byte bekler (eski davranis),
+    // ardindan bufferdaki kalan bytelari 0 timeout ile ceker.
+    int rxBytes = uart_read_bytes(HMI_UART_NUM, &rxByte, 1, pdMS_TO_TICKS(10));
+    if (rxBytes <= 0) return false;
 
-    // Gürültü byte'larını filtrele:
-    // 0xFF = Nextion end-byte (buffer'da kalan artık)
-    // 0x00 = Nextion Invalid Instruction yanıtı
-    // bkcmd=0 sayesinde 0x01-0x05 ack yanıtları gelmez,
-    // dolayısıyla bu değerler güvenle komut olarak yorumlanabilir
-    if (HMI_rxBuf[0] == 0xFF || HMI_rxBuf[0] == 0x00) return false;
+    do {
+        if (rxByte == 0xFF || rxByte == 0x00) {
+            // Nextion invalid/ack artiklari - guvenle atla ve state resetle
+            rxState = 0;
+            continue;
+        }
 
-    HMI_command = HMI_rxBuf[0];
-    return true;
+        if (rxState == 0) {
+            if (rxByte == 0x5A) {
+                rxState = 1;
+            }
+        } else if (rxState == 1) {
+            pendingCmd = rxByte;
+            rxState = 2;
+        } else if (rxState == 2) {
+            uint8_t expectedChecksum = (uint8_t)(~pendingCmd);
+            rxState = 0; // reset state for next command
+            if (rxByte == expectedChecksum) {
+                HMI_command = pendingCmd;
+                return true;
+            } else {
+                ESP_LOGW(TAG, "HMI command checksum mismatch: cmd=0x%02X, csum=0x%02X, expected=0x%02X",
+                         pendingCmd, rxByte, expectedChecksum);
+            }
+        }
+    } while (uart_read_bytes(HMI_UART_NUM, &rxByte, 1, 0) == 1);
+
+    return false;
 }

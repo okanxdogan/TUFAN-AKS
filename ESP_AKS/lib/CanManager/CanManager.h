@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include "CanParse.h"
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
 #include "TelemetrySanitize.h"
 #include "driver/gpio.h"
 #include "driver/twai.h"
@@ -26,7 +26,9 @@ class CanManager {
     bool begin();
     void setEventCallback(CAN_EventCallback CAN_callback, void* CAN_context);
 
-    // Send torque command to motor driver (CAN ID: 0x100)
+    // Motor sürücüsü torque komutu. MOTOR_DRIVER_PRESENT=0 iken GERÇEK FRAME
+    // GÖNDERMEZ (bir kez uyarı loglar, false döner); =1 iken frame gönderimi
+    // TODO. E-STOP/FAULT güvenli kapanış sırasında torque(0) ile çağrılır.
     bool sendTorqueCommand(uint16_t torqueValue);
 
     // Dispatch one received message — call this in the CAN task loop
@@ -34,17 +36,28 @@ class CanManager {
 
     // Thread-safe read of latest motor status
     MotorStatus getMotorStatus() const;
+
+    // Returns raw internal telemetry. Sanitization happens only at the uplink gate in vTask_LoRa_UKS.
     TelemetryData getTelemetryData() const;
+
+    // Thread-safe read of last charger command (0x1806E5F4, DOĞRULANDI).
+    // `out` her zaman son görülen setpoint'lerle doldurulur; dönüş değeri
+    // verinin taze olup olmadığını söyler (CAN_CHARGER_TIMEOUT_MS içinde
+    // frame görüldüyse true). Charger akışı OPSİYONEL — false FAULT değildir.
+    bool getChargerCommand(ChargerCommand& out) const;
 
    private:
     void handleMotorStatus(const twai_message_t& msg);
 
     // Lithium Balance c-BMS handler'ları
-    void handleLbBmsE000(const twai_message_t& msg);   // packV — DOĞRULANDI
+    void handleLbBmsE000(const twai_message_t& msg);        // packV, akım, SoC — DOĞRULANDI
+    void handleLbBmsE001(const twai_message_t& msg);        // Sıcaklıklar — DOĞRULANDI
+    void handleCharger1806E5F4(const twai_message_t& msg);  // setpoint'ler — DOĞRULANDI (AKS yalnızca dinler)
     void handleLbBmsStub(const twai_message_t& msg, uint32_t canId);  // diğer ID'ler — DOĞRULANMADI
 
     void updateMotorStatusValidity();
     void updateBmsValidity();
+    void updateChargerValidity();
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
 
@@ -61,17 +74,46 @@ class CanManager {
     bool CAN_hasSeenMotorStatus = false;
     bool CAN_motorTimeoutLogged = false;
 
-    // BMS freshness tracking — E000 (packV, doğrulanmış veri kaynağı)
+    // G9: motor errorFlags debounce sayacı — ardışık hatalı frame sayısı. Temiz
+    // frame gelince sıfırlanır (bkz. MotorFaultDebounce.h). Yalnız handleMotorStatus
+    // yazar/okur (CAN task'ine yerel; ek mutex gerektirmez).
+    uint16_t CAN_motorErrorConsecutive = 0;
+
+    bool CAN_busOffLogged = false;
+    bool CAN_busRecoveredLogged = false;
+
+    // G6: RX yolu sertleştirme sayaçları (sibling counter'larla aynı CAN_
+    // önek konvansiyonu). RX_QUEUE_FULL alarmı ve atılan remote (RTR) frame'ler.
+    uint32_t CAN_rxQueueFullCount = 0;
+    uint32_t CAN_rxRemoteFrameCount = 0;
+    TickType_t CAN_lastRxQueueFullLogTick = 0;
+
+    // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
+    bool CAN_torqueSkipLogged = false;
+
+    // BMS freshness tracking — G12: packV (E000) ve sıcaklık (E001) AYRI
+    // mesaj-ID'leri; freshness ID bazına izlenir. TEL_bmsDataValid /
+    // TEL_bmsTimeoutActive kararı updateBmsValidity'de İKİSİ birleştirilerek
+    // verilir (biri akıp diğeri kesilirse bayat alan maskelenmesin).
     TickType_t CAN_lastBmsE000Tick = 0;
     bool CAN_hasSeen_BmsE000 = false;
-    bool CAN_bmsE000Valid = false;
+    TickType_t CAN_lastBmsE001Tick = 0;
+    bool CAN_hasSeen_BmsE001 = false;
     bool CAN_bmsTimeoutLogged = false;
 
-    // UKS aralik-disi alan sanitizasyonu icin throttle'li WARN log
-    // zaman damgalari (bkz. getTelemetryData / TelemetrySanitize.h).
-    mutable TickType_t CAN_lastSysStateSanitizeWarnTick = 0;
-    mutable TickType_t CAN_lastSocSanitizeWarnTick = 0;
-    mutable TickType_t CAN_lastCurrentSanitizeWarnTick = 0;
+    // Pack voltajı eşik ihlali bayrakları (bit0 = undervoltage,
+    // bit1 = overvoltage). Motor errorFlags ile aynı edge-trigger deseni:
+    // notifyFaultIfNeeded yalnızca değişimde CAN_Event yayınlar.
+    uint8_t CAN_bmsPackFaultFlags = 0;
+
+    // Charger freshness tracking — 0x1806E5F4 (OPSİYONEL akış).
+    // Bayatlama yalnızca CAN_chargerValid'i düşürür; FAULT üretmez.
+    ChargerCommand s_chargerCommand = {};
+    TickType_t CAN_lastChargerTick = 0;
+    bool CAN_hasSeenCharger = false;
+    bool CAN_chargerValid = false;
+    bool CAN_chargerStaleLogged = false;
+
 
     CAN_EventCallback CAN_eventCallback = nullptr;
     void* CAN_eventContext = nullptr;

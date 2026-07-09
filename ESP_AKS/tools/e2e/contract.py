@@ -125,8 +125,11 @@ E22_REG3 = 0x00
 E22_ADDH = 0x00
 E22_ADDL = 0x00
 E22_NETID = 0x00
-E22_CRYPT_H = 0x00
-E22_CRYPT_L = 0x00
+# G7: heartbeat-injection kapatma icin sifir-disi ortak CRYPT anahtari
+# (E22_CRYPT_KEY=0x5A3C). AKS E22Regs.h (E22_CFG_CRYPT_H/L) ve UKS e22_regs.h
+# (E22_VAL_CRYPT_H/L) ile AYNI COMMIT'te senkron (bkz. E22_CRYPT_SENKRON.md).
+E22_CRYPT_H = 0x5A
+E22_CRYPT_L = 0x3C
 
 # Config modu pin seviyeleri (M0=0, M1=1 — E32'den farkli)
 E22_MODE_CONFIG_M0 = 0
@@ -149,12 +152,12 @@ REMOVED_COMMAND_BYTES = [0xA1, 0xA2, 0xA3, 0xA4]
 # P6 offline buffer / replay sabitleri (AKS include/SystemConfig.h)
 # ===========================================================================
 
-LORA_TX_PERIOD_MS = 200          # 5 Hz telemetry uplink tick periyodu
+LORA_TX_PERIOD_MS = 500          # 2 Hz telemetry uplink tick periyodu (link flapping duzeltmesi — bkz. SystemConfig.h)
 OFFLINE_SAMPLE_PERIOD_MS = 1000  # kesinti sirasi buffer ornekleme periyodu (1 Hz)
 OB_CAPACITY = 75                 # offline buffer kapasitesi (60 sn x 1 Hz + %25 marj)
-REPLAY_BURST_PER_TICK = 3        # link-up sonrasi tik basina en fazla replay
+REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
 BOOT_LINK_GRACE_MS = 5000        # boot'tan itibaren ilk heartbeat icin tanina sure
-LINK_TIMEOUT_MS = 3000           # 1 Hz heartbeat icin 3x marj
+LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-6 sn'lik fiili heartbeat araligina marj (bkz. SystemConfig.h)
 
 
 def build_tel_line(f: dict) -> str:
