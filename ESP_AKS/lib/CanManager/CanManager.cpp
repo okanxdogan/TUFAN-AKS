@@ -264,7 +264,14 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
         parsed.errorFlags, CAN_motorErrorConsecutive, MOTOR_ERROR_DEBOUNCE_FRAMES);
     CAN_confirmedErrorFlags = CAN_motorFaultConfirmed ? parsed.errorFlags : 0;
 
-    s_telemetryData.TEL_motorRpm = s_motorStatus.rpm;
+    // Motor rpm CAN'da işaretli (int16_t) gelir; geri yön dönüşü negatif
+    // olabilir. Telemetri/HMI/LoRa sözleşmesi ise rpm'i işaretsiz büyüklük
+    // (0..65535, sanity ≤ TEL_RPM_MAX) bekler — bkz. tools/e2e/contract.py.
+    // Negatifi doğrudan uint16_t'ye atamak sarmalanıp (~64k) UKS paketini
+    // reddettirirdi; bu yüzden mutlak değeri (büyüklüğü) alıyoruz.
+    s_telemetryData.TEL_motorRpm = static_cast<uint16_t>(
+        s_motorStatus.rpm < 0 ? -static_cast<int32_t>(s_motorStatus.rpm)
+                              : static_cast<int32_t>(s_motorStatus.rpm));
     s_telemetryData.TEL_motorVoltageDeciV = s_motorStatus.motorVoltageDeciV;
     s_telemetryData.TEL_motorErrorFlags = CAN_confirmedErrorFlags;
     s_telemetryData.TEL_motorDataValid = s_motorStatus.isValid;

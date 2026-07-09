@@ -281,8 +281,9 @@ void vTask_HMI_Display(void *pvParameters) {
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
         if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            // Hedef RPM'i alırken negatif devirlere karşı mutlak değer alıyoruz
-            float targetRpm = (TEL_data.TEL_motorRpm < 0) ? (float)(-TEL_data.TEL_motorRpm) : (float)TEL_data.TEL_motorRpm;
+            // TEL_motorRpm işaretsiz büyüklük (uint16_t) — geri yön dönüşü
+            // zaten CanManager'da mutlak değere çevrildi, doğrudan kullanılır.
+            float targetRpm = (float)TEL_data.TEL_motorRpm;
             // Gerçek hızı km/h cinsinden hesaplıyoruz (Teknofest Şartnamesi)
             float targetSpeed = (float)TEL_data.TEL_speedKmhX10 / 10.0f;
             
