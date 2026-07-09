@@ -270,6 +270,11 @@ void vTask_HMI_Display(void *pvParameters) {
 
   uint8_t HMI_incomingCommand = 0;
 
+  // EMA (Üstel Hareketli Ortalama) filtresi değişkenleri (İbrenin akıcı hareket etmesi için)
+  float HMI_smoothedRpm = 0.0f;
+  float HMI_smoothedSpeed = 0.0f;
+  const float HMI_EMA_ALPHA = 0.15f; // Bu değer (0.0 ile 1.0 arası) küçüldükçe ibre daha yavaş ve yumuşak kalkar.
+
   while (true) {
     esp_task_wdt_reset();
 
