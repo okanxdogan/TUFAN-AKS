@@ -17,19 +17,18 @@ extern void test_motor_status_motor_running_flag(void);
 extern void test_motor_status_motor_stopped_flag(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
 
-// Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)
+// Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC)
+// Tanımlar test_bms_config_parse.cpp içindedir.
 extern void test_e000_dlc_too_short(void);
-extern void test_e000_packv_big_endian(void);
-extern void test_e000_packv_zero(void);
-extern void test_e000_packv_max_uint16(void);
-extern void test_e000_packv_nominal_78v(void);
-extern void test_e000_sets_valid_flag(void);
+extern void test_e000_parsing_nominal(void);
+extern void test_e000_parsing_negative_current(void);
+extern void test_e000_current_scale_round_trip(void);
+extern void test_e000_current_1A_trips_critical_threshold(void);
 extern void test_e000_preserves_other_fields(void);
-extern void test_e000_dlc_8_raw_fields_parsed(void);
-extern void test_e000_session2_idle_frame(void);
-extern void test_e000_session2_end_frame(void);
-extern void test_e000_dlc_2_too_short(void);
-extern void test_e000_dlc_6_counter2_deterministic_zero(void);
+
+// Lithium Balance c-BMS — CAN ID 0xE001 sıcaklık (DOĞRULANDI)
+extern void test_e001_dlc_too_short(void);
+extern void test_e001_parsing_temps(void);
 
 // checkPackVoltageFault — saf pack voltajı eşik kontrolü (DOĞRULANMIŞ sinyal)
 extern void test_packv_fault_599_is_undervoltage(void);
@@ -89,19 +88,17 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_motor_status_motor_stopped_flag);
     RUN_TEST(test_motor_status_invalid_does_not_modify_out);
 
-    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: packV)
+    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC)
     RUN_TEST(test_e000_dlc_too_short);
-    RUN_TEST(test_e000_packv_big_endian);
-    RUN_TEST(test_e000_packv_zero);
-    RUN_TEST(test_e000_packv_max_uint16);
-    RUN_TEST(test_e000_packv_nominal_78v);
-    RUN_TEST(test_e000_sets_valid_flag);
+    RUN_TEST(test_e000_parsing_nominal);
+    RUN_TEST(test_e000_parsing_negative_current);
+    RUN_TEST(test_e000_current_scale_round_trip);
+    RUN_TEST(test_e000_current_1A_trips_critical_threshold);
     RUN_TEST(test_e000_preserves_other_fields);
-    RUN_TEST(test_e000_dlc_8_raw_fields_parsed);
-    RUN_TEST(test_e000_session2_idle_frame);
-    RUN_TEST(test_e000_session2_end_frame);
-    RUN_TEST(test_e000_dlc_2_too_short);
-    RUN_TEST(test_e000_dlc_6_counter2_deterministic_zero);
+
+    // Lithium Balance c-BMS — CAN ID 0xE001 sıcaklık (DOĞRULANDI)
+    RUN_TEST(test_e001_dlc_too_short);
+    RUN_TEST(test_e001_parsing_temps);
 
     // checkPackVoltageFault — saf pack voltajı eşik kontrolü
     RUN_TEST(test_packv_fault_599_is_undervoltage);

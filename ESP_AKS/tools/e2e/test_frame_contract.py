@@ -22,7 +22,7 @@ import contract
 # Bu, AKS'in KENDI native test suite'inde dogrulanmis, gercek sendStatus()
 # ciktisidir — burada tekrar UYDURULMADI.
 AKS_GOLDEN_DISTINCT = (
-    "TEL,2,0,1500,-250,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,12345,1413\r\n"
+    "TEL,2,0,1500,240,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,12345,1413\r\n"
 )
 
 # Kaynak: ESP_AKS test/test_native_telemetry/test_telemetry_format.cpp
@@ -82,7 +82,7 @@ def test_golden_distinct_line_fields_match_source_test_vector():
     """makeDistinctData() ile birebir alan degerleri (kaynak dogrulugu)."""
     parsed = contract.parse_uks_frame(_line_no_crlf(AKS_GOLDEN_DISTINCT))
     assert parsed == {
-        "ver": 2, "seq": 0, "rpm": 1500, "torque": -250, "motor_err": 5,
+        "ver": 2, "seq": 0, "rpm": 1500, "torque": 240, "motor_err": 5,
         "motor_valid": 1, "motor_timeout": 0, "cell_vmax": 37734,
         "cell_vmin": 37422, "temp_h": 32, "temp_l": 31, "sys_state": 2,
         "pack_v": 780, "current": -181610, "soc": 6283, "bms_valid": 1,

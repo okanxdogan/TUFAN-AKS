@@ -137,15 +137,6 @@ void test_e001_parsing_temps(void) {
     TEST_ASSERT_EQUAL_INT8(-5, out.TEL_bmsTempLowestC);
 }
 
-int main(int argc, char** argv) {
-    UNITY_BEGIN();
-    RUN_TEST(test_e000_dlc_too_short);
-    RUN_TEST(test_e000_parsing_nominal);
-    RUN_TEST(test_e000_parsing_negative_current);
-    RUN_TEST(test_e000_current_scale_round_trip);
-    RUN_TEST(test_e000_current_1A_trips_critical_threshold);
-    RUN_TEST(test_e000_preserves_other_fields);
-    RUN_TEST(test_e001_dlc_too_short);
-    RUN_TEST(test_e001_parsing_temps);
-    return UNITY_END();
-}
+// NOT: Bu dosyanın kendi main()'i YOK. Tek test runner test_main.cpp'dedir
+// (diğer tüm native suite'lerle aynı desen). Yukarıdaki testler oradan
+// RUN_TEST ile çağrılır.
