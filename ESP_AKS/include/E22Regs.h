@@ -60,25 +60,19 @@
 #define E22_CFG_REG2    0x17U
 // REG3 = bit7=0 RSSI byte eklenmez | bit6=0 transparan | bit5=0 röle kapalı | bit4=0 LBT kapalı
 #define E22_CFG_REG3    0x00U
-// CRYPT (G7 — heartbeat-injection kapatma): E22 sözleşmesi broadcast
-// (ADDH/ADDL/NETID=0) + transparan mod + tek-byte 0xB0 canlılıktır. CRYPT=0
-// iken 433.125 MHz'deki HERHANGİ bir E22 saniyede bir 0xB0 basıp gerçek UKS
-// kapalıyken linki "UP" tutabilir → offline örnekleme hiç başlamaz → kesinti
-// verisi kalıcı kaybolur. Sıfır-dışı ORTAK gizli anahtar bu enjeksiyonu
-// neredeyse bedavaya kapatır (heartbeat protokolü 0xB0 olarak KALIR).
+// CRYPT: UKS sözleşmesiyle birebir 0x0000 (UKS Core/Inc/e22_regs.h
+// E22_VAL_CRYPT_H/L = 0x00). E22 CRYPT'i geri OKUYAMAZ (okuma her zaman 0
+// döner) → yazılır ama e22_regsEqual doğrulamasından HARİÇ tutulur (bkz.
+// E22Config). CRYPT_H/L LİTERAL tutulur (drift-guard değerleri sayısal
+// parse eder); 16-bit E22_CRYPT_KEY ile tutarlılık E22Config.cpp'de
+// static_assert ile bağlanır.
 //
-// !!! ÇAPRAZ-REPO SENKRON !!! Bu anahtar UKS Core/Inc/e22_regs.h
+// !!! ÇAPRAZ-REPO SENKRON !!! Bu değerler UKS Core/Inc/e22_regs.h
 // (E22_VAL_CRYPT_H/L) ve tools/e2e/contract.py (E22_CRYPT_H/L) ile AYNI
 // COMMIT'te birebir güncellenmelidir. Drift-guard:
 // test_contract_drift.py::test_e22_register_targets_match_across_repos.
-// Ayrıntı + dağıtım adımı: Documents/E22_CRYPT_SENKRON.md.
-//
-// E22 CRYPT'i geri OKUYAMAZ (okuma her zaman 0 döner) → yazılır ama
-// e22_regsEqual doğrulamasından HARİÇ tutulur (bkz. E22Config). CRYPT_H/L
-// LİTERAL tutulur (drift-guard değerleri sayısal parse eder); 16-bit
-// E22_CRYPT_KEY ile tutarlılık E22Config.cpp'de static_assert ile bağlanır.
-#define E22_CRYPT_KEY   0x5A3CU  // 16-bit ortak gizli anahtar (sıfır-dışı)
-#define E22_CFG_CRYPT_H 0x5AU    // = (E22_CRYPT_KEY >> 8) & 0xFF
-#define E22_CFG_CRYPT_L 0x3CU    // = E22_CRYPT_KEY & 0xFF
+#define E22_CRYPT_KEY   0x0000U  // 16-bit ortak anahtar (UKS ile aynı: sıfır)
+#define E22_CFG_CRYPT_H 0x00U    // = (E22_CRYPT_KEY >> 8) & 0xFF
+#define E22_CFG_CRYPT_L 0x00U    // = E22_CRYPT_KEY & 0xFF
 
 #endif  // E22_REGS_H

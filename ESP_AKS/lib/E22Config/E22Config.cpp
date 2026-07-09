@@ -1,14 +1,12 @@
 #include "E22Config.h"
 
-// G7: E22Regs.h'de CRYPT_H/L drift-guard'ın sayısal parse'ı için LİTERAL
+// E22Regs.h'de CRYPT_H/L drift-guard'ın sayısal parse'ı için LİTERAL
 // tutulur; bu static_assert'ler onların 16-bit E22_CRYPT_KEY ile kaymadığını
 // derleme zamanında garanti eder (tek gerçek kaynak = E22_CRYPT_KEY).
 static_assert(E22_CFG_CRYPT_H == ((E22_CRYPT_KEY >> 8) & 0xFFU),
               "E22_CFG_CRYPT_H, E22_CRYPT_KEY yuksek byte'i ile uyusmuyor");
 static_assert(E22_CFG_CRYPT_L == (E22_CRYPT_KEY & 0xFFU),
               "E22_CFG_CRYPT_L, E22_CRYPT_KEY dusuk byte'i ile uyusmuyor");
-static_assert(E22_CRYPT_KEY != 0x0000U,
-              "G7: E22_CRYPT_KEY sifir olamaz (heartbeat-injection acigi acik kalir)");
 
 size_t e22_buildReadAllCommand(uint8_t* outBuf, size_t outBufSize) {
   if (outBuf == nullptr || outBufSize < 3) return 0;
