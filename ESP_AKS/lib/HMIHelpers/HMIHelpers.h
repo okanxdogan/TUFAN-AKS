@@ -91,6 +91,27 @@ inline int16_t HMI_temperatureDisplayValue(bool HMI_sourceVerified,
     return HMI_temperatureC;
 }
 
+// --- Nextion "float" (xfloat) ölçekleme — packv ve packa ---
+//
+// Nextion tarafında `packv` ve `packa` bileşenleri artık 2 ondalıklı float
+// (xfloat) olarak yapılandırıldı ("00.00" formatı). xfloat, gönderilen tamsayı
+// `.val` değerini `gerçek_değer * 100` (yani son 2 hane ondalık) olarak
+// yorumlar. Bu yüzden firmware `.val`'ı 2 ondalıklı gösterime uygun ölçekte
+// göndermelidir. (temp hâlâ tam sayı `number` bileşeni — ölçeklenmez.)
+//
+// packv kaynağı deciV (×0.1 V) taşır → xfloat için ×10 (deciV*10 = V*100).
+//   örn. 800 deciV = 80.0 V → 8000 → "80.00"
+inline int32_t HMI_packVoltageToXfloat(uint16_t HMI_packVoltageDeciV) {
+    return static_cast<int32_t>(HMI_packVoltageDeciV) * 10;
+}
+
+// packa kaynağı centiA (×0.01 A) taşır; bu ZATEN A*100'e eşittir → xfloat için
+// ek ölçekleme GEREKMEZ, değer doğrudan gönderilir.
+//   örn. 1250 centiA = 12.5 A → 1250 → "12.50"
+inline int32_t HMI_packCurrentToXfloat(int32_t HMI_packCurrentCentiA) {
+    return HMI_packCurrentCentiA;
+}
+
 // Nextion UART tarafı — implementasyonu HMIHelpers.cpp içindedir.
 void HMI_sendEndBytes(void);
 

@@ -311,6 +311,8 @@ void vTask_HMI_Display(void *pvParameters) {
                 TEL_data.TEL_bmsTempHighestC);
             HMI_screenData.HMI_bmsPackVoltageDeciV =
                 TEL_data.TEL_bmsPackVoltageDeciV;
+            HMI_screenData.HMI_bmsPackCurrentCentiA =
+                TEL_data.TEL_bmsCurrentCentiA;
         }
     }
 

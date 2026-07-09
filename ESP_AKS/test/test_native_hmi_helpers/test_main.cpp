@@ -48,6 +48,10 @@ extern void test_battery_verified_valid_converts_hundredths_to_percent(void);
 extern void test_battery_verified_valid_clamps_above_100(void);
 extern void test_temp_verified_valid_passes_through(void);
 
+// Nextion float (xfloat) ölçekleme — packv / packa
+extern void test_packv_decivolt_scaled_to_xfloat(void);
+extern void test_packa_centiamp_passes_through_as_xfloat(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -94,6 +98,9 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_battery_verified_valid_converts_hundredths_to_percent);
     RUN_TEST(test_battery_verified_valid_clamps_above_100);
     RUN_TEST(test_temp_verified_valid_passes_through);
+
+    RUN_TEST(test_packv_decivolt_scaled_to_xfloat);
+    RUN_TEST(test_packa_centiamp_passes_through_as_xfloat);
 
     return UNITY_END();
 }
