@@ -17,7 +17,7 @@ extern void test_motor_status_motor_running_flag(void);
 extern void test_motor_status_motor_stopped_flag(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
 
-// Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC)
+// Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC1/SoC2)
 // Tanımlar test_bms_config_parse.cpp içindedir.
 extern void test_e000_dlc_too_short(void);
 extern void test_e000_parsing_nominal(void);
@@ -44,9 +44,17 @@ extern void test_charger_session2_frame(void);
 extern void test_charger_big_endian_order(void);
 extern void test_charger_dlc_4_minimum_ok(void);
 
-// Lithium Balance c-BMS — DOĞRULANMAMIŞ ID stub'ları
-extern void test_e001_stub_accepts_valid_dlc(void);
-extern void test_e001_stub_rejects_zero_dlc(void);
+// GERÇEK LOG FRAME TESTLERİ — Oturum 3 zemin gerçeği
+// Tanımlar test_bms_live_parse.cpp içindedir.
+extern void test_e000_real_log_frame_session3_sample1(void);
+extern void test_e000_real_log_frame_session3_sample2(void);
+extern void test_e000_real_log_frame_session3_sample3(void);
+extern void test_e001_real_log_frame_session3_sample1(void);
+extern void test_e001_max_min_reversed(void);
+extern void test_e001_negative_temps(void);
+extern void test_e001_preserves_other_fields(void);
+
+// BİLİNMİYOR ID stub'ları (E002-E033)
 extern void test_e002_stub_accepts_valid_dlc(void);
 extern void test_e032_stub_accepts_valid_dlc(void);
 extern void test_e033_stub_accepts_valid_dlc(void);
@@ -114,9 +122,16 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_charger_big_endian_order);
     RUN_TEST(test_charger_dlc_4_minimum_ok);
 
-    // Lithium Balance c-BMS — DOĞRULANMAMIŞ ID stub'ları
-    RUN_TEST(test_e001_stub_accepts_valid_dlc);
-    RUN_TEST(test_e001_stub_rejects_zero_dlc);
+    // GERÇEK LOG FRAME TESTLERİ — Oturum 3 (zemin gerçeği)
+    RUN_TEST(test_e000_real_log_frame_session3_sample1);
+    RUN_TEST(test_e000_real_log_frame_session3_sample2);
+    RUN_TEST(test_e000_real_log_frame_session3_sample3);
+    RUN_TEST(test_e001_real_log_frame_session3_sample1);
+    RUN_TEST(test_e001_max_min_reversed);
+    RUN_TEST(test_e001_negative_temps);
+    RUN_TEST(test_e001_preserves_other_fields);
+
+    // BİLİNMİYOR ID stub'ları (E002-E033)
     RUN_TEST(test_e002_stub_accepts_valid_dlc);
     RUN_TEST(test_e032_stub_accepts_valid_dlc);
     RUN_TEST(test_e033_stub_accepts_valid_dlc);

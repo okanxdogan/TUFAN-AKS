@@ -38,10 +38,10 @@ enum class VcuEvent : uint8_t {
 // edilmediği için karar mantığından ÇIKARILDI; saha kalibrasyonu sonrası
 // aşağıdaki saf yardımcılar üzerinden yeniden bağlanacak.
 
-// TODO: source signal not yet verified — TEL_bmsCurrentCentiA hiç
-// yazılmıyor (hep 0). Bu iki yardımcı, ölçek doğrulanana kadar karar
-// mantığına BAĞLI DEĞİLDİR; yalnız birim testleri ve gelecekteki bağlama
-// için tutuluyor.
+// Akım sinyali DOĞRULANDI (0xE000 byte[0:1], ×0.1A → centi-A) ve
+// TEL_bmsCurrentCentiA'ya parse ediliyor. Bu iki yardımcı karar
+// mantığına henüz BAĞLANMAMIŞTIR (hasWarningCondition/hasCriticalCondition
+// akım kontrolü çağırmıyor); bağlanana kadar yalnız birim testleri için.
 inline bool isCurrentCritical(int32_t bmsCurrentCentiA) {
     return bmsCurrentCentiA >= BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A ||
            bmsCurrentCentiA <= -BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A;

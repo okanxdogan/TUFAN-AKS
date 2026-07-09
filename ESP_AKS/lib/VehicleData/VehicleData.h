@@ -20,20 +20,20 @@ struct TelemetryData {
     bool TEL_motorDataValid;
     bool TEL_motorTimeoutActive;
 
-    // Lithium Balance c-BMS — alanlar henüz çözülmemiş ID'lerden gelecek
-    // Bu alanlar TelemetryData yapısında kalıyor çünkü telemetri, HMI ve
-    // VcuLogic tüketici kodları bunları kullanıyor. İlgili CAN ID'lerin
-    // reverse-engineering'i tamamlandıkça parse edilecek.
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempHighestC;            // DOĞRULANMADI — kaynak ID bilinmiyor
-    int8_t TEL_bmsTempLowestC;             // DOĞRULANMADI — kaynak ID bilinmiyor
-    uint8_t TEL_bmsSystemState;            // DOĞRULANMADI — kaynak ID bilinmiyor
+    // Lithium Balance c-BMS — per-hücre alanlar (kaynak CAN ID henüz BİLİNMİYOR)
+    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
+    uint16_t TEL_bmsCellVoltageMinDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
+    uint8_t TEL_bmsSystemState;            // BİLİNMİYOR — kaynak ID çözülmedi
 
-    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI)
-    uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw * 0.1 = V — DOĞRULANDI
-    int32_t TEL_bmsCurrentCentiA;     // byte[0:1], raw * 10 = CentiA (0.01A) — DOĞRULANDI
-    uint16_t TEL_bmsSocHundredths;     // byte[4:5], raw = 0.01% — DOĞRULANDI
+    // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI, bkz. CAN_Message_Table.md)
+    uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw × 0.1 = V — DOĞRULANDI
+    int32_t TEL_bmsCurrentCentiA;     // byte[0:1], int16 signed, raw × 10 = centi-A — DOĞRULANDI
+    uint16_t TEL_bmsSocHundredths;     // byte[4:5], uint16, raw × 0.01 = % (SoC 1) — DOĞRULANDI
+    uint16_t TEL_bmsSoc2Hundredths;    // byte[6:7], uint16, raw × 0.01 = % (SoC 2) — DOĞRULANDI
+
+    // Lithium Balance c-BMS — CAN ID 0xE001 (kısmi DOĞRULANDI)
+    int8_t TEL_bmsTempHighestC;       // max(byte[6], byte[7]), int8 °C — DOĞRULANDI
+    int8_t TEL_bmsTempLowestC;        // min(byte[6], byte[7]), int8 °C — DOĞRULANDI
 
     bool TEL_bmsDataValid;
     // Post-reception E000 freshness kaybı (krş. TEL_motorTimeoutActive).

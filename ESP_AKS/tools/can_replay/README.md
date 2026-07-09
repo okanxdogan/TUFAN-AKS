@@ -38,8 +38,7 @@ STD | 0x000      | 8 | 00 00 00 00 00 00 00 00
 ## Doğrulanan invariant'lar (Oturum 2, paket idle)
 
 - Tüm `0xE000` frame'lerinde `packV == 790` (79.0 V) ve `byte[2:3] == 0x0316`
-- `0xE000` ham akım int16 değeri `{-1, -2}` kümesinde (ölçek DOĞRULANMADI,
-  ham karşılaştırma)
+- `0xE000` ham akım int16 değeri `{-1, -2}` kümesinde (DOĞRULANDI, çarpan 0.1A)
 - Tüm `0x1806E5F4` frame'lerinde setpoint sabit: 88.0 V / 100.0 A
 - Bilinen 10 ID (`E000..E005`, `E032`, `E033`, `1806E5F4`, STD `0x000`)
   dışında ID gelirse raporlanır

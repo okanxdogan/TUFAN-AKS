@@ -45,6 +45,9 @@ bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out) {
     // DOĞRULANDI: byte[4:5] = SoC 1, uint16_t, Çarpan 0.01%
     out.TEL_bmsSocHundredths = static_cast<uint16_t>((msg.data[4] << 8) | msg.data[5]);
 
+    // DOĞRULANDI: byte[6:7] = SoC 2, uint16_t, Çarpan 0.01%
+    out.TEL_bmsSoc2Hundredths = static_cast<uint16_t>((msg.data[6] << 8) | msg.data[7]);
+
     out.TEL_bmsDataValid = true;
     return true;
 }
@@ -70,14 +73,20 @@ bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out) {
 // --- ama TelemetryData'ya anlam yüklenmez. İleride gerçek anlam çözüldükçe
 // --- bu fonksiyonların içi doldurulacaktır.
 
-// 0xE001 — Sıcaklık Değerleri DOĞRULANDI
+// 0xE001 — Sıcaklık Değerleri DOĞRULANDI (bkz. CAN_Message_Table.md)
+// byte[0:5] = BİLİNMİYOR (analog kanal deseni, 0x8000 civarı ofset)
+// byte[6]   = Temperature 1 (Kanal 1), int8_t, °C
+// byte[7]   = Temperature 2 (Kanal 2), int8_t, °C
 bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8)
         return false;
 
-    // DOĞRULANDI: byte[6:7] = Temperature 1 & 2, int8_t, ofset yok doğrudan Celsius
-    out.TEL_bmsTempHighestC = static_cast<int8_t>(msg.data[6]);
-    out.TEL_bmsTempLowestC = static_cast<int8_t>(msg.data[7]);
+    // DOĞRULANDI: byte[6] = Temp1, byte[7] = Temp2, int8_t, ofset yok, doğrudan °C.
+    // Hangi kanalın daha sıcak olduğu garanti değil → max/min ile atanır.
+    const int8_t temp1 = static_cast<int8_t>(msg.data[6]);
+    const int8_t temp2 = static_cast<int8_t>(msg.data[7]);
+    out.TEL_bmsTempHighestC = (temp1 >= temp2) ? temp1 : temp2;
+    out.TEL_bmsTempLowestC  = (temp1 <= temp2) ? temp1 : temp2;
 
     return true;
 }

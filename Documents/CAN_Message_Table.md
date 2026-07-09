@@ -1,185 +1,219 @@
-# CAN Message Table
+# CAN Message Table — TEK DOĞRULUK KAYNAĞI
 
-This table documents the CAN frames currently implemented or reserved by the AKS firmware.
+> **Son güncelleme:** 2026-07-09
+> **Zemin gerçeği:** Lithium Balance c-BMS24 gerçek CAN sniffer logu (Oturum 3,
+> 2026-07-09 18:01, paket idle, ~80 V / ~25°C).
+> **Kural:** Çelişki olursa bu tablo kazanır — eski yorum, TODO veya .md DEĞİL.
+
+Bu tablo, AKS firmware'inin dinlediği veya gönderdiği TÜM CAN frame'lerini
+byte-byte belgeler. Her alan için doğrulama durumu ve kanıt verilmiştir.
+
+## Doğrulama Seviyeleri
+
+| Seviye | Anlamı | Firmware Kuralı |
+| --- | --- | --- |
+| ✅ DOĞRULANDI | Gerçek log ile bağımsız olarak doğrulandı | TelemetryData'ya YAZILABİLİR, karar mantığına BAĞLANABİLİR |
+| ⚠️ HİPOTEZ | Tutarlı gözlem var, bağımsız teyit yok | TelemetryData'ya YAZILMAZ, debug log'a basılır |
+| ❌ BİLİNMİYOR | Alan anlamı / ölçeği bilinmiyor | TelemetryData'ya YAZILMAZ, ham byte loglanır |
+
+## Protokol Parametreleri
+
+| Parametre | Değer |
+| --- | --- |
+| ID Format | **29-bit Extended** (CAN 2.0b) |
+| Byte Order | **Big Endian** (doğrulanmış alanlar için kanıtlandı) |
+| CAN Bitrate | **500 kbps** (ESP-IDF TWAI driver, TJA1050 transceiver) |
+| 120 Ω Termination | Mevcut değil (Solion föyü: "Mevcut değildir") |
+
+---
 
 ## Motor Driver Frames
 
-### `0x100` Torque Command
+### `0x100` — Torque Command
 
-Direction: `AKS -> Motor Driver`
+Direction: `AKS → Motor Driver` | Status: **MOTOR_DRIVER_PRESENT=0 — henüz aktif değil**
 
-| Byte | Field | Type | Scale | Description |
-| --- | --- | --- | --- | --- |
-| 0 | Torque MSB | `uint8_t` | raw | High byte of torque command |
-| 1 | Torque LSB | `uint8_t` | raw | Low byte of torque command |
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Torque Command | uint16_t | Big | unsigned | raw | ❌ BİLİNMİYOR | Motor sürücüsü entegre değil, frame gönderilmiyor |
 
-Notes:
+### `0x200` — Motor Status
 
-- The CAN task transmits torque at the control loop rate.
-- When VCU state is not `DRIVE`, torque is forced to `0` for safety.
+Direction: `Motor Driver → AKS` | DLC: 8 | Status: **MSTest/mock_motor ile doğrulanmış**
 
-### `0x200` Motor Status
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | RPM | int16_t | Big | signed | raw | ✅ DOĞRULANDI | MSTest/mock_motor |
+| 2–3 | Motor Voltage | uint16_t | Big | unsigned | ×0.1 V | ✅ DOĞRULANDI | MSTest/mock_motor |
+| 4–6 | Rezerve | — | — | — | — | ❌ BİLİNMİYOR | Kullanılmıyor |
+| 7 | Error Flags / Running | uint8_t | — | unsigned | bitfield | ✅ DOĞRULANDI | bit0=çalışıyor, bit[7:1]=hata bayrakları |
 
-Direction: `Motor Driver -> AKS`
+Freshness: 500 ms timeout → `TEL_motorTimeoutActive`, IDLE dışında FAULT.
 
-| Byte | Field | Type | Scale | Description |
-| --- | --- | --- | --- | --- |
-| 0 | RPM MSB | `uint8_t` | raw | High byte of motor RPM |
-| 1 | RPM LSB | `uint8_t` | raw | Low byte of motor RPM |
-| 2 | Torque Feedback MSB | `uint8_t` | raw | High byte of signed torque feedback |
-| 3 | Torque Feedback LSB | `uint8_t` | raw | Low byte of signed torque feedback |
-| 4 | Error Flags | `uint8_t` | bitfield | Motor driver fault / warning flags |
-
-Freshness rule:
-
-- If no valid `0x200` frame is received for `500 ms`, AKS marks motor data invalid.
-- A post-reception motor timeout is treated as a critical safety condition outside `IDLE`.
+---
 
 ## Lithium Balance c-BMS Frames
 
-Source: Lithium Balance c-BMS24 — CAN sniffer logları ile reverse-engineering
+Kaynak: Lithium Balance c-BMS24 — 29-bit Extended ID
 
-Sniffer oturumları:
-1. **Oturum 1**: İlk keşif oturumu (pack voltajı ~52.6 V olan paket)
-2. **Oturum 2**: 24.421 frame, ~8 dk, paket idle (pack voltajı ~79.0 V olan farklı bir paket)
+### `0x0000E000` — Pack Telemetri (TAMAMEN ÇÖZÜLDÜ)
 
-Protocol parameters:
-- ID Format: **29-bit Extended** (`CAN 2.0b`)
-- Byte Order: **Big Endian** (doğrulanmış alanlar için)
-- CAN speed: **500 kbps** (ESP-IDF TWAI driver ayarı ile uyumlu)
-- 120 Ω termination resistor: TBD
+Direction: `BMS → AKS` | DLC: 8 | Status: **✅ DOĞRULANDI — tüm 4 alan**
 
-Güven seviyeleri: **DOĞRULANDI** (bağımsız ölçümle teyit edildi) / **HIPOTEZ-orta** (tutarlı
-gözlem var, bağımsız teyit yok) / **HIPOTEZ-düşük** (UNVERIFIED — ölçek/anlam bilinmiyor).
-HIPOTEZ seviyesindeki alanlar firmware'de parse edilmemeli, TelemetryData'ya yazılmamalıdır.
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek / Çarpan | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Pack Current | int16_t | Big | **signed** | ×0.1 A | ✅ DOĞRULANDI | `FF F5` → int16 = -11 → ×0.1 = **-1.1 A** (log: "Pack Akimi : -1.1 A" ✓); `FF F3` → -13 → **-1.3 A** ✓; `FF F1` → -15 → **-1.5 A** ✓ |
+| 2–3 | Pack Voltage | uint16_t | Big | unsigned | ×0.1 V | ✅ DOĞRULANDI | `03 20` → 800 → ×0.1 = **80.0 V** (log: "paket voltajı : 80.0V" ✓). Önceki Oturum 1'de `02 0E` → 52.6 V, Oturum 2'de `03 16` → 79.0 V — her oturumda doğru. |
+| 4–5 | SoC 1 (State of Charge) | uint16_t | Big | unsigned | ×0.01 % | ✅ DOĞRULANDI | `26 7D` → 9853 → ×0.01 = **98.53%** (log: "Kalan Kapasite / SoC 1 : 98.53" ✓) |
+| 6–7 | SoC 2 (State of Charge) | uint16_t | Big | unsigned | ×0.01 % | ✅ DOĞRULANDI | `26 58` → 9816 → ×0.01 = **98.16%** (log: "Kalan Kapasite / SoC 2 : 98.16" ✓) |
 
-### `0xE000` — Pack Voltage (ÇÖZÜLDÜ)
+**Firmware mapping:**
+- `TEL_bmsCurrentCentiA` = raw × 10 (0.1A → centi-A dönüşümü)
+- `TEL_bmsPackVoltageDeciV` = raw (zaten deciV)
+- `TEL_bmsSocHundredths` = raw (SoC 1, zaten hundredths-%)
+- SoC 2 şu an kullanılmıyor (gelecekte çapraz doğrulama için)
 
-Direction: `BMS -> AKS` | Status: **DOĞRULANDI** — yalnızca `byte[2:3]`; diğer alanlar hipotez seviyesinde (CAN sniffer + reverse-engineering, 2 oturum)
+**Önceki "kapasite sayacı" hipotezi ÇÜRÜTÜLDÜ:** Oturum 2'de byte[4:5] ve byte[6:7]
+"yavaşça azalan sayaç" olarak yorumlanmıştı. Oturum 3 logu, bu alanların sabit %98.53
+ve %98.16 SoC değerleri olduğunu KANIT ile gösterir — BMS kendi SoC'sini raporluyor,
+sayaç değil.
 
-| Byte | Field | TelemetryData | Type | Scale | Durum | Description |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0–1 | Pack Current (aday) | — | `int16_t` | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-orta | Oturum 2'de idle iken `0xFFFF` → −1 ve `0xFFFE` → −2 okundu; sıfıra yakın signed değer idle pack akımı ile tutarlı. Ölçek doğrulanmadı. |
-| 2–3 | Pack Voltage | `TEL_bmsPackVoltageDeciV` | `uint16_t` | × 0.1 V | ✅ DOĞRULANDI | Total pack voltage |
-| 4–5 | Kapasite sayacı (aday) | — | — | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-düşük | Oturum 2'de idle boyunca yavaşça azaldı (`0x0F5E` → `0x0F5B`). Kapasite/sayaç adayı; anlamı ve ölçeği doğrulanmadı. |
-| 6–7 | Kapasite sayacı (aday) | — | — | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-düşük | Oturum 2'de idle boyunca yavaşça azaldı (`0x0971` → `0x096D`). Kapasite/sayaç adayı; anlamı ve ölçeği doğrulanmadı. |
+---
 
-Örnek frame'ler (Oturum 2, paket idle):
-- Oturum başı: `FF FF 03 16 0F 5E 09 71` → packV = 790 (79.0 V), current_raw = −1
-- Oturum sonu: `FF FE 03 16 0F 5B 09 6D` → packV = 790 (79.0 V), current_raw = −2
+### `0x0000E001` — Sıcaklık + Bilinmeyen Analog Kanallar
 
-Doğrulama:
-- **Oturum 1**: CAN sniffer ile `0x020E` okundu → 52.6 V (gerçek batarya voltajı ile eşleşiyor).
-- **Oturum 2**: Aynı decode kuralı (`byte[2:3]` × 0.1 V) farklı bir pakette `0x0316` okundu → 79.0 V
-  (o paketin gerçek voltajı ile eşleşiyor).
+Direction: `BMS → AKS` | DLC: 8 | Status: **Kısmi — byte[6:7] DOĞRULANDI, byte[0:5] BİLİNMİYOR**
 
-Decode kuralı iki farklı paket/oturumda bağımsız olarak doğrulandı — güçlü kanıt.
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek / Çarpan | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Bilinmiyor (Analog Kanal 1 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 1D`=0x821D, `82 25`=0x8225, `82 22`=0x8222, `82 1E`=0x821E, `82 24`=0x8224, `82 23`=0x8223 — 0x8000 civarında ofsete sahip, küçük varyasyonlu analog kanal deseni. Anlam/ölçek bilinmiyor. |
+| 2–3 | Bilinmiyor (Analog Kanal 2 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 35`=0x8235, `82 36`=0x8236, `82 33`=0x8233, `82 34`=0x8234 — aynı 0x8000 ofseti deseni. |
+| 4–5 | Bilinmiyor (Analog Kanal 3 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 27`=0x8227, `82 2E`=0x822E, `82 2B`=0x822B, `82 28`=0x8228 — aynı desen. |
+| 6 | Temperature 1 (Kanal 1) | int8_t | — | signed | 1 °C (ofset yok) | ✅ DOĞRULANDI | `19` = 25 → **25°C** (log: "Batarya Sicakligi (Kanal 1) : 25 °C" ✓). Tüm 7 frame'de sabit `0x19`. |
+| 7 | Temperature 2 (Kanal 2) | int8_t | — | signed | 1 °C (ofset yok) | ✅ DOĞRULANDI | `18` = 24 → **24°C** (log: "Batarya Sicakligi (Kanal 2) : 24 °C" ✓). Tüm 7 frame'de sabit `0x18`. |
 
-### `0xE001` — Analog Kanallar + Sıcaklık Adayı (HIPOTEZ)
+**Firmware mapping:**
+- `TEL_bmsTempHighestC` = max(byte[6], byte[7])
+- `TEL_bmsTempLowestC` = min(byte[6], byte[7])
+- byte[0:5] → yalnızca debug log, TelemetryData'ya YAZILMAZ
 
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI** (hipotez seviyesinde gözlemler var)
-
-Örnek frame (Oturum 2, paket idle): `80 84 80 AB 80 96 19 19`
-
-| Byte | Field | Type | Scale | Durum | Description |
-| --- | --- | --- | --- | --- | --- |
-| 0–1 | Analog kanal 1 (aday) | — | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-düşük | `0x8084` — `0x8000` civarı offset'li analog kanal adayı |
-| 2–3 | Analog kanal 2 (aday) | — | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-düşük | `0x80AB` — aynı desen |
-| 4–5 | Analog kanal 3 (aday) | — | UNVERIFIED — ölçek bilinmiyor | ⚠️ HIPOTEZ-düşük | `0x8096` — aynı desen |
-| 6 | Sıcaklık 1 (aday) | `uint8_t`? | °C? | ⚠️ HIPOTEZ-orta | `0x19` = 25; oturum sırasındaki ortam sıcaklığı ile tutarlı. Doğrulanmadı. |
-| 7 | Sıcaklık 2 (aday) | `uint8_t`? | °C? | ⚠️ HIPOTEZ-orta | `0x19` = 25; byte 6 ile aynı değer. Doğrulanmadı. |
-
-Ham byte'lar debug log'a basılıyor, TelemetryData'ya yazılmıyor. Hipotezler doğrulanana kadar
-firmware'de parse edilmemelidir.
-
-### `0xE002` — BİLİNMİYOR
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Örnek frame (Oturum 2): `03 70 03 E8 01 00 00 00`
-
-Gözlem notları (Oturum 2):
-- `byte[0:1]` = `0x0370` (880) ve `byte[2:3]` = `0x03E8` (1000), `0x1806E5F4` charger frame'indeki
-  voltage/current setpoint değerleriyle birebir aynı — şarj limit parametresi adayı.
-  ⚠️ HIPOTEZ-düşük, UNVERIFIED — ölçek/anlam doğrulanmadı.
-- **Multiplex gözlemi**: `0xE002` ve `0xE004`, BMS'in yayın döngüsünde aynı slotu dönüşümlü
-  (multiplexed) kullanıyor — ikisi aynı periyotta sırayla gönderiliyor.
-
-Ham byte'lar debug log'a basılıyor.
-
-### `0xE003` — BİLİNMİYOR
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Tüm byte alanları bilinmiyor. Ham byte'lar debug log'a basılıyor.
-
-### `0xE004` — BİLİNMİYOR
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Örnek frame (Oturum 2): `01 89 03 E8 03 E8 00 00`
-
-Gözlem notları (Oturum 2):
-- Alan anlamları bilinmiyor; `0x03E8` (1000) değeri iki kez tekrarlanıyor.
-  ⚠️ HIPOTEZ yok — UNVERIFIED, ölçek/anlam bilinmiyor.
-- **Multiplex gözlemi**: `0xE004`, yayın döngüsünde `0xE002` ile aynı slotu dönüşümlü kullanıyor
-  (bkz. `0xE002` notu).
-
-Ham byte'lar debug log'a basılıyor.
-
-### `0xE005` — BİLİNMİYOR
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Örnek frame (Oturum 2): `03 E8 05 DC 00 0B 71 B0`
-
-Alan anlamları bilinmiyor (`0x03E8` = 1000, `0x05DC` = 1500 gibi yuvarlak değerler dikkat çekici
-ama anlam/ölçek UNVERIFIED). Ham byte'lar debug log'a basılıyor.
-
-### `0xE032` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Oturum 2'de gözlemlenen tüm frame'lerde payload tamamen sıfır (`00 00 00 00 00 00 00 00`).
-Reserved alan veya heartbeat adayı. Ham byte'lar debug log'a basılıyor.
-
-### `0xE033` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
-
-Direction: `BMS -> AKS` | Status: **DOĞRULANMADI**
-
-Oturum 2'de gözlemlenen tüm frame'lerde payload tamamen sıfır (`00 00 00 00 00 00 00 00`).
-Reserved alan veya heartbeat adayı. Ham byte'lar debug log'a basılıyor.
+---
 
 ### `0x1806E5F4` — Charger Komut Frame'i (J1939)
 
-Direction: `BMS -> Charger` | Status: **DOĞRULANDI** (Oturum 2 sniffer; standart J1939 şarj
-protokolü ile uyumlu)
+Direction: `BMS → Charger` (AKS YALNIZCA DİNLER) | DLC: 8 | Status: **✅ DOĞRULANDI (kısmi)**
 
 J1939 çözümlemesi: PGN `0x1806`, DA (hedef adres) `0xE5`, SA (kaynak adres) `0xF4`.
-Bu frame BMS tarafından şarj cihazına gönderilir; **AKS bu frame'i yalnızca DİNLER**, asla
-göndermez.
 
-| Byte | Field | Type | Scale | Durum | Description |
-| --- | --- | --- | --- | --- | --- |
-| 0–1 | Charge Voltage Setpoint | `uint16_t` | × 0.1 V | ✅ DOĞRULANDI | Şarj voltaj hedefi |
-| 2–3 | Charge Current Setpoint | `uint16_t` | × 0.1 A | ✅ DOĞRULANDI | Şarj akım hedefi |
-| 4–7 | BİLİNMİYOR | — | — | ❌ DOĞRULANMADI | Oturum 2'de hep `00 00 00 00` |
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek / Çarpan | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Charge Voltage Setpoint | uint16_t | Big | unsigned | ×0.1 V | ✅ DOĞRULANDI | `03 70` → 880 → ×0.1 = **88.0 V** (Oturum 2'de de aynı). 24S LiFePO4 (3.65V/hücre) için makul şarj hedefi. |
+| 2–3 | Charge Current Setpoint | uint16_t | Big | unsigned | ×0.1 A | ✅ DOĞRULANDI | `01 C5` → 453 → ×0.1 = **45.3 A**. Not: Oturum 2'de `03 E8` → 100.0 A idi — BMS'in şarj durumuna göre ayarladığı dinamik setpoint. |
+| 4–7 | Bilinmiyor | — | — | — | — | ❌ BİLİNMİYOR | Tüm oturumlarda `00 00 00 00` |
 
-Örnek frame (Oturum 2): `03 70 03 E8 00 00 00 00` → Vset = 880 (88.0 V), Iset = 1000 (100.0 A).
-Değerler 79.0 V'luk paket için makul şarj hedefleriyle tutarlı.
+**Not:** `byte[2:3]` Oturum 2'de `03 E8` (100.0 A), Oturum 3'te `01 C5` (45.3 A) — bu
+fark BMS'in şarj algoritmasına göre akım setpoint'ini dinamik ayarladığını gösterir.
+
+---
+
+### `0x0000E002` — BİLİNMİYOR
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Bu CAN ID, Oturum 3 logunda GÖRÜLMEDİ (log'da yalnızca E000, E001, E005, 1806E5F4
+mevcut). Oturum 2'de gözlemlenmişti.
+
+Oturum 2 örneği: `03 70 03 E8 01 00 00 00`
+
+| Byte | Alan Adı | Durum | Gözlem |
+| --- | --- | --- | --- |
+| 0–7 | Bilinmiyor | ❌ BİLİNMİYOR | Oturum 2: byte[0:1]=0x0370 (880), byte[2:3]=0x03E8 (1000) — şarj limit/config adayı. E004 ile multiplex paylaşımı gözlemlendi. |
+
+---
+
+### `0x0000E003` — BİLİNMİYOR
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Tüm byte alanları bilinmiyor. Oturum 3'te görülmedi.
+
+---
+
+### `0x0000E004` — BİLİNMİYOR
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Oturum 3'te görülmedi. Oturum 2 örneği: `01 89 03 E8 03 E8 00 00`
+
+| Byte | Alan Adı | Durum | Gözlem |
+| --- | --- | --- | --- |
+| 0–7 | Bilinmiyor | ❌ BİLİNMİYOR | Oturum 2: `0x03E8` (1000) iki kez; E002 ile multiplex paylaşımı gözlemlendi. |
+
+---
+
+### `0x0000E005` — BİLİNMİYOR
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Oturum 3'te gözlemlendi, TÜM frame'lerde SABİT: `01 C5 05 DC 00 0B 71 B0`
+
+| Byte | Alan Adı | Durum | Gözlem |
+| --- | --- | --- | --- |
+| 0–1 | Bilinmiyor | ❌ BİLİNMİYOR | `01 C5` = 453 — charger current setpoint ile AYNI değer (0x1806E5F4 byte[2:3]). Tesadüf mü, ayna mı, bilinmiyor. |
+| 2–3 | Bilinmiyor | ❌ BİLİNMİYOR | `05 DC` = 1500 — yuvarlak değer, olası limit parametresi. |
+| 4–5 | Bilinmiyor | ❌ BİLİNMİYOR | `00 0B` = 11 |
+| 6–7 | Bilinmiyor | ❌ BİLİNMİYOR | `71 B0` = 29104 |
+
+---
+
+### `0x0000E032` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Oturum 3'te görülmedi. Oturum 2'de tüm payload sıfır (`00 00 00 00 00 00 00 00`).
+
+---
+
+### `0x0000E033` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+
+Oturum 3'te görülmedi. Oturum 2'de tüm payload sıfır (`00 00 00 00 00 00 00 00`).
+
+---
 
 ### `0x000` — Standart Frame (Reserved/Heartbeat Adayı)
 
-Direction: `Bilinmiyor` | Status: **DOĞRULANMADI**
+Direction: `Bilinmiyor` | 11-bit STD | Status: **❌ BİLİNMİYOR**
 
-CAN sniffer loglarında ara sıra görülen, tüm byte'ları sıfır olan 11-bit standart frame.
-Oturum 2'de de gözlemlenen tüm frame'lerde payload tamamen sıfırdı — reserved/heartbeat adayı.
-Firmware tarafından şu an işlenmiyor.
+Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tarafından işlenmiyor.
+
+---
+
+## Doğrulama Özet Tablosu
+
+| CAN ID | Tablo Durumu | Firmware'de Parse | TelemetryData'ya Yazılıyor | Karar Mantığına Bağlı |
+| --- | --- | --- | --- | --- |
+| 0xE000 byte[0:1] Current | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsCurrentCentiA | ❌ (isCurrentWarning/Critical bağlanmamış) |
+| 0xE000 byte[2:3] Voltage | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsPackVoltageDeciV | ✅ checkPackVoltageFault + VcuLogic |
+| 0xE000 byte[4:5] SoC 1 | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsSocHundredths | ❌ (gösterim, karar dışı) |
+| 0xE000 byte[6:7] SoC 2 | ✅ DOĞRULANDI | ❌ (parse edilmiyor) | ❌ | ❌ |
+| 0xE001 byte[6] Temp1 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempHighestC | ❌ (eşikler ölü) |
+| 0xE001 byte[7] Temp2 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempLowestC | ❌ (eşikler ölü) |
+| 0xE001 byte[0:5] | ❌ BİLİNMİYOR | ❌ | ❌ | ❌ |
+| 0x1806E5F4 byte[0:1] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
+| 0x1806E5F4 byte[2:3] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
+| 0xE002–E005, E032, E033, 0x000 | ❌ BİLİNMİYOR | ❌ (stub) | ❌ | ❌ |
+
+---
 
 ## Sonraki Adımlar
 
-Bilinmeyen ID'lerin çözümü için önerilen yöntem:
-1. **PeakCAN + LiBAL c-BMS CREATOR yazılımı** ile çapraz doğrulama
-2. Her ID için bilinen bir parametreyi değiştirip (ör. yük altına alarak akım, şarj ederek SOC) CAN loglarında hangi ID/byte'ın değiştiğini gözlemlemek
-3. Lithium Balance teknik destek / doküman talebi
-
+1. **E001 byte[0:5] çözümü:** 0x8000 civarındaki ofsette analog kanal deseni — olası
+   bireysel hücre voltajı (offset-binary?). Tek hücreye yük uygulayarak korelasyon testi.
+2. **E002–E005 çözümü:** Diagnostic sniffer modu ile çapraz gözlem; LiBAL c-BMS CREATOR ile
+   PeakCAN doğrulama.
+3. **Bitrate teyidi:** 500 kbps çalışıyor (frame'ler geliyor); Solion föyü "standart 125 kbps"
+   diyor ama bu farklı bir yapılandırma olabilir.
+4. **SoC 2 kullanımı:** SoC 1 vs SoC 2 arasındaki 0.37% farkın anlamı araştırılacak (farklı
+   algoritma? farklı hücre grubu?).

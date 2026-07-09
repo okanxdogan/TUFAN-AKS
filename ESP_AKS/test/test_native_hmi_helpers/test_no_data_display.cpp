@@ -5,14 +5,14 @@
 // =========================================================================
 // "Veri yok" gösterimi — HMI_batteryDisplayValue / HMI_temperatureDisplayValue
 //
-// Kaynak sinyaller (TEL_bmsSocHundredths, TEL_bmsTempHighestC) DOĞRULANMADI;
-// doğrulanana kadar ekrana sahte %0/0°C yerine sentinel (255 / -127)
-// gönderilir. Bu testler hem bugünkü "kaynak doğrulanmadı" yolunu hem de
-// ileride kaynak doğrulandığında devreye girecek dönüşüm/clamp yolunu
-// kilitler.
+// Kaynak sinyaller DOĞRULANDI:
+//   SoC → 0xE000 byte[4:5], Temp → 0xE001 byte[6:7].
+// TEL_bmsDataValid=false ise sentinel (255 / -127) gönderilir.
+// Bu testler sentinel yolunu, dönüşüm/clamp yolunu ve SOURCE_VERIFIED
+// bayraklarının true olduğunu doğrular.
 // =========================================================================
 
-// --- Bugünkü üretim durumu: kaynak DOĞRULANMADI -> her zaman sentinel ---
+// --- Kaynak DOĞRULANMADI (false) durumu testleri ---
 
 void test_battery_unverified_source_returns_no_data(void) {
     // Değer ve bmsValid ne olursa olsun sentinel dönmeli

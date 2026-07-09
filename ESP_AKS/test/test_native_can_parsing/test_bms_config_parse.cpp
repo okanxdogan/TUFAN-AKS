@@ -50,13 +50,15 @@ void test_e000_dlc_too_short(void) {
 void test_e000_parsing_nominal(void) {
     // Akım: 0x00 0x0A (10) -> 10 * 0.1A = 1A -> 100 CentiA
     // Voltaj: 0x02 0x0E (526) -> 52.6V -> 526 deciV
-    // SoC: 0x27 0x10 (10000) -> 100.00% -> 10000 hundredths
+    // SoC1: 0x27 0x10 (10000) -> 100.00% -> 10000 hundredths
+    // SoC2: 0x00 0x00 (0) -> 0.00% -> 0 hundredths
     twai_message_t m = makeE000Msg(8, 0x00, 0x0A, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
     TelemetryData out{};
     TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
     TEST_ASSERT_EQUAL_INT32(100, out.TEL_bmsCurrentCentiA);
     TEST_ASSERT_EQUAL_UINT16(526, out.TEL_bmsPackVoltageDeciV);
     TEST_ASSERT_EQUAL_UINT16(10000, out.TEL_bmsSocHundredths);
+    TEST_ASSERT_EQUAL_UINT16(0, out.TEL_bmsSoc2Hundredths);
     TEST_ASSERT_TRUE(out.TEL_bmsDataValid);
 }
 
@@ -128,8 +130,10 @@ void test_e001_dlc_too_short(void) {
 }
 
 void test_e001_parsing_temps(void) {
-    // Temp 1 (Highest): 40 (0x28)
-    // Temp 2 (Lowest): -5 (0xFB)
+    // Temp 1 (byte[6]): 40 (0x28) °C
+    // Temp 2 (byte[7]): -5 (0xFB) °C
+    // max(40, -5) = 40 → TEL_bmsTempHighestC
+    // min(40, -5) = -5 → TEL_bmsTempLowestC
     twai_message_t m = makeE001Msg(8, 0x28, 0xFB);
     TelemetryData out{};
     TEST_ASSERT_TRUE(CanParse::parseLbBmsE001(m, out));

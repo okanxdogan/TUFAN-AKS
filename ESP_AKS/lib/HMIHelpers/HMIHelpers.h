@@ -51,21 +51,16 @@ inline const char* HMI_getContactorText(bool HMI_contactorClosed) {
     return HMI_contactorClosed ? "CLOSED" : "OPEN";
 }
 
-// --- "Veri yok" gösterimi (GEÇİCİ — kaynak sinyal doğrulanana kadar) ---
+// --- Kaynak sinyal durumu ve "veri yok" gösterimi ---
 //
-// TEL_bmsSocHundredths ve TEL_bmsTempHighestC kaynak CAN sinyalleri henüz
-// DOĞRULANMADI: hiçbir CAN ID'den parse edilmiyorlar, hep 0 kalıyorlar.
-// 0'ı doğrudan ekrana basmak sürücüye "%0 batarya / 0°C" gibi SAHTE veri
-// gösterir. Bu yüzden kaynak doğrulanana kadar geçerli aralık DIŞI birer
-// sentinel gönderilir; Nextion tarafı bu değerleri "--" olarak
-// göstermelidir (bat: 0-100 geçerli, 255 = veri yok; temp: -127 = veri yok).
+// TEL_bmsSocHundredths → 0xE000 byte[4:5], DOĞRULANDI (SoC 1).
+// TEL_bmsTempHighestC → 0xE001 byte[6:7], DOĞRULANDI (max(temp1,temp2)).
+// TEL_bmsCellVoltage* → kaynak CAN ID BİLİNMİYOR.
 //
-// TEL_bmsDataValid=false (BMS hiç görülmedi / timeout) durumunda da aynı
-// sentinel geçerlidir — bayat/yok veri asla sayı gibi gösterilmez.
+// TEL_bmsDataValid=false (BMS hiç görülmedi / timeout) durumunda
+// sentinel gönderilir — bayat/yok veri asla sayı gibi gösterilmez.
 //
-// TODO(dogrulama): İlgili kaynak sinyalin ID'si + ölçeği DOĞRULANDIĞINDA
-// aşağıdaki *_SOURCE_VERIFIED sabiti true yapılıp bu geçici sentinel yolu
-// kaldırılacak (bkz. Documents/CAN_Message_Table.md).
+// Bkz. Documents/CAN_Message_Table.md (tek doğruluk kaynağı).
 constexpr uint8_t HMI_BATTERY_NO_DATA = 255;
 constexpr int16_t HMI_TEMP_NO_DATA = -127;
 constexpr uint16_t HMI_CELL_VOLTAGE_NO_DATA = 65535;

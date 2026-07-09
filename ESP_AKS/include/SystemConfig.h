@@ -17,16 +17,18 @@
 
 // Lithium Balance c-BMS — 29-bit Extended ID, Big Endian
 // Gerçek CAN sniffer loglarından doğrulanmış ID'ler.
-// 0xE000 ve 0xE001 tamamen çözülüp doğrulandı.
-// E002-E033 arası (bireysel hücre verileri) henüz DOĞRULANMADI.
-#define CAN_ID_LB_BMS_E000 0x0000E000  // ÇÖZÜLDÜ: PackV, Current, SoC
-#define CAN_ID_LB_BMS_E001 0x0000E001  // ÇÖZÜLDÜ: Temp 1 & Temp 2
-#define CAN_ID_LB_BMS_E002 0x0000E002  // TODO: bireysel hücre voltajları (açık iş)
-#define CAN_ID_LB_BMS_E003 0x0000E003  // TODO: bireysel hücre voltajları (açık iş)
-#define CAN_ID_LB_BMS_E004 0x0000E004  // TODO: bireysel hücre voltajları (açık iş)
-#define CAN_ID_LB_BMS_E005 0x0000E005  // TODO: bireysel hücre voltajları (açık iş)
-#define CAN_ID_LB_BMS_E032 0x0000E032  // TODO: bireysel hücre sıcaklıkları (açık iş)
-#define CAN_ID_LB_BMS_E033 0x0000E033  // TODO: bireysel hücre sıcaklıkları (açık iş)
+// 0xE000: tüm alanlar (packV, current, SoC1, SoC2) DOĞRULANDI.
+// 0xE001: byte[6:7] sıcaklık DOĞRULANDI; byte[0:5] BİLİNMİYOR.
+// E002-E005, E032, E033: alan anlamları BİLİNMİYOR.
+// Bkz. Documents/CAN_Message_Table.md (tek doğruluk kaynağı).
+#define CAN_ID_LB_BMS_E000 0x0000E000  // DOĞRULANDI: PackV, Current, SoC1, SoC2
+#define CAN_ID_LB_BMS_E001 0x0000E001  // DOĞRULANDI: Temp1 & Temp2 (byte[6:7]); byte[0:5] BİLİNMİYOR
+#define CAN_ID_LB_BMS_E002 0x0000E002  // BİLİNMİYOR — alan anlamı çözülmedi
+#define CAN_ID_LB_BMS_E003 0x0000E003  // BİLİNMİYOR — alan anlamı çözülmedi
+#define CAN_ID_LB_BMS_E004 0x0000E004  // BİLİNMİYOR — alan anlamı çözülmedi
+#define CAN_ID_LB_BMS_E005 0x0000E005  // BİLİNMİYOR — alan anlamı çözülmedi
+#define CAN_ID_LB_BMS_E032 0x0000E032  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
+#define CAN_ID_LB_BMS_E033 0x0000E033  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
 
 // Charger komut frame'i — 29-bit Extended ID (J1939: PGN 0x1806, DA 0xE5,
 // SA 0xF4). BMS -> Charger yönünde; byte[0:1] = şarj voltaj hedefi ×0.1 V,
@@ -291,10 +293,11 @@ static_assert(
 #define BMS_WARN_MAX_PACK_VOLTAGE_DECI_V 852      // 85.2 V (3.55 V/hücre)
 #define BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V 876  // 87.6 V (3.65 V/hücre — spec maks)
 
-// --- YER TUTUCU eşikler (karar mantığına BAĞLI DEĞİL) ---
-// TODO: source signal not yet verified — TEL_bmsTempHighestC hiçbir CAN
-// ID'den parse edilmiyor (hep 0). Kaynak ID + ölçek doğrulanmadan
-// hasWarning/hasCriticalCondition'a BAĞLANMAMALI.
+// Sıcaklık eşikleri — kaynak sinyal DOĞRULANDI (0xE001 byte[6:7]) ve
+// TEL_bmsTempHighestC'ye parse ediliyor. ANCAK bu eşikler henüz
+// VcuLogic karar mantığına BAĞLANMAMIŞTIR (hasWarningCondition /
+// hasCriticalCondition içinde temp kontrolü yok). Bağlanana kadar
+// YER TUTUCUDUR.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
 // Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
@@ -310,8 +313,8 @@ static_assert(
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
 // (2.50 V / 3.65 V per hücre).
-// TODO: source signal not yet verified — TEL_bmsCellVoltageMin/MaxDeciMv
-// hiçbir CAN ID'den parse edilmiyor (hep 0). BAĞLANMAMALI.
+// Kaynak sinyal BİLİNMİYOR — TEL_bmsCellVoltageMin/MaxDeciMv hiçbir
+// CAN ID'den parse edilmiyor. BAĞLANMAMALI.
 #define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
 #define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
 

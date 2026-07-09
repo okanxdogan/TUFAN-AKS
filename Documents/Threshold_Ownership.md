@@ -98,16 +98,16 @@ ama gerçek hücre verisi üzerinde değil.
 
 ## 4. Fiilen Ölü Eşikler ve Neden Önemli
 
-**Ölü** (kaynak sinyal hiç parse edilmediği/hep 0 olduğu için hiç tetiklenmeyen):
-sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`), akım
-eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`) ve
-hücre voltajı eşikleri (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, SystemConfig.h
-tarafındakiler).
+**Kısmen Ölü** (kaynak sinyal DOĞRULANDI, ancak karar mantığına BAĞLANMADI):
+sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`) ve akım
+eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`). 0xE000 ve
+0xE001'den başarıyla okunuyor ve `TelemetryData`'ya yazılıyor. Fakat `VcuLogic`
+içindeki karar yardımcılarına henüz bağlanmadılar. Saha kalibrasyonu sonrasında
+birlikte bağlanmaları gerekir.
 
-Bu eşiklerin kodda tanımlı, derlenen ve (akım için) birim testli olması, ekip
-üyelerinde "bu korumalar aktif" izlenimi yaratabilir; oysa gerçek bir aşırı
-sıcaklık/akım/hücre-voltajı olayında VCU bunu FARK ETMEZ ve FAULT'a geçmez —
-bu, sahada **yanlış güvenlik hissi** riski taşır.
+**Tamamen Ölü** (kaynak sinyal BİLİNMİYOR): hücre voltajı eşikleri
+(`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, SystemConfig.h tarafındakiler). Bu
+eşikler `VcuLogic`'te çalıştırılmaz, çünkü kaynak sinyalin ID'si bulunamamıştır.
 
 **Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI) ve
 motor/BMS freshness timeout'ları.

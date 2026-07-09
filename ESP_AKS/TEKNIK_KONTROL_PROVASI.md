@@ -38,30 +38,30 @@ ekip gercek sartname metnini elle doldurmalidir. Kaynagi bulunan maddeler
 
 2026-07-03 main-merge'i sırasında donanım BMS vendörünün Solion SK'dan
 Lithium Balance c-BMS'e geçtiği ekipçe teyit edildi (bkz. `CanManager.cpp`,
-`CanParse.cpp`, `SystemConfig.h` — main'den aynen alındı). Bu geçişte
-**yalnızca `packV` (CAN ID `0xE000`, byte[2:3]) çözüldü**; diğer 7 CAN ID
-(`0xE001-E005`, `0xE032`, `0xE033`) `CanParse::parseLbBmsExxx()`
-stub'larında ham byte olarak loglanıyor ama `TelemetryData`'ya hiçbir alan
-yazmıyor. Sonuç:
+`CanParse.cpp`, `SystemConfig.h`). **Oturum 3 (2026-07-09) itibarıyla CAN
+sniffer logları (zemin gerçeği) ile `0xE000` ve `0xE001` ID'leri KESİN
+olarak doğrulanmıştır**:
+- **0xE000**: Pack Voltajı, Akım, SoC 1, SoC 2.
+- **0xE001**: Temperature 1 ve Temperature 2.
+Bu sinyaller başarıyla okunur ve Nextion HMI + UKS'ye gönderilir.
 
-- `TEL_bmsTempHighestC` / `TEL_bmsTempLowestC` / `TEL_bmsCellVoltageMaxDeciMv`
-  / `TEL_bmsCellVoltageMinDeciMv` / `TEL_bmsCurrentCentiA` /
-  `TEL_bmsSocHundredths` her zaman value-init default'unda (`0`) kalır.
-- `TEL_bmsSystemState` de hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
+**AÇIK İŞ (Kalan Alanlar)**: `TEL_bmsSystemState` (sistem durumu),
+`TEL_bmsCellVoltageMaxDeciMv`, `TEL_bmsCellVoltageMinDeciMv` gibi alanlar
+`0xE002-E005` ID'lerinde bulunuyor olabilir, ancak alan anlamları henüz
+BİLİNMİYOR. Sonuç:
+
+- `TEL_bmsSystemState` hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
   bunu `4` (FAULT) yapar — **UKS ekranında BMS her zaman FAULT görünür**,
   gerçek bir arıza olmasa bile.
-- `BMS_WARN_MAX_TEMP_C` / `BMS_CRITICAL_MAX_TEMP_C` (SystemConfig.h) fiilen
-  hiç tetiklenmez (sıcaklık hep 0°C okunur).
+- VcuLogic içindeki `BMS_WARN_MAX_TEMP_C` / `BMS_CRITICAL_MAX_TEMP_C` (SystemConfig.h)
+  ve akım eşikleri henüz `isTemperatureWarning` / `isCurrentCritical`
+  kısımlarına entegre edilmedi. Saha kalibrasyonu beklenmektedir.
 
-Boot logunda `ESP_LOGW(TAG, "BMS: LB parse eksik ...")` (bkz. `src/main.cpp`,
-`app_main()` başı) ve `SystemConfig.h`'deki `BMS_WARN_MAX_TEMP_C` üstündeki
-"AÇIK İŞ" yorumu bu durumu görünür kılar. Teknik kontrol sırasında BMS
-alanlarının (sıcaklık, akım, SoC, sistem durumu) UKS ekranında **gerçek**
-değer gösterdiği iddia EDİLEMEZ — yalnızca `packV` doğrulanmıştır. Kalan 7
-CAN ID'nin reverse-engineering'i ayrı bir iş kalemidir (bkz.
-`tools/e2e/test_contract_drift.py::test_lb_bms_field_coverage_is_tracked`,
-xfail — biri tamamlandığında bu test XPASS ile kırılır ve güncellenmesi
-gerektiğini hatırlatır).
+Boot logunda `ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor ...")` uyarısı
+bu durumu görünür kılar. Teknik kontrol sırasında sıcaklık, akım ve SoC'un
+**gerçek** olduğu, ancak BMS hata durumunun (sysState) geçici olduğu belirtilmelidir. Kalan
+CAN ID'leri araç yola çıktıktan sonra sniffer loglarıyla çözülmeye devam edilecektir
+(bkz. `Documents/CAN_Message_Table.md`).
 
 ---
 

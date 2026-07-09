@@ -297,11 +297,10 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_smoothedSpeed = (HMI_EMA_ALPHA * targetSpeed) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedSpeed);
 
             HMI_screenData.HMI_currentSpeed = static_cast<uint16_t>(HMI_smoothedSpeed);
-            // SOC/sıcaklık kaynak sinyalleri DOĞRULANMADI (hiç parse
-            // edilmiyor, hep 0) — sürücüye sahte "%0 batarya / 0°C"
-            // göstermemek için sentinel gönderilir. Kaynak sinyal
-            // DOĞRULANDIĞINDA HMI_*_SOURCE_VERIFIED true yapılıp bu geçici
-            // yol kaldırılacak (bkz. HMIHelpers.h "Veri yok gösterimi").
+            // SOC ve sıcaklık kaynak sinyalleri DOĞRULANDI:
+            //   SoC → 0xE000 byte[4:5], Temp → 0xE001 byte[6:7].
+            // HMI_SOC_SOURCE_VERIFIED=true ve HMI_TEMP_SOURCE_VERIFIED=true.
+            // TEL_bmsDataValid=false ise sentinel gönderilir ("--").
             HMI_screenData.HMI_currentBattery = HMI_batteryDisplayValue(
                 HMI_SOC_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
                 TEL_data.TEL_bmsSocHundredths);
@@ -719,18 +718,14 @@ extern "C" void app_main() {
                 "(VehicleParams.h)");
 #endif
 
-  // AÇIK İŞ (2026-07-03 merge, Solion SK -> Lithium Balance c-BMS donanım
-  // geçişi): CanParse::parseLbBmsE000 yalnızca packV alanını çözüyor;
-  // tempH/tempL/sysState/current/soc alanları hiçbir CAN ID'den parse
-  // EDİLMİYOR (TelemetryData value-init default'unda kalıyor).
-  // TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar — yani
-  // UKS ekranında BMS her zaman FAULT görünür, gerçek bir arıza olmasa
-  // bile. Ayrıca BMS_WARN_MAX_TEMP_C / BMS_CRITICAL_MAX_TEMP_C eşikleri
-  // (SystemConfig.h) hiç tetiklenmez (temp hep 0 okunur). Bkz.
-  // TEKNIK_KONTROL_PROVASI.md "AÇIK İŞ" maddesi (9.2.c.ii).
-  ESP_LOGW(TAG, "BMS: LB parse eksik — tempH/soc/sysState vb. placeholder, "
-                "sysState=FAULT gorunur (bkz. CanParse.cpp Lithium Balance "
-                "stub'lari)");
+  // BMS durumu: 0xE000 ve 0xE001 DOĞRULANDI (packV, current, SoC, temp).
+  // Açık iş: TEL_bmsSystemState hiçbir CAN ID'den parse EDİLMİYOR —
+  // TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar → UKS
+  // ekranında BMS her zaman FAULT görünür. Per-hücre voltajı (E002-E005)
+  // ve hücre sıcaklığı (E032-E033) alan anlamları BİLİNMİYOR.
+  // Bkz. Documents/CAN_Message_Table.md.
+  ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor — UKS'te FAULT gorunur. "
+                "Per-hucre voltaj/sicaklik acik is.");
 
   // --- Hardware initialization (before any tasks) ---
 

@@ -168,12 +168,13 @@ void CanManager::processRxMessages() {
                     // AKS yalnızca DİNLER, hiçbir zaman göndermez.
                     handleCharger1806E5F4(msg);
                     break;
-                // Aşağıdakiler DOĞRULANMADI — alan hipotezleri için bkz.
-                // Documents/CAN_Message_Table.md. Stub yalnızca ham hex dump
-                // basar; TelemetryData'ya ve karar mantığına bağlanmaz.
-                case CAN_ID_LB_BMS_E001:  // Sıcaklıklar (DOĞRULANDI)
+                // E001 sıcaklık DOĞRULANDI (bkz. CAN_Message_Table.md).
+                case CAN_ID_LB_BMS_E001:
                     handleLbBmsE001(msg);
                     break;
+                // Aşağıdakiler BİLİNMİYOR — alan hipotezleri için bkz.
+                // Documents/CAN_Message_Table.md. Stub yalnızca ham hex dump
+                // basar; TelemetryData'ya ve karar mantığına bağlanmaz.
                 case CAN_ID_LB_BMS_E002:  // sabit limit/config adayı; E004 ile multiplex
                 case CAN_ID_LB_BMS_E003:
                 case CAN_ID_LB_BMS_E004:  // sabit limit/config adayı; E002 ile multiplex
@@ -323,9 +324,10 @@ void CanManager::handleLbBmsE000(const twai_message_t& msg) {
     // DOĞRULANDI: packV
     s_telemetryData.TEL_bmsPackVoltageDeciV = parsed.TEL_bmsPackVoltageDeciV;
 
-    // DOĞRULANDI: Akım ve SoC değerleri TelemetryData'ya aktarılıyor
+    // DOĞRULANDI: Akım, SoC1 ve SoC2 değerleri TelemetryData'ya aktarılıyor
     s_telemetryData.TEL_bmsCurrentCentiA = parsed.TEL_bmsCurrentCentiA;
     s_telemetryData.TEL_bmsSocHundredths = parsed.TEL_bmsSocHundredths;
+    s_telemetryData.TEL_bmsSoc2Hundredths = parsed.TEL_bmsSoc2Hundredths;
 
     CAN_lastBmsE000Tick = xTaskGetTickCount();
     CAN_hasSeen_BmsE000 = true;

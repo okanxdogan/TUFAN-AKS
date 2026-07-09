@@ -49,13 +49,14 @@ bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out);
 // Lithium Balance c-BMS — 29-bit Extended CAN ID'ler
 // =========================================================================
 
-// 0xE000 — alan bazında güven seviyeleri (bkz. Documents/CAN_Message_Table.md):
+// 0xE000 — tüm alanlar DOĞRULANDI (bkz. Documents/CAN_Message_Table.md):
 //   byte[0:1] = Pack Current, big-endian int16 — DOĞRULANDI, çarpan 0.1A
 //   byte[2:3] = Pack Voltage, big-endian uint16, raw * 0.1 = V — DOĞRULANDI
 //   byte[4:5] = SoC 1, big-endian uint16, raw * 0.01 = % — DOĞRULANDI
-//   byte[6:7] = SoC 2, big-endian uint16, raw * 0.01 = % — DOĞRULANDI (Henüz kullanılmıyor)
+//   byte[6:7] = SoC 2, big-endian uint16, raw * 0.01 = % — DOĞRULANDI
 // DLC ≥ 8 olmalı; aksi halde false döner.
-// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsCurrentCentiA, TEL_bmsSocHundredths, TEL_bmsDataValid (=true).
+// Yazılan alanlar: TEL_bmsPackVoltageDeciV, TEL_bmsCurrentCentiA,
+//   TEL_bmsSocHundredths, TEL_bmsSoc2Hundredths, TEL_bmsDataValid (=true).
 bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
 
 // 0x1806E5F4 — Charger komut frame'i (BMS -> Charger; AKS yalnızca dinler).
@@ -65,9 +66,11 @@ bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
 // DLC < 4 ise false döner ve `out` değiştirilmez.
 bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out);
 
-// 0xE001 — Sıcaklık Değerleri DOĞRULANDI
-//   byte[6] = Temperature 1 (int8_t, °C)
-//   byte[7] = Temperature 2 (int8_t, °C)
+// 0xE001 — Sıcaklık Değerleri DOĞRULANDI (bkz. CAN_Message_Table.md)
+//   byte[0:5] = BİLİNMİYOR (analog kanal deseni, 0x8000 civarı ofset)
+//   byte[6]   = Temperature 1 (Kanal 1), int8_t, °C
+//   byte[7]   = Temperature 2 (Kanal 2), int8_t, °C
+// TEL_bmsTempHighestC = max(temp1, temp2), TEL_bmsTempLowestC = min(temp1, temp2).
 bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out);
 
 // 0xE002 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
