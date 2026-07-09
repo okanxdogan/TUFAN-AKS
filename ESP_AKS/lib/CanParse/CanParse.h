@@ -12,10 +12,17 @@
 #include "freertos/FreeRTOS.h"
 
 // Motor sürücüsünden CAN üzerinden gelen anlık motor durumu.
+// MSTest/mock_motor ile doğrulanmış bayt dizilimi:
+//   data[0:1] = RPM (big-endian int16)
+//   data[2]   = Rezerve (kullanılmıyor)
+//   data[3]   = Voltaj (raw * 0.1 = V, ör: 240 → 24.0 V)
+//   data[4:6] = Rezerve (kullanılmıyor)
+//   data[7]   = Hata bayrakları / motor durumu (0x01=çalışıyor, 0x00=durdu)
 struct MotorStatus {
-    uint16_t rpm;
-    int16_t  torqueFeedback;
-    uint8_t  errorFlags;
+    int16_t  rpm;
+    uint16_t motorVoltageDeciV;   // raw * 0.1 = V (720 = 72.0 V, 16-bit olmalı)
+    uint8_t  errorFlags;          // data[7] & 0xFE: sadece gerçek hata bayrakları
+    bool     isRunning;           // data[7] & 0x01: motor çalışma durumu
     bool     isValid;
 };
 
@@ -30,9 +37,12 @@ struct ChargerCommand {
 
 namespace CanParse {
 
-// Motor status frame (CAN ID 0x200). DLC ≥ 4 olmalı; aksi halde false döner ve
-// `out` değiştirilmez. DLC ≥ 5 ise data[4] errorFlags olarak alınır, aksi
-// halde 0. Başarıda `out.isValid = true` set edilir.
+// Motor status frame (CAN ID 0x123, 11-bit STD — MSTest/mock_motor ile doğrulandı).
+// DLC ≥ 8 olmalı; aksi halde false döner ve `out` değiştirilmez.
+//   data[0:1] = RPM (big-endian uint16)
+//   data[2:3] = Voltaj (big-endian uint16, raw * 0.1 = V)
+//   data[7]   = Hata bayrakları
+// Başarıda `out.isValid = true` set edilir.
 bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out);
 
 // =========================================================================

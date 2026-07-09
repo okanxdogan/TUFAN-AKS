@@ -15,7 +15,7 @@
 // tek yer) LoRa tarafında Telemetry.h'de kalır. Alan adları DEĞİŞMEDİ.
 struct TelemetryData {
     uint16_t TEL_motorRpm;
-    int16_t TEL_motorTorqueFeedback;
+    uint16_t TEL_motorVoltageDeciV;
     uint8_t TEL_motorErrorFlags;
     bool TEL_motorDataValid;
     bool TEL_motorTimeoutActive;

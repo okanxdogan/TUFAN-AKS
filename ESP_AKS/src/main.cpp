@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cmath>
 
 #include "DisplayHMI.h"
 #include "CanManager.h"
@@ -280,7 +281,16 @@ void vTask_HMI_Display(void *pvParameters) {
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
         if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            HMI_screenData.HMI_currentSpeed = TEL_data.TEL_speedKmhX10 / 10;
+            // Hedef RPM'i alırken negatif devirlere karşı mutlak değer alıyoruz
+            float targetRpm = (TEL_data.TEL_motorRpm < 0) ? (float)(-TEL_data.TEL_motorRpm) : (float)TEL_data.TEL_motorRpm;
+            // Gerçek hızı km/h cinsinden hesaplıyoruz (Teknofest Şartnamesi)
+            float targetSpeed = (float)TEL_data.TEL_speedKmhX10 / 10.0f;
+            
+            // İbreler için EMA hesaplaması: (Yeni Değer * Alpha) + (Eski Değer * (1 - Alpha))
+            HMI_smoothedRpm = (HMI_EMA_ALPHA * targetRpm) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedRpm);
+            HMI_smoothedSpeed = (HMI_EMA_ALPHA * targetSpeed) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedSpeed);
+
+            HMI_screenData.HMI_currentSpeed = static_cast<uint16_t>(HMI_smoothedSpeed);
             // SOC/sıcaklık kaynak sinyalleri DOĞRULANMADI (hiç parse
             // edilmiyor, hep 0) — sürücüye sahte "%0 batarya / 0°C"
             // göstermemek için sentinel gönderilir. Kaynak sinyal
@@ -289,7 +299,7 @@ void vTask_HMI_Display(void *pvParameters) {
             HMI_screenData.HMI_currentBattery = HMI_batteryDisplayValue(
                 HMI_SOC_SOURCE_VERIFIED, TEL_data.TEL_bmsDataValid,
                 TEL_data.TEL_bmsSocHundredths);
-            HMI_screenData.HMI_motorRpm = TEL_data.TEL_motorRpm;
+            HMI_screenData.HMI_motorRpm = static_cast<uint16_t>(HMI_smoothedRpm);
          //   HMI_screenData.HMI_motorTorqueFeedback =
        //         TEL_data.TEL_motorTorqueFeedback;
             HMI_screenData.HMI_motorErrorFlags = TEL_data.TEL_motorErrorFlags;

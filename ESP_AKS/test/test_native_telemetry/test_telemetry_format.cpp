@@ -15,7 +15,7 @@ TelemetryData makeZeroData() {
 TelemetryData makeDistinctData() {
     TelemetryData d{};
     d.TEL_motorRpm = 1500;
-    d.TEL_motorTorqueFeedback = -250;
+    d.TEL_motorVoltageDeciV = 240;
     d.TEL_motorErrorFlags = 5;
     d.TEL_motorDataValid = true;
     d.TEL_motorTimeoutActive = false;
@@ -111,17 +111,17 @@ void test_packet_ends_with_crlf(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Negatif torque işaretle birlikte yazılmalı.
+// Motor voltajı formata uygun yazılmalı.
 // ---------------------------------------------------------------------------
-void test_negative_torque_is_formatted(void) {
+void test_motor_voltage_is_formatted(void) {
     fake_uart_reset();
     Telemetry tel;
     tel.begin();
     TelemetryData d = makeZeroData();
-    d.TEL_motorTorqueFeedback = -500;
+    d.TEL_motorVoltageDeciV = 245; // 24.5V
     tel.sendStatus(d);
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",-500,"));
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",245,"));
 }
 
 void test_negative_current_is_formatted(void) {
@@ -144,6 +144,20 @@ void test_negative_temperature_is_formatted(void) {
     tel.sendStatus(d);
 
     TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), ",-20,"));
+}
+
+// ---------------------------------------------------------------------------
+// Negatif devir (RPM) doğru işaretle render edilmeli.
+// ---------------------------------------------------------------------------
+void test_negative_rpm_is_formatted(void) {
+    fake_uart_reset();
+    Telemetry tel;
+    tel.begin();
+    TelemetryData d = makeZeroData();
+    d.TEL_motorRpm = -1234;
+    tel.sendStatus(d);
+
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,2,0,-1234,"));
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +210,7 @@ void test_full_format_with_distinct_values(void) {
 
     const char* buf = fake_uart_get_buffer();
     const char* expected =
-        "TEL,2,0,1500,-250,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,12345,1413\r\n";
+        "TEL,2,0,1500,240,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,12345,1413\r\n";
     TEST_ASSERT_EQUAL_STRING(expected, buf);
 }
 
@@ -310,7 +324,14 @@ void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void) {
 // km/h = 1500*pi*0.5*60/1000 ≈ 141.37 → x10 = 1413 (mevcut clamp testiyle
 // aynı beklenen değer — refactor'ün üretim yolunu bozmadığını kanıtlar).
 void test_impl_hand_calc_motor_rpm_with_gear_ratio(void) {
-    uint16_t result = rpmToSpeedKmhX10Impl(1500u, 0.5f, 1.0f, false);
+    uint16_t result = rpmToSpeedKmhX10Impl(1500, 0.5f, 1.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(1413, result);
+}
+
+// Negatif RPM (Geri vites) geldiğinde hız skaler hesaplanmalı (mutlak değer alınmalı).
+// rpm=-1500 verilse bile hız 1500 rpm'de olduğu gibi 141.3 km/h (1413) olmalı.
+void test_impl_hand_calc_negative_motor_rpm(void) {
+    uint16_t result = rpmToSpeedKmhX10Impl(-1500, 0.5f, 1.0f, false);
     TEST_ASSERT_EQUAL_UINT16(1413, result);
 }
 

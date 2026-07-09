@@ -3,13 +3,22 @@
 namespace CanParse {
 
 bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out) {
-    if (msg.data_length_code < 4)
+    // MSTest/mock_motor ile doğrulanmış 8-byte payload:
+    //   data[0] = RPM High Byte
+    //   data[1] = RPM Low Byte
+    //   data[2] = Rezerve (0x00)
+    //   data[3] = Voltaj (raw * 0.1 = V, ör: 240 → 24.0 V)
+    //   data[4] = Rezerve (0x00)
+    //   data[5] = Rezerve (0x00)
+    //   data[6] = Rezerve (0x00)
+    //   data[7] = Hata bayrakları / motor durumu (0x01=çalışıyor, 0x00=durdu)
+    if (msg.data_length_code < 8)
         return false;
 
-    out.rpm = static_cast<uint16_t>((msg.data[0] << 8) | msg.data[1]);
-    out.torqueFeedback =
-        static_cast<int16_t>((msg.data[2] << 8) | msg.data[3]);
-    out.errorFlags = (msg.data_length_code >= 5) ? msg.data[4] : 0;
+    out.rpm = static_cast<int16_t>((msg.data[0] << 8) | msg.data[1]);
+    out.motorVoltageDeciV = static_cast<uint16_t>((msg.data[2] << 8) | msg.data[3]);
+    out.errorFlags = msg.data[7] & 0xFE; // 0x01 'çalışıyor' bitidir, hata sayılmaz
+    out.isRunning = (msg.data[7] & 0x01) != 0;
     out.isValid = true;
     return true;
 }
