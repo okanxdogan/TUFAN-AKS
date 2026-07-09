@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include "CanParse.h"
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
 #include "TelemetrySanitize.h"
 #include "driver/gpio.h"
 #include "driver/twai.h"
@@ -26,7 +26,9 @@ class CanManager {
     bool begin();
     void setEventCallback(CAN_EventCallback CAN_callback, void* CAN_context);
 
-    // Send torque command to motor driver (CAN ID: 0x100)
+    // Motor sürücüsü torque komutu. MOTOR_DRIVER_PRESENT=0 iken GERÇEK FRAME
+    // GÖNDERMEZ (bir kez uyarı loglar, false döner); =1 iken frame gönderimi
+    // TODO. E-STOP/FAULT güvenli kapanış sırasında torque(0) ile çağrılır.
     bool sendTorqueCommand(uint16_t torqueValue);
 
     // Dispatch one received message — call this in the CAN task loop
@@ -72,13 +74,31 @@ class CanManager {
     bool CAN_hasSeenMotorStatus = false;
     bool CAN_motorTimeoutLogged = false;
 
+    // G9: motor errorFlags debounce sayacı — ardışık hatalı frame sayısı. Temiz
+    // frame gelince sıfırlanır (bkz. MotorFaultDebounce.h). Yalnız handleMotorStatus
+    // yazar/okur (CAN task'ine yerel; ek mutex gerektirmez).
+    uint16_t CAN_motorErrorConsecutive = 0;
+
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
 
-    // BMS freshness tracking — E000 (packV, doğrulanmış veri kaynağı)
+    // G6: RX yolu sertleştirme sayaçları (sibling counter'larla aynı CAN_
+    // önek konvansiyonu). RX_QUEUE_FULL alarmı ve atılan remote (RTR) frame'ler.
+    uint32_t CAN_rxQueueFullCount = 0;
+    uint32_t CAN_rxRemoteFrameCount = 0;
+    TickType_t CAN_lastRxQueueFullLogTick = 0;
+
+    // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
+    bool CAN_torqueSkipLogged = false;
+
+    // BMS freshness tracking — G12: packV (E000) ve sıcaklık (E001) AYRI
+    // mesaj-ID'leri; freshness ID bazına izlenir. TEL_bmsDataValid /
+    // TEL_bmsTimeoutActive kararı updateBmsValidity'de İKİSİ birleştirilerek
+    // verilir (biri akıp diğeri kesilirse bayat alan maskelenmesin).
     TickType_t CAN_lastBmsE000Tick = 0;
     bool CAN_hasSeen_BmsE000 = false;
-    bool CAN_bmsE000Valid = false;
+    TickType_t CAN_lastBmsE001Tick = 0;
+    bool CAN_hasSeen_BmsE001 = false;
     bool CAN_bmsTimeoutLogged = false;
 
     // Pack voltajı eşik ihlali bayrakları (bit0 = undervoltage,

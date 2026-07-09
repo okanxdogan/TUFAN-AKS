@@ -68,11 +68,15 @@ extern void test_reset_interlock_unverified_bms_system_state_does_not_block(void
 // Faz 2 — state machine geçişleri
 extern void test_init_transitions_to_idle_and_calls_allOff(void);
 extern void test_idle_to_ready_on_start_request(void);
+extern void test_idle_start_rejected_when_bms_never_valid(void);
+extern void test_idle_start_permitted_when_bms_valid_and_clean(void);
+extern void test_idle_start_rejected_when_warning_active(void);
 extern void test_ready_to_drive_on_drive_enable(void);
 extern void test_idle_to_emergency_stop(void);
 extern void test_drive_to_emergency_stop(void);
 extern void test_idle_to_fault_on_fault_event(void);
 extern void test_ready_to_fault_on_fault_event(void);
+extern void test_fault_pending_processed_when_queue_full(void);
 extern void test_ready_to_fault_on_critical_telemetry(void);
 extern void test_drive_to_fault_on_bms_timeout(void);
 extern void test_fault_to_idle_on_reset_when_clean(void);
@@ -82,6 +86,19 @@ extern void test_idle_reset_is_noop(void);
 extern void test_idle_with_motor_timeout_stays_idle(void);
 extern void test_emergency_stop_opens_contactors_after_delay(void);
 extern void test_idle_with_unverified_bms_system_state_stays_idle(void);
+
+// Faz 2 — G3 actuator fault entegrasyonu
+extern void test_run_calls_verifyIfDue_each_tick(void);
+extern void test_idle_start_rejected_when_actuator_fault(void);
+extern void test_ready_to_fault_on_actuator_fault(void);
+extern void test_drive_to_fault_on_actuator_fault(void);
+extern void test_reset_from_fault_clears_actuator_fault(void);
+
+// G2 — E-STOP/FAULT sıfır-tork → delay → kontaktör açma sırası
+extern void test_estop_requests_zero_torque_before_opening_contactors(void);
+extern void test_fault_requests_zero_torque_before_opening_contactors(void);
+extern void test_estop_without_torque_sink_still_opens_contactors(void);
+extern void test_flag0_torque_frame_disabled(void);
 
 // Faz 0 sanity
 static void test_smoke_arithmetic(void) {
@@ -159,11 +176,15 @@ int main(int /*argc*/, char ** /*argv*/) {
     // Faz 2 — state machine
     RUN_TEST(test_init_transitions_to_idle_and_calls_allOff);
     RUN_TEST(test_idle_to_ready_on_start_request);
+    RUN_TEST(test_idle_start_rejected_when_bms_never_valid);
+    RUN_TEST(test_idle_start_permitted_when_bms_valid_and_clean);
+    RUN_TEST(test_idle_start_rejected_when_warning_active);
     RUN_TEST(test_ready_to_drive_on_drive_enable);
     RUN_TEST(test_idle_to_emergency_stop);
     RUN_TEST(test_drive_to_emergency_stop);
     RUN_TEST(test_idle_to_fault_on_fault_event);
     RUN_TEST(test_ready_to_fault_on_fault_event);
+    RUN_TEST(test_fault_pending_processed_when_queue_full);
     RUN_TEST(test_ready_to_fault_on_critical_telemetry);
     RUN_TEST(test_drive_to_fault_on_bms_timeout);
     RUN_TEST(test_fault_to_idle_on_reset_when_clean);
@@ -173,6 +194,17 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_idle_with_motor_timeout_stays_idle);
     RUN_TEST(test_emergency_stop_opens_contactors_after_delay);
     RUN_TEST(test_idle_with_unverified_bms_system_state_stays_idle);
+
+    RUN_TEST(test_run_calls_verifyIfDue_each_tick);
+    RUN_TEST(test_idle_start_rejected_when_actuator_fault);
+    RUN_TEST(test_ready_to_fault_on_actuator_fault);
+    RUN_TEST(test_drive_to_fault_on_actuator_fault);
+    RUN_TEST(test_reset_from_fault_clears_actuator_fault);
+
+    RUN_TEST(test_estop_requests_zero_torque_before_opening_contactors);
+    RUN_TEST(test_fault_requests_zero_torque_before_opening_contactors);
+    RUN_TEST(test_estop_without_torque_sink_still_opens_contactors);
+    RUN_TEST(test_flag0_torque_frame_disabled);
 
     return UNITY_END();
 }

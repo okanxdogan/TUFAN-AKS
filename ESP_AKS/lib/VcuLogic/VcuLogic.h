@@ -1,7 +1,8 @@
 #pragma once
 #include <cstdint>
+#include "IRelayActuator.h"
 #include "SystemConfig.h"
-#include "Telemetry.h"
+#include "VehicleData.h"  // TelemetryData (M3)
 
 namespace VcuLogic {
 
@@ -33,22 +34,22 @@ enum class VcuEvent : uint8_t {
 // EK B GÜVEN KURALI: hasWarningCondition/hasCriticalCondition YALNIZCA
 // doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI)
 // + BMS/motor freshness. Akım/sıcaklık kontrolleri, kaynak alanlar
-// (TEL_bmsCurrentCentiMa, TEL_bmsTempHighestC) hiçbir CAN ID'den parse
+// (TEL_bmsCurrentCentiA, TEL_bmsTempHighestC) hiçbir CAN ID'den parse
 // edilmediği için karar mantığından ÇIKARILDI; saha kalibrasyonu sonrası
 // aşağıdaki saf yardımcılar üzerinden yeniden bağlanacak.
 
-// TODO: source signal not yet verified — TEL_bmsCurrentCentiMa hiç
+// TODO: source signal not yet verified — TEL_bmsCurrentCentiA hiç
 // yazılmıyor (hep 0). Bu iki yardımcı, ölçek doğrulanana kadar karar
 // mantığına BAĞLI DEĞİLDİR; yalnız birim testleri ve gelecekteki bağlama
 // için tutuluyor.
-inline bool isCurrentCritical(int32_t bmsCurrentCentiMa) {
-    return bmsCurrentCentiMa >= BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA ||
-           bmsCurrentCentiMa <= -BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA;
+inline bool isCurrentCritical(int32_t bmsCurrentCentiA) {
+    return bmsCurrentCentiA >= BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A ||
+           bmsCurrentCentiA <= -BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A;
 }
 
-inline bool isCurrentWarning(int32_t bmsCurrentCentiMa) {
-    return bmsCurrentCentiMa >= BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA ||
-           bmsCurrentCentiMa <= -BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA;
+inline bool isCurrentWarning(int32_t bmsCurrentCentiA) {
+    return bmsCurrentCentiA >= BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A ||
+           bmsCurrentCentiA <= -BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A;
 }
 
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
@@ -101,19 +102,61 @@ inline bool isResetInterlockSatisfied(const TelemetryData& VCU_data,
     return true;
 }
 
+// IDLE → READY giriş interlock'u. READY'ye geçiş 10 kontaktörü kapatıp HV
+// bus'ı enerjilendirdiğinden, batarya hakkında DOĞRULANMIŞ ve TAZE veri
+// olmadan bu geçişe izin verilmez. Saf/donanımsız: yalnızca argümana bakar,
+// hiçbir global okumaz. READY girişi her zaman IDLE'dan yapıldığından
+// kritik/uyarı kontrolleri IDLE bağlamında değerlendirilir (IDLE'da motor/BMS
+// timeout'u kritik sayılmaz; bunun yerine burada TEL_bmsDataValid şartı aranır).
+inline bool isReadyEntryPermitted(const TelemetryData& VCU_data) {
+    if (!VCU_data.TEL_bmsDataValid)
+        return false;
+
+    if (hasCriticalCondition(VCU_data, VcuState::IDLE))
+        return false;
+
+    if (hasWarningCondition(VCU_data))
+        return false;
+
+#if MOTOR_DRIVER_PRESENT
+    // Motor sürücüsü araçta: READY interlock'u taze motor verisi de arar.
+    // Bayrak 0 iken (sürücü henüz yok) motor timeout'u READY girişini bloklamaz.
+    if (!VCU_data.TEL_motorDataValid)
+        return false;
+#endif
+
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Stateful API
 // ---------------------------------------------------------------------------
-void init();
+// init() aktüatör katmanını REFERANS ile enjekte eder (M2). VcuLogic somut
+// RelayManager'a bağlı değildir; üretimde main.cpp bir adapter, testler bir
+// mock geçirir. Referans init() süresince ve sonrasında geçerli kalmalıdır
+// (üretimde singleton adapter, testte statik mock — ikisi de kalıcı ömürlü).
+void init(IRelayActuator& relays);
 void run();
 void postEvent(VcuEvent event);
 VcuState getState();
 void setTelemetryData(const TelemetryData& TEL_data);
 
-#ifdef VCU_LOGIC_TESTABLE
-// Yalnız native test build'inde aktif. Tüm modül-içi state'i (durum, timer,
-// son telemetri, queue) sıfırlar; setUp() içinde çağrılarak testler arası
-// izolasyon sağlanır. Üretim build'inde tanımlı değildir.
+// Torque komut yolu (motor sürücüsü entegrasyon iskeleti). E-STOP/FAULT
+// güvenli kapanış sırasında VcuLogic torque(0) ister; bu isteği donanıma
+// (CanManager::sendTorqueCommand) yönlendiren sink'i main.cpp bağlar.
+// VcuLogic, CanManager'a doğrudan bağımlı olmasın diye (native testler
+// CanManager'ı linklemez) function-pointer hook kullanılır. Sink bağlı
+// değilse istek sessizce yok sayılır. Native testler buraya bir spy takıp
+// çağrı sırasını doğrular.
+using TorqueSink = void (*)(uint16_t torque);
+void setTorqueSink(TorqueSink sink);
+
+#ifdef NATIVE_BUILD
+// Yalnız native test build'inde aktif (RelayManager::resetForTest ile aynı
+// NATIVE_BUILD deseni). Tüm modül-içi state'i (durum, timer, son telemetri,
+// queue, enjekte edilen aktüatör pointer'ı) sıfırlar; setUp()/prime içinde
+// çağrılarak testler arası izolasyon sağlanır. Üretim build'inde tanımlı
+// değildir.
 void resetForTest();
 #endif
 

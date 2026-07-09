@@ -42,6 +42,21 @@
 #define CAN_TX_PIN GPIO_NUM_5
 #define CAN_RX_PIN GPIO_NUM_4
 
+// --- CAN RX Yolu Sertleştirme (G6) ---
+// TWAI sürücüsünün donanım RX kuyruğu derinliği. Varsayılan 5 idi; 100 Hz
+// işleme × 5 = 500 frame/s tavan yaratıyordu. 500 kbps bus ~3800 frame/s
+// taşıyabilir ve BMS 9+ ID'yi 10 ms penceresinde art arda basınca kuyruk
+// ALARMSIZ taşıyordu. 32'ye çıkarıldı + TWAI_ALERT_RX_QUEUE_FULL etkin.
+// Bellek maliyeti: TWAI sürücüsü her slot için ~sizeof(twai_hal_frame_t)
+// (~16 B) ayırır → 32 slot ≈ ~0.5 KB RAM (varsayılan 5'e göre ~430 B fazla).
+#define CAN_RX_QUEUE_LEN 32
+// processRxMessages tek çağrıda kuyruğu boşalana kadar okur; bu üst sınır
+// task açlığına / sonsuz döngüye karşı emniyet (kuyruk derinliğiyle aynı).
+#define CAN_RX_DRAIN_MAX CAN_RX_QUEUE_LEN
+// RX_QUEUE_FULL / drop istatistiklerini oran-sınırlı loglama aralığı (özet):
+// her olayda değil, en fazla bu sürede bir WARN.
+#define CAN_RX_STATS_LOG_INTERVAL_MS 1000U
+
 // --- Nextion HMI (UART) ---
 #define HMI_UART_NUM UART_NUM_1
 // Not: J8 konnektöründe screen_TX'in ekranın mı yoksa ESP'nin mi TX'i olduğuna
@@ -76,6 +91,12 @@
 // duzenli bosluklar yaratir.
 #define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
+
+// G10: Serileşmiş telemetri frame'inin (CSV "TEL,...\r\n", bkz. Telemetry.cpp
+// sendStatus) KÖTÜ-DURUM bayt boyutu. Buffer 192 B; alanların maksimum basamak
+// genişliğiyle (10 haneli seq/ts, 11 haneli current, vb.) teorik tavan ~112 B —
+// güvenli tarafta 120 alınır. Link bütçesi static_assert'ı bunu kullanır.
+#define LORA_TEL_FRAME_MAX_BYTES 120
 #define LORA_MODE_NORMAL_M0_LEVEL 0
 #define LORA_MODE_NORMAL_M1_LEVEL 0
 // E22 config modu: M0=0, M1=1 (E32'nin M0=1,M1=1 config modundan FARKLI —
@@ -106,18 +127,38 @@
 // physical load assignment for each channel still needs hardware validation.
 // Keep this table synchronized with the wiring document before replacing the
 // placeholder descriptions below.
-#define RELAY_CH_POS_0 0  // Positive contactor output 0 (physical load TBD)
-#define RELAY_CH_POS_1 1  // Positive contactor output 1 (physical load TBD)
-#define RELAY_CH_POS_2 2  // Positive contactor output 2 (physical load TBD)
-#define RELAY_CH_POS_3 3  // Positive contactor output 3 (physical load TBD)
-#define RELAY_CH_POS_4 4  // Positive contactor output 4 (physical load TBD)
-#define RELAY_CH_POS_5 5  // Positive contactor output 5 (physical load TBD)
-#define RELAY_CH_POS_6 6  // Positive contactor output 6 (physical load TBD)
-#define RELAY_CH_POS_7 7  // Positive contactor output 7 (physical load TBD)
-#define RELAY_CH_POS_8 8  // Positive contactor output 8 (physical load TBD)
-#define RELAY_CH_POS_9 9  // Positive contactor output 9 (physical load TBD)
+//
+// Kanal rol sözlüğü (her kanalın FİZİKSEL işlevi; donanım ekibi harness'i
+// netleştirince "role:" etiketleri kesinleştirilecek):
+//   MAIN_POSITIVE — ana pozitif kontaktör (HV+ bara)
+//   MAIN_NEGATIVE — ana negatif kontaktör (HV- bara)
+//   AUX           — yardımcı yük/röle (fan, pompa, ikaz vb.)
+// NOT: Bu projede PRECHARGE devresi YOKTUR — precharge rolü TANIMLANMAZ.
+// Aşağıdaki "role:" değerleri mevcut "positive contactor bank" niyetine göre
+// PROVİZYONEL MAIN_POSITIVE'dir; fiziksel yük "TBD" olduğundan donanım ekibiyle
+// netleşince güncellenecektir.
+#define RELAY_CH_POS_0 0  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_1 1  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_2 2  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_3 3  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_4 4  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_5 5  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_6 6  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_7 7  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_8 8  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
+#define RELAY_CH_POS_9 9  // role: MAIN_POSITIVE (TBD — donanım ekibiyle netleşince güncellenecek)
 
 #define RELAY_TOTAL_CHANNELS 10
+
+// --- MCP23S17 Çıkış Doğrulama (Actuator Verify) Periyodu ---
+// VCU task'i 20 ms'de bir (50 Hz) döner; OLAT/IODIR geri-okuma doğrulamasını
+// HER tick yapmak SPI bara yükünü gereksiz artırır (tick başına 4 register
+// read). 100 ms (10 Hz) periyot, MCP23S17 brown-out/reset ile default'a
+// (tüm pinler input → röle sürücüleri floating) dönmesini kontaktör/insan
+// zaman ölçeğine göre yeterince hızlı yakalar; yazma noktaları (allOn/allOff/
+// setRelay/begin) zaten HEMEN doğrulandığından bu periyodik tarama yalnızca
+// yazma OLMADAN oluşan sessiz reset'leri yakalamak içindir.
+#define RELAY_VERIFY_PERIOD_MS 100U
 
 // --- UKS LoRa Heartbeat Byte ---
 // 9.2.a: RF hatti tek yonlu telemetri + heartbeat'tir; UKS->AKS komut
@@ -152,19 +193,77 @@
 // (1 canli + en fazla bu kadar replay / tik) buffer bosaltilir (S1).
 #define REPLAY_BURST_PER_TICK  1
 
+// --- G10: LoRa Link Bütçesi (frame boyutu × oran ≤ UART kapasitesi) ---
+// Tek TX tikinde (her LORA_TX_PERIOD_MS) en fazla (1 canlı + REPLAY_BURST_PER_TICK
+// replay) frame gönderilir. TEPE bayt/sn:
+//     tepe = (1 + REPLAY_BURST_PER_TICK) × LORA_TEL_FRAME_MAX_BYTES × 1000
+//            / LORA_TX_PERIOD_MS
+// UART hattı 8N1 → 10 bit/byte → ham kapasite = LORA_UART_BAUD / 10 [B/s].
+// Heartbeat'in kanala girebilmesi + jitter için %20 EMNİYET PAYI → × 0.8.
+//     KURAL:  tepe ≤ (LORA_UART_BAUD / 10) × 0.8
+// Frame boyutu ve baud UKS sözleşmesidir — DEĞİŞTİRİLEMEZ; bütçe yalnız
+// LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
+// (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
+// (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
+//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir.)
+#ifdef __cplusplus
+static_assert(
+    (1u + (unsigned)REPLAY_BURST_PER_TICK) * (unsigned)LORA_TEL_FRAME_MAX_BYTES *
+            1000u / (unsigned)LORA_TX_PERIOD_MS
+        <= (unsigned)LORA_UART_BAUD * 8u / 100u,  // = baud/10 × 0.8
+    "G10: LoRa link butcesi asildi — LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK / "
+    "LORA_TEL_FRAME_MAX_BYTES uclusu UART kapasitesini (baud/10 x 0.8) asiyor. "
+    "Frame boyutu/baud DEGISTIRME (UKS sozlesmesi); periyodu artir veya replay "
+    "oranini dusur.");
+#endif
+
+// --- G11: LoRa UART init retry emniyeti ---
+// uart_driver_install bu kadar denemede kurulamazsa retry döngüsü SONSUZ
+// beklemez; telemetri "devre dışı" moduna geçer (araç durmaz — bkz. main.cpp
+// EspLoraHal::begin / vTask_LoRa_UKS + lib/LoraLink/UartInitRetry.h).
+#define LORA_UART_MAX_INIT_ATTEMPTS 5
+
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
+
+// --- FreeRTOS Task Öncelikleri (M6) ---
+// Yüksek sayı = yüksek öncelik. GÜVENLİK SIRALAMASI: VCU (durum makinesi/
+// güvenlik) > CAN (güvenlik-kritik alım: BMS/motor freshness, kontaktör) >
+// LoRa (yalnızca telemetri) > HMI (ekran). Telemetri (LoRa) güvenlik-kritik
+// CAN alımını ASLA preempt etmemeli — bu yüzden CAN > LoRa.
+// GERİ ALMA: LoRa öncelik düşüşü heartbeat zamanlamasını bozarsa (kaçırma),
+// TASK_PRIORITY_LORA'yı CAN'in ÜSTÜNE çıkarmak yerine önce LoRa periyodunu/
+// stack'ini gözden geçir; sabitler burada olduğundan tek satırda geri alınır.
+#define TASK_PRIORITY_VCU  10  // en yüksek — güvenlik durum makinesi
+#define TASK_PRIORITY_CAN   8  // güvenlik-kritik CAN alımı (telemetriden yüksek)
+#define TASK_PRIORITY_LORA  5  // telemetri uplink (CAN'in altında)
+#define TASK_PRIORITY_HMI   2  // ekran güncelleme (en düşük)
+
+// --- Motor Sürücüsü Entegrasyon Bayrağı ---
+#ifndef MOTOR_DRIVER_PRESENT
+#define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
+#endif
+
+// --- Motor Error-Flag Debounce (G9) ---
+// Motor errorFlags → FAULT yolu, geçici/tek-seferlik hata bitine (ör. CAN CRC
+// bit hatası) süratle kontaktör açtırmasın diye N ARDIŞIK frame onayı ister.
+// Sayaç, temiz (errorFlags==0) frame gelince sıfırlanır. 2-3 ardışık frame
+// önerilir (parazit filtreleme ile gerçek fault gecikmesi arası denge).
+// Bkz. lib/CanManager/MotorFaultDebounce.h (saf, bayraktan bağımsız).
+#define MOTOR_ERROR_DEBOUNCE_FRAMES 3
 
 // --- Phase 1 Planning Notes ---
 // Torque command generation is intentionally held at zero until the pedal /
 // brake input model is finalized. READY -> DRIVE enable is now command-driven,
 // but propulsion stays inhibited until the torque mapping rules are defined.
 //
-// Contactor opening is still immediate in FAULT / EMERGENCY_STOP. The future
-// safe shutdown sequence should coordinate:
-// 1. Zero torque request
-// 2. Short hold time for motor torque decay
-// 3. Contactor opening
+// E-STOP / FAULT güvenli kapanış sırası (VcuLogic handleEmergencyStop/
+// handleFault) ARTIK kurulu: 1) sendTorqueCommand(0) 2) VCU_CONTACTOR_OPEN_
+// DELAY_MS bekle 3) kontaktörleri aç. MOTOR_DRIVER_PRESENT=0 iken (1) gerçek
+// frame göndermez (bkz. CanManager::sendTorqueCommand) — bkz. G2 riski,
+// Documents/MOTOR_ENTEGRASYON_NOTU.md.
+// 20 ms sembolik; motor sürücüsü entegrasyonunda gerçek tork sönüm süresine
+// göre kalibre edilecek (motor RPM/akım düşüşü doğrulanmadan sahaya çıkma).
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---
@@ -198,13 +297,17 @@
 // hasWarning/hasCriticalCondition'a BAĞLANMAMALI.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
-// Current thresholds in centi-mA (0.01 mA units).
-// Not: CAN_BMS_CURRENT akımı doğrulanmıştır ve TEL_bmsCurrentCentiMa
+// Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
+// TEL_bmsCurrentCentiA ile AYNI birim (raw 0.1A × 10 = centi-A). Böylece
+// eşikler parser ölçeğiyle uçtan uca hizalı; aşırı akım koruması gerçek
+// değerlerde tetiklenebilir (G5 düzeltmesi — eski centi-mA yorumu 1000× kör
+// bırakıyordu).
+// Not: CAN_BMS_CURRENT akımı doğrulanmıştır ve TEL_bmsCurrentCentiA
 // üzerinden erişilebilir.
-#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA    90000    // 0.9 A
-#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA 100000  // 1.0 A
-#define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA  900000  // 9.0 A
-#define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA 1500000 // 15.0 A
+#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A       90    // 0.9 A
+#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A   100   // 1.0 A
+#define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
+#define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
 // (2.50 V / 3.65 V per hücre).
 // TODO: source signal not yet verified — TEL_bmsCellVoltageMin/MaxDeciMv

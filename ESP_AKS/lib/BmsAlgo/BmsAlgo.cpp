@@ -15,6 +15,22 @@ BmsComputed makeSafeInvalid() {
     return c;
 }
 
+// G8/M4: Paket geçerli (isValid=true) AMA per-hücre kaynağı DOĞRULANMADI
+// (cellDataValid=false). Bu durumda dengeleme/uyarı/min-max hücre gerçek
+// veriye dayanamaz — pack ortalamasından fabrike per-hücre değere GÜVENMEK
+// gerçek dengesizliği maskeler (bir hücre 2.3 V'a düşse bile ekran sağlıklı
+// görünürdü). Bu yüzden "veri yok" döndürülür: hiçbir hücre dengelenmez,
+// uyarı NO_DATA (nötr). makeSafeInvalid'den FARKI: burada pack bayat/arızalı
+// DEĞİL, yalnız hücre görünürlüğü yok → CRITICAL yalancı alarmı üretilmez.
+BmsComputed makeNoCellData() {
+    BmsComputed c{};                   // tüm alanlar 0 / balanceFlag tümü false
+    c.warningLevel = BMS_WARN_NO_DATA;
+    c.socPercent = 0;                  // ortalamadan SoC tahmini de fabrikasyon olurdu
+    // cellMin/Max/delta/temp/packV => 0: anlamlı per-hücre veri yok. Ekran
+    // tarafı cellMax/Min'i kendi sentinel'iyle ("--") gösterir.
+    return c;
+}
+
 // Ortalama hücre geriliminden (mV) lineer SoC% (0..100). Aralık dışı clamp'lenir.
 uint8_t socFromAvgMv(uint32_t avgMv) {
     if (avgMv <= BMS_SOC_EMPTY_MV) return 0;
@@ -31,6 +47,12 @@ BmsComputed computePack(const BmsPackData& in) {
     // Geçersiz girdi => güvenli kritik çıktı (erken dönüş).
     if (!in.isValid) {
         return makeSafeInvalid();
+    }
+
+    // Paket geçerli ama hücre kaynağı doğrulanmamış => dengeleme/uyarı hesaplama,
+    // "veri yok" döndür (fabrike per-hücre veriye güvenme). Bkz. makeNoCellData.
+    if (!in.cellDataValid) {
+        return makeNoCellData();
     }
 
     BmsComputed c{};  // balanceFlag[] dahil her şey 0/false başlar

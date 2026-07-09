@@ -47,7 +47,7 @@ void test_reset_interlock_unverified_temp_does_not_block(void) {
 
 void test_reset_interlock_unverified_current_does_not_block(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiMa = -2000000;  // sinyal DOĞRULANMADI — karar dışı
+    d.TEL_bmsCurrentCentiA = -2000;  // 20 A — sinyal DOĞRULANMADI — karar dışı
     TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 

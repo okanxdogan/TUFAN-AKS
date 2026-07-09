@@ -125,8 +125,11 @@ E22_REG3 = 0x00
 E22_ADDH = 0x00
 E22_ADDL = 0x00
 E22_NETID = 0x00
-E22_CRYPT_H = 0x00
-E22_CRYPT_L = 0x00
+# G7: heartbeat-injection kapatma icin sifir-disi ortak CRYPT anahtari
+# (E22_CRYPT_KEY=0x5A3C). AKS E22Regs.h (E22_CFG_CRYPT_H/L) ve UKS e22_regs.h
+# (E22_VAL_CRYPT_H/L) ile AYNI COMMIT'te senkron (bkz. E22_CRYPT_SENKRON.md).
+E22_CRYPT_H = 0x5A
+E22_CRYPT_L = 0x3C
 
 # Config modu pin seviyeleri (M0=0, M1=1 — E32'den farkli)
 E22_MODE_CONFIG_M0 = 0

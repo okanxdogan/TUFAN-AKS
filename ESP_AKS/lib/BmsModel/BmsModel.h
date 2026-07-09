@@ -26,6 +26,14 @@ struct BmsPackData {
     int32_t packCurrentMa;                   // Paket akımı, mA
                                              // (+ şarj / − deşarj)
     bool isValid;                            // false => taze/geçerli veri yok
+
+    // G8/M4: Per-hücre veri (cellVoltageMv/cellTempC) GERÇEK ve DOĞRULANMIŞ
+    // kaynaktan mı geliyor? false => hücre alanları güvenilmez (henüz
+    // parse/doğrulama yok). Varsayılan true: gerçek/sim kaynaklar hücreleri
+    // dürüstçe doldurur; yalnız hücre kaynağı doğrulanmamış yollar bunu false
+    // yapar. computePack() false görünce dengeleme/uyarıyı hesaplamaz, "veri
+    // yok" döndürür — pack ortalamasından fabrike per-hücre değere GÜVENMEZ.
+    bool cellDataValid = true;
 };
 
 // --- HAL arayüzü: veri kaynağı sözleşmesi ---

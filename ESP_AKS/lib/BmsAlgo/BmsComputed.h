@@ -18,6 +18,11 @@
 static constexpr uint8_t BMS_WARN_OK = 0;        // Her şey nominal
 static constexpr uint8_t BMS_WARN_WARNING = 1;   // Dikkat — eşiğe yaklaşıldı
 static constexpr uint8_t BMS_WARN_CRITICAL = 2;  // Kritik — koruma gerekebilir
+// G8/M4: Hücre kaynağı DOĞRULANMADI — uyarı seviyesi hesaplanamıyor. "Sağlıklı"
+// (OK) göstermek YANLIŞ GÜVEN yaratır; CRITICAL göstermek de yalancı alarmdır.
+// Bu sentinel "veri yok / nötr" anlamına gelir. NOT: Nextion warn bileşeni bu
+// değeri (3) nötr/"--" olarak göstermelidir (ekran/.HMI dosyası işi).
+static constexpr uint8_t BMS_WARN_NO_DATA = 3;
 
 // --- Yorumlanmış paket durumu ---
 // computePack() bu yapıyı eksiksiz doldurur. Tüketiciler (HMI paketleyici,

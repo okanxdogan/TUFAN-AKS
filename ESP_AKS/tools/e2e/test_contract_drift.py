@@ -227,7 +227,7 @@ def test_aks_handles_0xb0_via_lora_rx_handler(aks_root):
     hb_value = extract_define_int(sys_config, "UKS_HEARTBEAT_BYTE", source="AKS SystemConfig.h")
     assert hb_value == contract.LORA_HEARTBEAT_BYTE
 
-    handler = read(aks_root / "include/LoraRxHandler.h")
+    handler = read(aks_root / "lib/LoraLink/LoraRxHandler.h")
     assert "lora_classify_rx_byte" in handler
     m = re.search(
         r"lora_classify_rx_byte\s*\([^)]*\)\s*\{.*?\}", strip_c_comments(handler), re.DOTALL

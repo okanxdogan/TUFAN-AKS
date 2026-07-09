@@ -39,12 +39,17 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V` | 179 | 876 (87.6 V) | deciV | `VcuLogic::hasCriticalCondition` + `CanManager::handleLbBmsE000` → `CanParse::checkPackVoltageFault` | `TEL_bmsPackVoltageDeciV` | ✅ DOĞRULANDI | ✅ CANLI (iki bağımsız yol) |
 | `BMS_WARN_MAX_TEMP_C` | 185 | 55 | °C | *(yok)* | `TEL_bmsTempHighestC` | ❌ UNVERIFIED — kaynak ID bilinmiyor, hep 0 | ❌ ÖLÜ |
 | `BMS_CRITICAL_MAX_TEMP_C` | 186 | 70 | °C | *(yok)* | `TEL_bmsTempHighestC` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
-| `BMS_WARN_MAX_CHARGE_CURRENT_CENTI_MA` | 192 | 90 000 (0.9 A) | centi-mA | `VcuLogic::isCurrentWarning` (saf yardımcı, birim testli — ama çağrılmıyor) | `TEL_bmsCurrentCentiMa` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_MA` | 193 | 100 000 (1.0 A) | centi-mA | `VcuLogic::isCurrentCritical` (aynı durum) | `TEL_bmsCurrentCentiMa` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_MA` | 194 | 900 000 (9.0 A) | centi-mA | `VcuLogic::isCurrentWarning` | `TEL_bmsCurrentCentiMa` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_MA` | 195 | 1 500 000 (15.0 A) | centi-mA | `VcuLogic::isCurrentCritical` | `TEL_bmsCurrentCentiMa` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
+| `BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A` | 192 | 90 (0.9 A) | centi-A | `VcuLogic::isCurrentWarning` (saf yardımcı, birim testli — ama çağrılmıyor) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
+| `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 193 | 100 (1.0 A) | centi-A | `VcuLogic::isCurrentCritical` (aynı durum) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
+| `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 194 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
+| `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 195 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
 | `BMS_CRITICAL_MIN_CELL_VOLTAGE_MV` | 200 | 2500 | mV | *(yok)* | `TEL_bmsCellVoltageMinDeciMv` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
 | `BMS_CRITICAL_MAX_CELL_VOLTAGE_MV` | 201 | 3650 | mV | *(yok)* | `TEL_bmsCellVoltageMaxDeciMv` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
+
+> **Birim kararı (G5):** Akım için tek birim **centi-Amper (0.01 A)**'dir — parser
+> çıktısı (`TEL_bmsCurrentCentiA` = ham 0.1A × 10), eşikler ve `isCurrentWarning/
+> isCurrentCritical` hepsi bu ölçekte hizalıdır; eski "centi-mA" yorumu eşikleri
+> 1000× yüksek tutup aşırı akım korumasını kör bırakıyordu.
 
 Freshness/timeout eşikleri (aynı dosya, "CAN Freshness Thresholds" bölümü, satır 207 vd.)
 da pack/paket seviyesinde VCU kararını besler:
@@ -95,7 +100,7 @@ ama gerçek hücre verisi üzerinde değil.
 
 **Ölü** (kaynak sinyal hiç parse edilmediği/hep 0 olduğu için hiç tetiklenmeyen):
 sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`), akım
-eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_MA`) ve
+eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`) ve
 hücre voltajı eşikleri (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, SystemConfig.h
 tarafındakiler).
 

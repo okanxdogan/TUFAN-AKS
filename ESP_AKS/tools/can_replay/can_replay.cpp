@@ -150,7 +150,7 @@ void processExtFrame(const Frame& f, bool sessionAsserts, Stats& st) {
             if (f.msg.data[2] != 0x03 || f.msg.data[3] != 0x16)
                 st.addViolation(std::string(where) +
                                 ": E000 byte[2:3] != 0x0316");
-            const int32_t cur = out.TEL_bmsCurrentCentiMa;
+            const int32_t cur = out.TEL_bmsCurrentCentiA;
             if (cur != -10 && cur != -20)
                 st.addViolation(std::string(where) + ": E000 akim " +
                                 std::to_string(cur) +

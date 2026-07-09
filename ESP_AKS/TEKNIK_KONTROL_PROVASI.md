@@ -45,7 +45,7 @@ stub'larında ham byte olarak loglanıyor ama `TelemetryData`'ya hiçbir alan
 yazmıyor. Sonuç:
 
 - `TEL_bmsTempHighestC` / `TEL_bmsTempLowestC` / `TEL_bmsCellVoltageMaxDeciMv`
-  / `TEL_bmsCellVoltageMinDeciMv` / `TEL_bmsCurrentCentiMa` /
+  / `TEL_bmsCellVoltageMinDeciMv` / `TEL_bmsCurrentCentiA` /
   `TEL_bmsSocHundredths` her zaman value-init default'unda (`0`) kalır.
 - `TEL_bmsSystemState` de hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
   bunu `4` (FAULT) yapar — **UKS ekranında BMS her zaman FAULT görünür**,
@@ -82,7 +82,7 @@ kontaktorle saglanir, RF'ten bagimsizdir.
 - UKS `Core/Inc/lora.h:30`: `#define LORA_HEARTBEAT_BYTE 0xB0U` — RF
   hattindaki TEK TX kaynagi (`Core/Src/main.c:207-208`,
   `Lora_Send(&lora_ctx, &hb, 1U)`).
-- AKS `include/LoraRxHandler.h`: `lora_classify_rx_byte()` yalnizca iki
+- AKS `lib/LoraLink/LoraRxHandler.h`: `lora_classify_rx_byte()` yalnizca iki
   sonuc uretir — `HEARTBEAT` (byte == `UKS_HEARTBEAT_BYTE` == `0xB0`) veya
   `UNKNOWN`. Baska hicbir byte'a ozel anlam YUKLENMEZ (dispatch/switch/komut
   isleme YOK).
