@@ -13,15 +13,16 @@
 
 // Motor sürücüsünden CAN üzerinden gelen anlık motor durumu.
 // MSTest/mock_motor ile doğrulanmış bayt dizilimi:
-//   data[0:1] = RPM (big-endian uint16)
+//   data[0:1] = RPM (big-endian int16)
 //   data[2]   = Rezerve (kullanılmıyor)
 //   data[3]   = Voltaj (raw * 0.1 = V, ör: 240 → 24.0 V)
 //   data[4:6] = Rezerve (kullanılmıyor)
 //   data[7]   = Hata bayrakları / motor durumu (0x01=çalışıyor, 0x00=durdu)
 struct MotorStatus {
-    uint16_t rpm;
+    int16_t  rpm;
     uint16_t motorVoltageDeciV;   // raw * 0.1 = V (720 = 72.0 V, 16-bit olmalı)
-    uint8_t  errorFlags;          // data[7]: motor durumu + hata bayrakları
+    uint8_t  errorFlags;          // data[7] & 0xFE: sadece gerçek hata bayrakları
+    bool     isRunning;           // data[7] & 0x01: motor çalışma durumu
     bool     isValid;
 };
 

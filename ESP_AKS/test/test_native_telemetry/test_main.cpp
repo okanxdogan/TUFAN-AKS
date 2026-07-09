@@ -9,6 +9,7 @@ extern void test_packet_ends_with_crlf(void);
 extern void test_motor_voltage_is_formatted(void);
 extern void test_negative_current_is_formatted(void);
 extern void test_negative_temperature_is_formatted(void);
+extern void test_negative_rpm_is_formatted(void);
 extern void test_motor_valid_renders_as_one(void);
 extern void test_motor_timeout_renders_as_one(void);
 extern void test_bms_valid_renders_as_one(void);

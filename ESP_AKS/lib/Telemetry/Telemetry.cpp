@@ -25,10 +25,10 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
     char TEL_payload[192];
     const int TEL_payloadLength = snprintf(
         TEL_payload, sizeof(TEL_payload),
-        "TEL,%d,%lu,%u,%u,%u,%u,%u,%u,%u,%d,%d,%u,%u,%ld,%u,%u,%lu,%u\r\n",
+        "TEL,%d,%lu,%d,%u,%u,%u,%u,%u,%u,%d,%d,%u,%u,%ld,%u,%u,%lu,%u\r\n",
         LORA_PROTOCOL_VERSION,
         static_cast<unsigned long>(TEL_sequenceCounter),
-        TEL_data.TEL_motorRpm,
+        static_cast<int>(TEL_data.TEL_motorRpm),
         static_cast<unsigned>(TEL_data.TEL_motorVoltageDeciV),
         TEL_data.TEL_motorErrorFlags,
         TEL_data.TEL_motorDataValid ? 1u : 0u,

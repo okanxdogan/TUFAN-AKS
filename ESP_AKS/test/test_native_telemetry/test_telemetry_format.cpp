@@ -147,6 +147,20 @@ void test_negative_temperature_is_formatted(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Negatif devir (RPM) doğru işaretle render edilmeli.
+// ---------------------------------------------------------------------------
+void test_negative_rpm_is_formatted(void) {
+    fake_uart_reset();
+    Telemetry tel;
+    tel.begin();
+    TelemetryData d = makeZeroData();
+    d.TEL_motorRpm = -1234;
+    tel.sendStatus(d);
+
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), "TEL,2,0,-1234,"));
+}
+
+// ---------------------------------------------------------------------------
 // Boolean alanlar 0/1 olarak render edilmeli.
 // ---------------------------------------------------------------------------
 void test_motor_valid_renders_as_one(void) {
@@ -310,7 +324,14 @@ void test_rpm_to_speed_no_clamp_just_below_threshold_rpm(void) {
 // km/h = 1500*pi*0.5*60/1000 ≈ 141.37 → x10 = 1413 (mevcut clamp testiyle
 // aynı beklenen değer — refactor'ün üretim yolunu bozmadığını kanıtlar).
 void test_impl_hand_calc_motor_rpm_with_gear_ratio(void) {
-    uint16_t result = rpmToSpeedKmhX10Impl(1500u, 0.5f, 1.0f, false);
+    uint16_t result = rpmToSpeedKmhX10Impl(1500, 0.5f, 1.0f, false);
+    TEST_ASSERT_EQUAL_UINT16(1413, result);
+}
+
+// Negatif RPM (Geri vites) geldiğinde hız skaler hesaplanmalı (mutlak değer alınmalı).
+// rpm=-1500 verilse bile hız 1500 rpm'de olduğu gibi 141.3 km/h (1413) olmalı.
+void test_impl_hand_calc_negative_motor_rpm(void) {
+    uint16_t result = rpmToSpeedKmhX10Impl(-1500, 0.5f, 1.0f, false);
     TEST_ASSERT_EQUAL_UINT16(1413, result);
 }
 

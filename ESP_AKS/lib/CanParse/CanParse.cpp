@@ -15,9 +15,10 @@ bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out) {
     if (msg.data_length_code < 8)
         return false;
 
-    out.rpm = static_cast<uint16_t>((msg.data[0] << 8) | msg.data[1]);
+    out.rpm = static_cast<int16_t>((msg.data[0] << 8) | msg.data[1]);
     out.motorVoltageDeciV = static_cast<uint16_t>((msg.data[2] << 8) | msg.data[3]);
-    out.errorFlags = msg.data[7];
+    out.errorFlags = msg.data[7] & 0xFE; // 0x01 'çalışıyor' bitidir, hata sayılmaz
+    out.isRunning = (msg.data[7] & 0x01) != 0;
     out.isValid = true;
     return true;
 }

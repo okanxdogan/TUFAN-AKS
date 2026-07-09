@@ -34,7 +34,7 @@ void test_motor_status_dlc_too_short(void) {
     MotorStatus out{};
     TEST_ASSERT_FALSE(CanParse::parseMotorStatus(m, out));
     TEST_ASSERT_FALSE(out.isValid);
-    TEST_ASSERT_EQUAL_UINT16(0, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(0, out.rpm);
 }
 
 void test_motor_status_dlc_7_too_short(void) {
@@ -48,9 +48,10 @@ void test_motor_status_dlc_8_valid(void) {
     twai_message_t m = makeMotorMsg(8, 0x01, 0x90, 0x00, 240, 0x00, 0x00, 0x00, 0x01);
     MotorStatus out{};
     TEST_ASSERT_TRUE(CanParse::parseMotorStatus(m, out));
-    TEST_ASSERT_EQUAL_UINT16(0x0190, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(0x0190, out.rpm);
     TEST_ASSERT_EQUAL_UINT16(240, out.motorVoltageDeciV);
-    TEST_ASSERT_EQUAL_UINT8(0x01, out.errorFlags);
+    TEST_ASSERT_EQUAL_UINT8(0x00, out.errorFlags); // 0x01 maskelendiği için 0 olmalı
+    TEST_ASSERT_TRUE(out.isRunning);
     TEST_ASSERT_TRUE(out.isValid);
 }
 
@@ -58,7 +59,7 @@ void test_motor_status_rpm_big_endian(void) {
     twai_message_t m = makeMotorMsg(8, 0x12, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
     MotorStatus out{};
     CanParse::parseMotorStatus(m, out);
-    TEST_ASSERT_EQUAL_UINT16(0x1234, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(0x1234, out.rpm);
 }
 
 void test_motor_status_rpm_zero(void) {
@@ -72,7 +73,7 @@ void test_motor_status_rpm_max(void) {
     twai_message_t m = makeMotorMsg(8, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
     MotorStatus out{};
     CanParse::parseMotorStatus(m, out);
-    TEST_ASSERT_EQUAL_UINT16(0xFFFF, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(-1, out.rpm); // 0xFFFF signed int16'da -1'dir
 }
 
 void test_motor_status_voltage_parsing(void) {
@@ -88,23 +89,26 @@ void test_motor_status_error_flags_byte7(void) {
     MotorStatus out{};
     CanParse::parseMotorStatus(m, out);
     TEST_ASSERT_EQUAL_UINT8(0x42, out.errorFlags);
+    TEST_ASSERT_FALSE(out.isRunning);
 }
 
 void test_motor_status_motor_running_flag(void) {
     twai_message_t m = makeMotorMsg(8, 0x03, 0xE8, 0x00, 240, 0x00, 0x00, 0x00, 0x01);
     MotorStatus out{};
     CanParse::parseMotorStatus(m, out);
-    TEST_ASSERT_EQUAL_UINT16(1000, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(1000, out.rpm);
     TEST_ASSERT_EQUAL_UINT16(240, out.motorVoltageDeciV);
-    TEST_ASSERT_EQUAL_UINT8(0x01, out.errorFlags);
+    TEST_ASSERT_EQUAL_UINT8(0x00, out.errorFlags); // 0x01 hata değil çalışma bitidir, 0 olur
+    TEST_ASSERT_TRUE(out.isRunning);
 }
 
 void test_motor_status_motor_stopped_flag(void) {
     twai_message_t m = makeMotorMsg(8, 0x00, 0x00, 0x00, 240, 0x00, 0x00, 0x00, 0x00);
     MotorStatus out{};
     CanParse::parseMotorStatus(m, out);
-    TEST_ASSERT_EQUAL_UINT16(0, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(0, out.rpm);
     TEST_ASSERT_EQUAL_UINT8(0x00, out.errorFlags);
+    TEST_ASSERT_FALSE(out.isRunning);
 }
 
 void test_motor_status_invalid_does_not_modify_out(void) {
@@ -114,12 +118,14 @@ void test_motor_status_invalid_does_not_modify_out(void) {
     out.rpm = 0xCAFE;
     out.motorVoltageDeciV = 0x5555;
     out.errorFlags = 0x55;
+    out.isRunning = true;
     out.isValid = false;
 
     TEST_ASSERT_FALSE(CanParse::parseMotorStatus(m, out));
 
-    TEST_ASSERT_EQUAL_UINT16(0xCAFE, out.rpm);
+    TEST_ASSERT_EQUAL_INT16(-13570, out.rpm); // 0xCAFE signed int16
     TEST_ASSERT_EQUAL_UINT16(0x5555, out.motorVoltageDeciV);
     TEST_ASSERT_EQUAL_UINT8(0x55, out.errorFlags);
+    TEST_ASSERT_TRUE(out.isRunning);
     TEST_ASSERT_FALSE(out.isValid);
 }

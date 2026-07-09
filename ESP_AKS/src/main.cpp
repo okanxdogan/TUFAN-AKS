@@ -202,6 +202,11 @@ void vTask_HMI_Display(void *pvParameters) {
 
   uint8_t HMI_incomingCommand = 0;
 
+  // EMA (Üstel Hareketli Ortalama) filtresi değişkenleri (İbrenin akıcı hareket etmesi için)
+  float HMI_smoothedRpm = 0.0f;
+  float HMI_smoothedSpeed = 0.0f;
+  const float HMI_EMA_ALPHA = 0.15f; // Bu değer (0.0 ile 1.0 arası) küçüldükçe ibre daha yavaş ve yumuşak kalkar.
+
   while (true) {
     esp_task_wdt_reset();
 
@@ -210,10 +215,20 @@ void vTask_HMI_Display(void *pvParameters) {
     if (TEL_sensorDataQueue != nullptr) {
         TelemetryData TEL_data = {};
         if (xQueuePeek(TEL_sensorDataQueue, &TEL_data, 0) == pdTRUE) {
-            HMI_screenData.HMI_currentSpeed = TEL_data.TEL_motorRpm;
+            
+            // Hedef RPM'i alırken negatif devirlere karşı mutlak değer alıyoruz
+            float targetRpm = (float)abs(TEL_data.TEL_motorRpm);
+            // Gerçek hızı km/h cinsinden hesaplıyoruz (Teknofest Şartnamesi)
+            float targetSpeed = (float)TEL_data.TEL_speedKmhX10 / 10.0f;
+            
+            // İbreler için EMA hesaplaması: (Yeni Değer * Alpha) + (Eski Değer * (1 - Alpha))
+            HMI_smoothedRpm = (HMI_EMA_ALPHA * targetRpm) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedRpm);
+            HMI_smoothedSpeed = (HMI_EMA_ALPHA * targetSpeed) + ((1.0f - HMI_EMA_ALPHA) * HMI_smoothedSpeed);
+
+            HMI_screenData.HMI_currentSpeed = static_cast<uint16_t>(HMI_smoothedSpeed);
             HMI_screenData.HMI_currentBattery =
                 static_cast<uint8_t>(TEL_data.TEL_bmsSocHundredths / 100);
-            HMI_screenData.HMI_motorRpm = TEL_data.TEL_motorRpm;
+            HMI_screenData.HMI_motorRpm = static_cast<uint16_t>(HMI_smoothedRpm);
          //   HMI_screenData.HMI_motorTorqueFeedback =
        //         TEL_data.TEL_motorTorqueFeedback;
             HMI_screenData.HMI_motorErrorFlags = TEL_data.TEL_motorErrorFlags;
