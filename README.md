@@ -91,3 +91,17 @@ Based on current git history, the repository contributors are:
 ## Development Rules
 
 Contributor workflow and naming rules are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Batarya Entegrasyonu Durumu
+
+ESP-AKS ve Lithium Balance c-BMS entegrasyonu başarıyla devreye alınmıştır. Gerçek CAN sniffer loglarına göre yapılan son senkronizasyonların durumu aşağıdadır:
+
+**Doğrulanan Veriler (DOĞRULANDI):**
+- **0xE000**: Pack Voltajı (deciV), Pack Akımı (centiA, deşarjda negatif), SoC1 ve SoC2 (yüzde).
+- **0xE001**: BMS Sıcaklığı (byte[6:7] üzerinden max/min seçimi).
+- **0x1806E5F4**: Şarj cihazı gerilim ve akım hedefi (Charger command - Sadece okunuyor).
+
+**Açık İşler ve Bilinmeyenler (BİLİNMİYOR):**
+- **24 Hücre Voltajı:** Şu anda CAN üzerinde hücre verilerini içeren ID bulunamadı. Ekranda güvenlik amaçlı bilinçli olarak `--` gösteriliyor (`HMI_CELL_VOLTAGE_SOURCE_VERIFIED = false`). Çözümü için diagnostik sniffer modu koda eklenmiştir; araştırma adımları [CELL_VOLTAGE_INVESTIGATION.md](Documents/CELL_VOLTAGE_INVESTIGATION.md) belgesinde açıklanmıştır.
+- **0xE001 byte[0:5]:** BMS sistem durumu ve hata kodları barındırdığı düşünülüyor, henüz doğrulanmadı.
+- **Bitrate Teyidi:** Gerçek araç testinde CAN bus hızının `500kbps` mi yoksa `125kbps` mi olacağı belirsizdir. `CanManager::begin()` içinde **otomatik hız bulucu (auto-baud)** devreye alınarak bu risk giderilmiştir (bkz. [BRING_UP_CHECKLIST.md](Documents/BRING_UP_CHECKLIST.md)).

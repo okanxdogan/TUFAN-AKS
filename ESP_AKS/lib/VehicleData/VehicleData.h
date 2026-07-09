@@ -21,6 +21,7 @@ struct TelemetryData {
     bool TEL_motorTimeoutActive;
 
     // Lithium Balance c-BMS — per-hücre alanlar (kaynak CAN ID henüz BİLİNMİYOR)
+    uint16_t TEL_bmsCellVoltages[24];      // BİLİNMİYOR — 24 hücre voltajı (mV/deciMv?)
     uint16_t TEL_bmsCellVoltageMaxDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
     uint16_t TEL_bmsCellVoltageMinDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
     uint8_t TEL_bmsSystemState;            // BİLİNMİYOR — kaynak ID çözülmedi

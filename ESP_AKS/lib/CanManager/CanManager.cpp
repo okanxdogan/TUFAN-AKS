@@ -33,25 +33,53 @@ bool CanManager::begin() {
     g_config.rx_queue_len = CAN_RX_QUEUE_LEN;
     g_config.alerts_enabled = TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED |
                               TWAI_ALERT_RX_QUEUE_FULL;
-    esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "twai_driver_install failed: %s", esp_err_to_name(err));
-        vSemaphoreDelete(s_mutex);
-        s_mutex = nullptr;
-        return false;
+
+    const twai_timing_config_t t_configs[] = {
+        TWAI_TIMING_CONFIG_500KBITS(),
+        TWAI_TIMING_CONFIG_125KBITS(),
+        TWAI_TIMING_CONFIG_250KBITS()
+    };
+    const char* t_names[] = {"500kbps", "125kbps", "250kbps"};
+    
+    bool baudFound = false;
+    for (int i = 0; i < 3; i++) {
+        ESP_LOGI(TAG, "CAN bitrate auto-detect deneniyor: %s", t_names[i]);
+        if (twai_driver_install(&g_config, &t_configs[i], &f_config) == ESP_OK) {
+            if (twai_start() == ESP_OK) {
+                twai_message_t msg;
+                if (twai_receive(&msg, pdMS_TO_TICKS(1000)) == ESP_OK) {
+                    ESP_LOGI(TAG, "CAN bitrate BASARIYLA bulundu: %s", t_names[i]);
+                    t_config = t_configs[i];
+                    baudFound = true;
+                    break;
+                }
+                twai_stop();
+            }
+            twai_driver_uninstall();
+        }
     }
 
-    err = twai_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "twai_start failed: %s", esp_err_to_name(err));
-        twai_driver_uninstall();
-        vSemaphoreDelete(s_mutex);
-        s_mutex = nullptr;
-        return false;
+    if (!baudFound) {
+        ESP_LOGW(TAG, "CAN bitrate auto-detect basarisiz oldu! Fallback: 500kbps");
+        t_config = TWAI_TIMING_CONFIG_500KBITS();
+        esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "twai_driver_install failed: %s", esp_err_to_name(err));
+            vSemaphoreDelete(s_mutex);
+            s_mutex = nullptr;
+            return false;
+        }
+        err = twai_start();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "twai_start failed: %s", esp_err_to_name(err));
+            twai_driver_uninstall();
+            vSemaphoreDelete(s_mutex);
+            s_mutex = nullptr;
+            return false;
+        }
     }
 
     isInitialized = true;
-    ESP_LOGI(TAG, "CAN initialized at 500kbps");
     return true;
 }
 
@@ -423,6 +451,38 @@ void CanManager::handleLbBmsStub(const twai_message_t& msg, uint32_t canId) {
     if (msg.data_length_code == 0)
         return;
 
+#if ENABLE_BMS_DIAGNOSTIC_SNIFFER
+    // Diagnostic sniffer modu: E002..E005, E032, E033 için ham log + hücre voltajı heuristiği
+    char hexBuf[8 * 3 + 1] = {};
+    for (uint8_t i = 0; i < msg.data_length_code && i < 8; i++) {
+        snprintf(hexBuf + i * 3, 4, "%02X ", msg.data[i]);
+    }
+    
+    // 24S LiFePO4: 2.5V - 3.65V aralığında değerler ara.
+    // Veriler genelde Big Endian 16-bit'tir.
+    // deciMv (x0.1 mV) ise: 25000 - 36500 aralığı.
+    // mV (x1) ise: 2500 - 3650 aralığı.
+    bool foundMatch = false;
+    char matchLog[64] = {};
+    if (msg.data_length_code >= 2) {
+        for (uint8_t i = 0; i < msg.data_length_code - 1; i += 2) {
+            uint16_t val = (msg.data[i] << 8) | msg.data[i + 1];
+            if ((val >= 2500 && val <= 3650) || (val >= 25000 && val <= 36500)) {
+                foundMatch = true;
+                snprintf(matchLog + strlen(matchLog), sizeof(matchLog) - strlen(matchLog), 
+                         " [b%d:%d=%u]", i, i+1, val);
+            }
+        }
+    }
+
+    if (foundMatch) {
+        ESP_LOGI(TAG, "[DIAG] ID:0x%04lX T:%lu %s ---> HÜCRE ADAYI!%s", 
+                 (unsigned long)canId, (unsigned long)xTaskGetTickCount(), hexBuf, matchLog);
+    } else {
+        ESP_LOGI(TAG, "[DIAG] ID:0x%04lX T:%lu %s", 
+                 (unsigned long)canId, (unsigned long)xTaskGetTickCount(), hexBuf);
+    }
+#else
     // Debug log: ID + ham byte dump (yalnızca VERBOSE/DEBUG seviyesinde görünür)
     char hexBuf[8 * 3 + 1] = {};
     for (uint8_t i = 0; i < msg.data_length_code && i < 8; i++) {
@@ -430,6 +490,7 @@ void CanManager::handleLbBmsStub(const twai_message_t& msg, uint32_t canId) {
     }
     ESP_LOGD(TAG, "LB-0x%04lX [DLC=%d]: %s(DOĞRULANMADI — ham veri)",
              (unsigned long)canId, msg.data_length_code, hexBuf);
+#endif
 }
 
 void CanManager::updateMotorStatusValidity() {

@@ -30,6 +30,10 @@
 #define CAN_ID_LB_BMS_E032 0x0000E032  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
 #define CAN_ID_LB_BMS_E033 0x0000E033  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
 
+// Diagnostic Sniffer Modu: E002-E005, E032, E033 gibi bilinmeyen ID'lerin
+// içeriğinde hücre voltajı (2.5V-3.65V) paternlerini arayıp loglamak için 1 yapın.
+#define ENABLE_BMS_DIAGNOSTIC_SNIFFER 0
+
 // Charger komut frame'i — 29-bit Extended ID (J1939: PGN 0x1806, DA 0xE5,
 // SA 0xF4). BMS -> Charger yönünde; byte[0:1] = şarj voltaj hedefi ×0.1 V,
 // byte[2:3] = şarj akım hedefi ×0.1 A (bkz. Documents/CAN_Message_Table.md).
