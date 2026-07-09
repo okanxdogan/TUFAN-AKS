@@ -9,7 +9,6 @@ extern void test_packet_ends_with_crlf(void);
 extern void test_motor_voltage_is_formatted(void);
 extern void test_negative_current_is_formatted(void);
 extern void test_negative_temperature_is_formatted(void);
-extern void test_negative_rpm_is_formatted(void);
 extern void test_motor_valid_renders_as_one(void);
 extern void test_motor_timeout_renders_as_one(void);
 extern void test_bms_valid_renders_as_one(void);
@@ -61,7 +60,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_sequence_increments);
     RUN_TEST(test_begin_resets_sequence);
     RUN_TEST(test_packet_ends_with_crlf);
-    RUN_TEST(test_negative_torque_is_formatted);
+    RUN_TEST(test_motor_voltage_is_formatted);
     RUN_TEST(test_negative_current_is_formatted);
     RUN_TEST(test_negative_temperature_is_formatted);
     RUN_TEST(test_motor_valid_renders_as_one);
