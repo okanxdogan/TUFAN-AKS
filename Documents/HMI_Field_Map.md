@@ -19,6 +19,7 @@ Fields currently included:
 | `HMI_motorTimeoutActive` | `TEL_motorTimeoutActive` | Timeout indicator |
 | `HMI_bmsTemperatureC` | `TEL_bmsTemperatureC` | BMS temperature |
 | `HMI_bmsPackVoltageDeciV` | `TEL_bmsPackVoltageDeciV` | BMS pack voltage |
+| `HMI_bmsPackCurrentCentiA` | `TEL_bmsCurrentCentiA` | BMS pack current |
 | `HMI_contactorClosed` | `RelayManager::getRelayState()` | True if all positive contactors are closed |
 | `HMI_vcuState` | `VcuLogic::getState()` | Current VCU state |
 
@@ -33,11 +34,24 @@ The current firmware expects these object names on the Nextion page:
 | `rpm` | numeric | `rpm.val=<value>` |
 | `torque` | numeric | `torque.val=<value>` |
 | `temp` | numeric | `temp.val=<value>` |
-| `packv` | numeric | `packv.val=<value>` |
+| `packv` | float (2 dp) | `packv.val=<deciV × 10>` |
+| `packa` | float (2 dp) | `packa.val=<centiA>` |
 | `state` | text | `state.txt="..."` |
 | `motorErr` | text | `motorErr.txt="..."` |
 | `valid` | text | `valid.txt="..."` |
 | `contactor` | text | `contactor.txt="..."` |
+
+### Float (xfloat) fields
+
+`packv` and `packa` are Nextion **float** components with 2 decimal places
+(`"00.00"`). A Nextion xfloat interprets the integer `.val` it receives as
+`display_value × 100`. The firmware therefore scales before sending:
+
+- `packv`: source is deci-volts (`× 0.1 V`), so `.val = deciV × 10` (e.g. `800` → `8000` → `80.00`).
+- `packa`: source is centi-amps (`× 0.01 A`), which already equals `A × 100`, so `.val` is sent unscaled (e.g. `1250` → `12.50`, `-2000` → `-20.00`).
+
+Scaling lives in `HMI_packVoltageToXfloat` / `HMI_packCurrentToXfloat`
+(`HMIHelpers.h`). `temp` remains an integer `number` component and is not scaled.
 
 ## Text Formatting Rules
 

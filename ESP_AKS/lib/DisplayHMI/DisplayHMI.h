@@ -17,6 +17,7 @@ struct HMI_DisplayData {
     bool HMI_motorTimeoutActive;
     int16_t HMI_bmsTemperatureC;
     uint16_t HMI_bmsPackVoltageDeciV;
+    int32_t HMI_bmsPackCurrentCentiA;
     bool HMI_contactorClosed;
     HMI_VcuState HMI_vcuState;
 };

@@ -65,3 +65,27 @@ void test_temp_verified_valid_passes_through(void) {
     TEST_ASSERT_EQUAL_INT16(25, HMI_temperatureDisplayValue(true, true, 25));
     TEST_ASSERT_EQUAL_INT16(-10, HMI_temperatureDisplayValue(true, true, -10));
 }
+
+// =========================================================================
+// Nextion float (xfloat) ölçekleme — packv (×10) ve packa (×1)
+// packv/packa 2 ondalıklı float bileşeni; .val = gerçek_değer×100 olmalı.
+// =========================================================================
+
+void test_packv_decivolt_scaled_to_xfloat(void) {
+    // 800 deciV = 80.0 V -> 8000 -> "80.00"
+    TEST_ASSERT_EQUAL_INT32(8000, HMI_packVoltageToXfloat(800));
+    // 526 deciV = 52.6 V -> 5260 -> "52.60"
+    TEST_ASSERT_EQUAL_INT32(5260, HMI_packVoltageToXfloat(526));
+    TEST_ASSERT_EQUAL_INT32(0, HMI_packVoltageToXfloat(0));
+    // Üst sınır uint16 (65535 deciV) int32'ye taşmadan sığar
+    TEST_ASSERT_EQUAL_INT32(655350, HMI_packVoltageToXfloat(65535));
+}
+
+void test_packa_centiamp_passes_through_as_xfloat(void) {
+    // centiA zaten A×100 -> ek ölçekleme yok
+    // 1250 centiA = 12.5 A -> "12.50"
+    TEST_ASSERT_EQUAL_INT32(1250, HMI_packCurrentToXfloat(1250));
+    // Negatif (deşarj) korunur: -2000 centiA = -20.0 A -> "-20.00"
+    TEST_ASSERT_EQUAL_INT32(-2000, HMI_packCurrentToXfloat(-2000));
+    TEST_ASSERT_EQUAL_INT32(0, HMI_packCurrentToXfloat(0));
+}

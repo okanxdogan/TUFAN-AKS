@@ -94,9 +94,16 @@ void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
     HMI_sendNumericIfChanged("temp", HMI_data.HMI_bmsTemperatureC,
                              HMI_lastScreenData.HMI_bmsTemperatureC,
                              HMI_forceRefresh);
-    HMI_sendNumericIfChanged("packv", HMI_data.HMI_bmsPackVoltageDeciV,
-                             HMI_lastScreenData.HMI_bmsPackVoltageDeciV,
-                             HMI_forceRefresh);
+    // packv/packa Nextion'da 2 ondalıklı float (xfloat) — ".val" değeri
+    // gerçek_değer×100 olacak şekilde ölçeklenir (bkz. HMIHelpers.h).
+    HMI_sendNumericIfChanged(
+        "packv", HMI_packVoltageToXfloat(HMI_data.HMI_bmsPackVoltageDeciV),
+        HMI_packVoltageToXfloat(HMI_lastScreenData.HMI_bmsPackVoltageDeciV),
+        HMI_forceRefresh);
+    HMI_sendNumericIfChanged(
+        "packa", HMI_packCurrentToXfloat(HMI_data.HMI_bmsPackCurrentCentiA),
+        HMI_packCurrentToXfloat(HMI_lastScreenData.HMI_bmsPackCurrentCentiA),
+        HMI_forceRefresh);
 
     HMI_sendTextIfChanged("state", HMI_getStateText(HMI_data.HMI_vcuState),
                           HMI_getStateText(HMI_lastScreenData.HMI_vcuState),
