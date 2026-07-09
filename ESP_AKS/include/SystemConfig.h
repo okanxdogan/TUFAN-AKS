@@ -320,7 +320,7 @@ static_assert(
 // watchdog timeout should still be reviewed once final task runtimes stabilize.
 
 // --- CAN Freshness Thresholds ---
-#define CAN_MOTOR_STATUS_TIMEOUT_MS 500
+#define CAN_MOTOR_STATUS_TIMEOUT_MS 1500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
 // Charger komut frame'i (0x1806E5F4) OPSİYONEL bir akıştır: araç sürüşteyken
 // charger bağlı olmayabilir. Timeout yalnızca saklanan setpoint'leri "bayat"

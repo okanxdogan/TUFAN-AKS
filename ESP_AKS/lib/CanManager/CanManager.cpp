@@ -265,7 +265,7 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
     CAN_confirmedErrorFlags = CAN_motorFaultConfirmed ? parsed.errorFlags : 0;
 
     s_telemetryData.TEL_motorRpm = s_motorStatus.rpm;
-   // s_telemetryData.TEL_motorTorqueFeedback = s_motorStatus.torqueFeedback;
+    s_telemetryData.TEL_motorVoltageDeciV = s_motorStatus.motorVoltageDeciV;
     s_telemetryData.TEL_motorErrorFlags = CAN_confirmedErrorFlags;
     s_telemetryData.TEL_motorDataValid = s_motorStatus.isValid;
     s_telemetryData.TEL_motorTimeoutActive = false;
