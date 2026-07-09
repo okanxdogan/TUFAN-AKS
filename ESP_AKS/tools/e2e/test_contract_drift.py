@@ -222,7 +222,13 @@ def test_uks_sends_heartbeat_0xb0(uks_telemetry_dir):
 
 def test_aks_handles_0xb0_via_lora_rx_handler(aks_root):
     """AKS'te 0xB0 isleme (LoraRxHandler) POZITIF dogrulanir: UKS_HEARTBEAT_BYTE
-    == 0xB0 ve lora_classify_rx_byte bu degeri HEARTBEAT olarak siniflandiriyor."""
+    == 0xB0 ve lora_classify_rx_byte bu degeri HEARTBEAT olarak siniflandiriyor.
+
+    main.cpp bu siniflandirmayi DOGRUDAN cagirabilir, ya da (M1 refactor,
+    bkz. 25c3746) UplinkScheduler::onRxByte uzerinden DOLAYLI cagirabilir.
+    Dolayli durumda zincirin gercekten bagli oldugunu (bos bir kabuk
+    olmadigini) dogrulamak icin UplinkScheduler.cpp'nin onRxByte govdesinde
+    lora_classify_rx_byte'i fiilen cagirdigi ayrica denetlenir."""
     sys_config = read(aks_root / "include/SystemConfig.h")
     hb_value = extract_define_int(sys_config, "UKS_HEARTBEAT_BYTE", source="AKS SystemConfig.h")
     assert hb_value == contract.LORA_HEARTBEAT_BYTE
@@ -238,10 +244,26 @@ def test_aks_handles_0xb0_via_lora_rx_handler(aks_root):
     ), "lora_classify_rx_byte, UKS_HEARTBEAT_BYTE'i HEARTBEAT'e eslemiyor"
 
     main_cpp = read(aks_root / "src/main.cpp")
-    assert re.search(r"lora_classify_rx_byte\s*\(", main_cpp), (
-        "AKS main.cpp lora_classify_rx_byte'i fiilen CAGIRMIYOR — 0xB0 "
-        "isleme yolu POZITIF dogrulanamadi"
+    calls_directly = re.search(r"lora_classify_rx_byte\s*\(", main_cpp)
+    calls_via_scheduler = re.search(r"\.onRxByte\s*\(", main_cpp)
+    assert calls_directly or calls_via_scheduler, (
+        "AKS main.cpp RX dongusu lora_classify_rx_byte'i (dogrudan ya da "
+        "UplinkScheduler::onRxByte uzerinden) CAGIRMIYOR — 0xB0 isleme yolu "
+        "POZITIF dogrulanamadi"
     )
+
+    if not calls_directly:
+        scheduler_src = read(aks_root / "lib/LoraLink/UplinkScheduler.cpp")
+        sm = re.search(
+            r"UplinkScheduler::onRxByte\s*\([^)]*\)\s*\{.*?\n\}",
+            strip_c_comments(scheduler_src), re.DOTALL,
+        )
+        assert sm, "UplinkScheduler::onRxByte govdesi bulunamadi"
+        assert re.search(r"lora_classify_rx_byte\s*\(", sm.group(0)), (
+            "UplinkScheduler::onRxByte lora_classify_rx_byte'i CAGIRMIYOR — "
+            "main.cpp'nin cagirdigi onRxByte 0xB0'i fiilen siniflandirmiyor "
+            "olabilir (zincir kopuk)"
+        )
 
 
 # ===========================================================================
