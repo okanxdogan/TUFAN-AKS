@@ -24,8 +24,9 @@
 #include <cstdint>
 
 // --- Komut byte'ları ---
-#define E22_CMD_WRITE 0xC0U
-#define E22_CMD_READ  0xC1U
+#define E22_CMD_WRITE      0xC0U
+#define E22_CMD_READ       0xC1U
+#define E22_CMD_WRITE_TEMP 0xC2U  // G7-FIX-2: kalici OLMAYAN (RAM) yazma
 
 // --- Register adresleri (E22-400T30D-V2 register haritası) ---
 // DOĞRULAMA: NETID (0x02) ve sonrasındaki REG0..REG3 kaydırması, EBYTE'ın
