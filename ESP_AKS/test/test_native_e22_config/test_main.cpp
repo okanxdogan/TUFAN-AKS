@@ -5,6 +5,8 @@ extern void test_build_read_all_command(void);
 extern void test_build_read_all_command_buffer_too_small(void);
 extern void test_build_write_command(void);
 extern void test_build_write_command_buffer_too_small(void);
+extern void test_build_write_crypt_temp_command(void);
+extern void test_build_write_crypt_temp_command_buffer_too_small(void);
 extern void test_parse_valid_response_accepted(void);
 extern void test_is_error_response_detects_ff_ff_ff(void);
 extern void test_is_error_response_false_for_valid(void);
@@ -28,6 +30,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_build_read_all_command_buffer_too_small);
     RUN_TEST(test_build_write_command);
     RUN_TEST(test_build_write_command_buffer_too_small);
+    RUN_TEST(test_build_write_crypt_temp_command);
+    RUN_TEST(test_build_write_crypt_temp_command_buffer_too_small);
     RUN_TEST(test_parse_valid_response_accepted);
     RUN_TEST(test_is_error_response_detects_ff_ff_ff);
     RUN_TEST(test_is_error_response_false_for_valid);

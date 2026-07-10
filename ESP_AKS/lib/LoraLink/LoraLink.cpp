@@ -47,9 +47,41 @@ void LoraLink::configureE22() {
             E22RegValues current = {};
             if (e22_parseRegResponse(readResp, (size_t)readLen, current)) {
                 if (e22_regsEqual(current, E22_CONTRACT_REGS)) {
-                    ESP_LOGI(TAG, "E22 config zaten sozlesmeyle uyumlu, yazma "
-                                  "atlaniyor");
+                    ESP_LOGI(TAG, "E22 config zaten sozlesmeyle uyumlu, kalici "
+                                  "(0xC0) yazma atlaniyor");
                     needsWrite = false;
+
+                    // G7-FIX-2: read-before-write skip yolu CRYPT'i hic
+                    // karsilastirmiyor (bkz. e22_regsEqual/E22RegValues) ve
+                    // ADDH..REG3 degismedigi surece bu dal her boot'ta
+                    // tetiklenir -> CRYPT hedefi git'te guncellense bile
+                    // flash'a hic yazilmiyor olabilir (bkz. Documents/
+                    // E22_CRYPT_SENKRON.md "G7-FIX-2"). CRYPT'i her boot'ta
+                    // C2/RAM (kalici olmayan) ile yeniden yazarak bu kor
+                    // noktayi kapatiyoruz.
+                    m_hal.uartFlush();
+                    uint8_t cryptCmd[5];
+                    const size_t cryptCmdLen =
+                        e22_buildWriteCryptTempCommand(cryptCmd, sizeof(cryptCmd));
+                    m_hal.uartWrite(cryptCmd, cryptCmdLen);
+
+                    uint8_t cryptResp[5] = {};
+                    const int cryptRespLen =
+                        m_hal.uartRead(cryptResp, sizeof(cryptResp), LORA_CFG_READ_TIMEOUT_MS);
+                    m_hal.hexDumpE22("E22 CRYPT gecici (C2/RAM) yaniti", cryptResp,
+                                     cryptRespLen > 0 ? cryptRespLen : 0);
+
+                    if (cryptRespLen > 0 &&
+                        e22_isErrorResponse(cryptResp, (size_t)cryptRespLen)) {
+                        ESP_LOGW(TAG, "E22 CRYPT gecici (C2/RAM) yazma reddedildi "
+                                      "(FF FF FF) — link calismayabilir");
+                    } else if (cryptRespLen <= 0) {
+                        ESP_LOGW(TAG, "E22 CRYPT gecici (C2/RAM) yaniti alinamadi — "
+                                      "link calismayabilir");
+                    } else {
+                        ESP_LOGI(TAG, "E22 CRYPT (0x%04X) gecici (C2/RAM) yazildi",
+                                 (unsigned)E22_CRYPT_KEY);
+                    }
                 } else {
                     ESP_LOGW(TAG, "E22 mevcut config sozlesmeden farkli — yaziliyor");
                 }

@@ -39,6 +39,17 @@ size_t e22_buildReadAllCommand(uint8_t* outBuf, size_t outBufSize);
 size_t e22_buildWriteCommand(const E22RegValues& regs, uint8_t* outBuf,
                               size_t outBufSize);
 
+// G7-FIX-2: "0xC2 <CRYPT_H_addr> 0x02 <CRYPT_H> <CRYPT_L>" KALICI OLMAYAN
+// (RAM) yazma komutu üretir — yalnızca CRYPT_H/L (2 byte), ADDH..REG3'e
+// dokunmaz. Read-before-write skip yolu (LoraLink::configureE22
+// needsWrite=false dalı) CRYPT'i hiç karşılaştırmadığı ve REG0..REG3
+// değişmediği sürece her boot'ta tetiklendiği için CRYPT hedefi
+// güncellense bile flash'a hiç yazılmıyor olabilir (bkz. Documents/
+// E22_CRYPT_SENKRON.md "G7-FIX-2"). Bu komut o dalda her boot'ta
+// gönderilerek CRYPT'in güç kesilene kadar güncel kalmasını garanti eder
+// — flash ömrünü etkilemez. outBufSize < 5 ise 0 döner.
+size_t e22_buildWriteCryptTempCommand(uint8_t* outBuf, size_t outBufSize);
+
 // Modülün "0xFF 0xFF 0xFF" hata çerçevesini gönderip göndermediğini
 // kontrol eder (komut reddedildi / modül hazır değil).
 bool e22_isErrorResponse(const uint8_t* resp, size_t respLen);

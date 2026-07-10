@@ -36,6 +36,18 @@ size_t e22_buildWriteCommand(const E22RegValues& regs, uint8_t* outBuf,
   return total;
 }
 
+size_t e22_buildWriteCryptTempCommand(uint8_t* outBuf, size_t outBufSize) {
+  const size_t total = 5;
+  if (outBuf == nullptr || outBufSize < total) return 0;
+
+  outBuf[0] = E22_CMD_WRITE_TEMP;
+  outBuf[1] = E22_REG_ADDR_CRYPT_H;
+  outBuf[2] = 0x02;
+  outBuf[3] = E22_CFG_CRYPT_H;
+  outBuf[4] = E22_CFG_CRYPT_L;
+  return total;
+}
+
 bool e22_isErrorResponse(const uint8_t* resp, size_t respLen) {
   if (resp == nullptr || respLen < 3) return false;
   return resp[0] == 0xFFU && resp[1] == 0xFFU && resp[2] == 0xFFU;
