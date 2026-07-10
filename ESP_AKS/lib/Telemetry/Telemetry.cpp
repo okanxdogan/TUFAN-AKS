@@ -22,6 +22,8 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
     // Format: TEL,ver,seq,rpm,motorVoltDeciV,motorErr,motorValid,motorTimeout,
     //         cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
     //         bmsValid,tsMs,spdX10
+    // `current` centi-Amper (0.01 A) birimindedir — UKS /100 ile A'e çevirir
+    // (birim sözleşmesi: Telemetry.h::sendStatus yorumu).
     char TEL_payload[192];
     const int TEL_payloadLength = snprintf(
         TEL_payload, sizeof(TEL_payload),

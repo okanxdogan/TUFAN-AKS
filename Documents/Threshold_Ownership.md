@@ -39,10 +39,10 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V` | 179 | 876 (87.6 V) | deciV | `VcuLogic::hasCriticalCondition` + `CanManager::handleLbBmsE000` → `CanParse::checkPackVoltageFault` | `TEL_bmsPackVoltageDeciV` | ✅ DOĞRULANDI | ✅ CANLI (iki bağımsız yol) |
 | `BMS_WARN_MAX_TEMP_C` | 309 | 55 | °C | `VcuLogic::isTempWarning` ← `hasWarningCondition` (>= semantiği; READY girişini de bloklar) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI (0xE001 byte[6:7], max(temp1,temp2)) | ✅ CANLI |
 | `BMS_CRITICAL_MAX_TEMP_C` | 310 | 70 | °C | `VcuLogic::isTempCritical` ← `hasCriticalCondition` (>= semantiği; READY/DRIVE'da otomatik FAULT, reset interlock'unu ve READY girişini bloklar) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI (0xE001 byte[6:7]) | ✅ CANLI |
-| `BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A` | 192 | 90 (0.9 A) | centi-A | `VcuLogic::isCurrentWarning` (saf yardımcı, birim testli — ama çağrılmıyor) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 193 | 100 (1.0 A) | centi-A | `VcuLogic::isCurrentCritical` (aynı durum) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 194 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
-| `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 195 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
+| `BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A` | 328 | 1100 (11.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (0xE000 byte[0:1] + saha gözlemi: şarjda +9.9 A) | ✅ CANLI |
+| `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 329 | 1300 (13.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` (READY girişini ve reset'i de bloklar) | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
+| `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 330 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (deşarjda −0.1…−1.5 A gözlendi) | ✅ CANLI |
+| `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 331 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_CRITICAL_MIN_CELL_VOLTAGE_MV` | 200 | 2500 | mV | *(yok)* | `TEL_bmsCellVoltageMinDeciMv` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
 | `BMS_CRITICAL_MAX_CELL_VOLTAGE_MV` | 201 | 3650 | mV | *(yok)* | `TEL_bmsCellVoltageMaxDeciMv` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
 
@@ -50,6 +50,13 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 > çıktısı (`TEL_bmsCurrentCentiA` = ham 0.1A × 10), eşikler ve `isCurrentWarning/
 > isCurrentCritical` hepsi bu ölçekte hizalıdır; eski "centi-mA" yorumu eşikleri
 > 1000× yüksek tutup aşırı akım korumasını kör bırakıyordu.
+>
+> **Saha doğrulaması ve kalibrasyon (Temmuz 2026):** Akım sinyali sahada
+> doğrulandı — şarjda +9.9 A, deşarjda gaza bağlı −0.1…−1.5 A; işaret
+> konvansiyonu + şarj / − deşarj (`BmsModel.h` ile uyumlu). Şarj eşikleri buna
+> göre 11/13 A'e kalibre edildi (eski 0.9/1.0 A gerçek şarj akımının çok
+> altındaydı ve her şarjda yanlış FAULT üretirdi). Nihai değerler BMS/şarj
+> cihazı spec'iyle **ekip onayı bekliyor** (CONFIG).
 
 Freshness/timeout eşikleri (aynı dosya, "CAN Freshness Thresholds" bölümü, satır 207 vd.)
 da pack/paket seviyesinde VCU kararını besler:
@@ -98,24 +105,26 @@ ama gerçek hücre verisi üzerinde değil.
 
 ## 4. Fiilen Ölü Eşikler ve Neden Önemli
 
-**Kısmen Ölü** (kaynak sinyal DOĞRULANDI, ancak karar mantığına BAĞLANMADI):
-akım eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`).
-0xE000'den başarıyla okunuyor ve `TelemetryData`'ya yazılıyor, fakat `VcuLogic`
-içindeki karar yardımcılarına (`isCurrentWarning/isCurrentCritical`) henüz
-bağlanmadı. Saha kalibrasyonu sonrasında bağlanması gerekir.
+**Kısmen Ölü** kategorisi BOŞALDI: hem sıcaklık hem akım eşikleri karar
+mantığına bağlandı ve artık CANLI —
 
-Sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`) bu
-kategoriden ÇIKTI: `VcuLogic::isTempWarning/isTempCritical` üzerinden
-`hasWarningCondition`/`hasCriticalCondition`'a bağlandı ve artık CANLI —
-55 °C ve üzeri UYARI, 70 °C ve üzeri FAULT (bkz. bölüm 2 tablosu).
+- Sıcaklık (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`):
+  `VcuLogic::isTempWarning/isTempCritical` üzerinden — 55 °C ve üzeri UYARI,
+  70 °C ve üzeri FAULT.
+- Akım (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`):
+  `VcuLogic::isCurrentWarning/isCurrentCritical` üzerinden — saha
+  kalibrasyonuyla (şarj 11/13 A, deşarj 9/15 A; ekip onayı bekliyor).
+
+(Bkz. bölüm 2 tablosu.)
 
 **Tamamen Ölü** (kaynak sinyal BİLİNMİYOR): hücre voltajı eşikleri
 (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, SystemConfig.h tarafındakiler). Bu
 eşikler `VcuLogic`'te çalıştırılmaz, çünkü kaynak sinyalin ID'si bulunamamıştır.
 
 **Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI),
-sıcaklık eşikleri (`TEL_bmsTempHighestC`, DOĞRULANDI, 55/70 °C) ve
-motor/BMS freshness timeout'ları.
+sıcaklık eşikleri (`TEL_bmsTempHighestC`, DOĞRULANDI, 55/70 °C), akım
+eşikleri (`TEL_bmsCurrentCentiA`, DOĞRULANDI, şarj 11/13 A / deşarj 9/15 A)
+ve motor/BMS freshness timeout'ları.
 
 ---
 

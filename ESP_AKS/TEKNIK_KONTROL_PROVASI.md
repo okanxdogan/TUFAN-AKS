@@ -56,8 +56,10 @@ BİLİNMİYOR. Sonuç:
 - Sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`=55 / `BMS_CRITICAL_MAX_TEMP_C`=70,
   SystemConfig.h) artık `VcuLogic::isTempWarning`/`isTempCritical` üzerinden
   karar mantığına BAĞLI — 55 °C ve üzeri UYARI, 70 °C ve üzeri FAULT. Akım
-  eşikleri ise henüz `isCurrentWarning`/`isCurrentCritical` üzerinden
-  bağlanmadı; saha kalibrasyonu beklenmektedir.
+  eşikleri de `isCurrentWarning`/`isCurrentCritical` üzerinden BAĞLI — saha
+  gözlemiyle (şarjda +9.9 A) kalibre edildi: şarj WARN 11 A / CRITICAL 13 A,
+  deşarj WARN 9 A / CRITICAL 15 A. Nihai değerler BMS/şarj cihazı spec'iyle
+  ekip onayı bekliyor (CONFIG).
 
 Boot logunda `ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor ...")` uyarısı
 bu durumu görünür kılar. Teknik kontrol sırasında sıcaklık, akım ve SoC'un

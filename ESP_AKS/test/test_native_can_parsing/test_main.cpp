@@ -23,7 +23,7 @@ extern void test_e000_dlc_too_short(void);
 extern void test_e000_parsing_nominal(void);
 extern void test_e000_parsing_negative_current(void);
 extern void test_e000_current_scale_round_trip(void);
-extern void test_e000_current_1A_trips_critical_threshold(void);
+extern void test_e000_current_13A_trips_critical_threshold(void);
 extern void test_e000_preserves_other_fields(void);
 
 // Lithium Balance c-BMS — CAN ID 0xE001 sıcaklık (DOĞRULANDI)
@@ -101,7 +101,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_e000_parsing_nominal);
     RUN_TEST(test_e000_parsing_negative_current);
     RUN_TEST(test_e000_current_scale_round_trip);
-    RUN_TEST(test_e000_current_1A_trips_critical_threshold);
+    RUN_TEST(test_e000_current_13A_trips_critical_threshold);
     RUN_TEST(test_e000_preserves_other_fields);
 
     // Lithium Balance c-BMS — CAN ID 0xE001 sıcaklık (DOĞRULANDI)

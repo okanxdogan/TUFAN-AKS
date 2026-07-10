@@ -114,6 +114,14 @@ UKS'in kabul aralığı dışına kesinlikle çıkmayan değerler üretmelidir.
 | `sysState` | `1..4` | Garantili | `CanManager::getTelemetryData()` içinde `TelemetrySanitize::sanitizeSystemState()` — aralık dışı değer `4` (FAULT) yapılır |
 | `soc` | `0..10000` | Garantili | `TelemetrySanitize::sanitizeSoc()` — `10000`'e clamp edilir |
 | `current` | `-2147483647..2147483647` (tam `int32_t` değil, `INT32_MIN` hariç) | Garantili | `TelemetrySanitize::sanitizeCurrent()` — tam `INT32_MIN` görülürse `INT32_MIN+1`'e kaydırılır |
+
+> **BİRİM SÖZLEŞMESİ — `current` (14. alan, 0-indeksli token; `TEL` = token 0):**
+> birim **centi-Amper (0.01 A)**, işaretli; kaynak `TEL_bmsCurrentCentiA`
+> (0xE000 byte[0:1], raw 0.1 A × 10). İşaret konvansiyonu **+ şarj / − deşarj**
+> (`BmsModel.h` ile aynı; saha gözlemi Temmuz 2026: şarjda +9.9 A → CSV `990`,
+> deşarjda gaza bağlı −0.1…−1.5 A → CSV `-10…-150`). **Monitor/UKS tarafı
+> göstermeden önce değeri /100 ile Amper'e çevirmelidir** (990 → `9.90 A`);
+> ham değeri doğrudan Amper sanmak 100× hataya yol açar.
 | `spd_x10` | `0..3000` | Garantili | `rpmToSpeedKmhX10()` içindeki clamp `TEL_SPD_X10_MAX` (=3000) sabitine göre yapılır (`Telemetry.h`) |
 | `cellVMax`/`cellVMin`, `packV` | `0..65535` (`uint16_t` tip sınırı) | Garantili (tip sınırı = kabul aralığı) | Ek işlem gerekmez |
 | `tempH`/`tempL` | `-128..127` (`int8_t` tip sınırı) | Garantili (tip sınırı = kabul aralığı) | Ek işlem gerekmez |

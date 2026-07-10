@@ -52,11 +52,18 @@ void test_reset_interlock_warning_temp_does_not_block(void) {
     TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 
-// DOĞRULANMAMIŞ sinyal (akım) karar mantığına bağlı olmadığı için reset'i
-// BLOKLAMAMALI (Ek B güven kuralı).
-void test_reset_interlock_unverified_current_does_not_block(void) {
+// Akım artık karar mantığına BAĞLI: kritik akım (deşarj ≥15 A / şarj ≥13 A)
+// sürerken reset REDDEDİLMELİ; nominal şarj akımı (9.9 A saha gözlemi)
+// reset'i bloklamaz.
+void test_reset_interlock_critical_current_blocks(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiA = -2000;  // 20 A — sinyal DOĞRULANMADI — karar dışı
+    d.TEL_bmsCurrentCentiA = -2000;  // 20 A deşarj — kritik, reset reddedilir
+    TEST_ASSERT_FALSE(isResetInterlockSatisfied(d, VcuState::FAULT));
+}
+
+void test_reset_interlock_nominal_charge_current_does_not_block(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsCurrentCentiA = 990;  // 9.9 A şarj — eşiklerin altında, serbest
     TEST_ASSERT_TRUE(isResetInterlockSatisfied(d, VcuState::FAULT));
 }
 

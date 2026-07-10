@@ -12,18 +12,19 @@ using VcuLogic::VcuState;
 
 // ---------------------------------------------------------------------------
 // Birim: centi-Amper (0.01 A) — parser çıktısıyla aynı ölçek (G5 sonrası).
-// isCurrentCritical — şarj tarafı (eşik: BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A = 100)
+// isCurrentCritical — şarj tarafı (eşik: BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A
+// = 1300 = 13.0 A; saha kalibrasyonu, 9.9 A nominal şarjın üstünde marj)
 // ---------------------------------------------------------------------------
 void test_isCurrentCritical_charge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentCritical(90));   // 0.9 A — altında
+    TEST_ASSERT_FALSE(isCurrentCritical(1290));  // 12.9 A — altında
 }
 
 void test_isCurrentCritical_charge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(100));   // 1.0 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentCritical(1300));   // 13.0 A — eşikte
 }
 
 void test_isCurrentCritical_charge_above_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentCritical(110));   // 1.1 A — üstünde
+    TEST_ASSERT_TRUE(isCurrentCritical(1400));   // 14.0 A — üstünde
 }
 
 void test_isCurrentCritical_zero_is_safe(void) {
@@ -46,14 +47,14 @@ void test_isCurrentCritical_discharge_above_threshold(void) {
 }
 
 // ---------------------------------------------------------------------------
-// isCurrentWarning — şarj / deşarj (eşikler: 90 / -900 centi-A = 0.9 A / -9.0 A)
+// isCurrentWarning — şarj / deşarj (eşikler: 1100 / -900 centi-A = 11.0 A / -9.0 A)
 // ---------------------------------------------------------------------------
 void test_isCurrentWarning_charge_below_threshold(void) {
-    TEST_ASSERT_FALSE(isCurrentWarning(80));   // 0.8 A
+    TEST_ASSERT_FALSE(isCurrentWarning(1090)); // 10.9 A
 }
 
 void test_isCurrentWarning_charge_at_threshold(void) {
-    TEST_ASSERT_TRUE(isCurrentWarning(90));    // 0.9 A — eşikte
+    TEST_ASSERT_TRUE(isCurrentWarning(1100));  // 11.0 A — eşikte
 }
 
 void test_isCurrentWarning_discharge_below_threshold(void) {
@@ -98,19 +99,38 @@ void test_temp_at_crit_threshold_is_critical(void) {
 }
 
 // ---------------------------------------------------------------------------
-// DOĞRULANMAMIŞ sinyaller karar mantığına BAĞLI DEĞİL (Ek B güven kuralı):
-// akım alanı ölçek/saha kalibrasyonu yapılmadığı için hasWarning/
-// hasCriticalCondition ona bakmaz — aşırı değerler bile koşul tetiklememeli.
-// Kalibrasyon tamamlanınca bu test gerçek eşik testlerine dönüştürülecek.
+// Akım artık karar mantığına BAĞLI (sinyal DOĞRULANDI — saha gözlemi:
+// şarjda +9.9 A, deşarjda −0.1…−1.5 A; işaret + şarj / − deşarj).
+// Eşikler: şarj WARN 11 A / CRIT 13 A, deşarj WARN 9 A / CRIT 15 A.
 // ---------------------------------------------------------------------------
-void test_unverified_current_not_wired(void) {
+// REGRESYON: sahada gözlenen nominal 9.9 A şarj akımı (990 centi-A) hiçbir
+// koşul tetiklememeli — normal şarj FAULT'a/uyarıya yol açmamalı.
+void test_nominal_charge_current_no_fault(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsCurrentCentiA = -2000;  // 20 A — ama sinyal DOĞRULANMADI
+    d.TEL_bmsCurrentCentiA = 990;  // 9.9 A şarj — saha nominali
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
-    d.TEL_bmsCurrentCentiA = 120;    // 1.2 A şarj
-    TEST_ASSERT_FALSE(hasWarningCondition(d));
+}
+
+void test_charge_current_at_warn_is_warning_only(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsCurrentCentiA = 1100;  // 11.0 A şarj — WARN eşiğinde
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_charge_current_at_crit_is_critical(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsCurrentCentiA = 1300;  // 13.0 A şarj — CRIT eşiğinde
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_discharge_current_at_crit_is_critical(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsCurrentCentiA = -2000;  // 20 A deşarj — CRIT (15 A) üstünde
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +273,3 @@ void test_baseline_clean_data_no_conditions(void) {
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::DRIVE));
 }
 
-// NOT: "Akım eşikleri uçtan uca" testleri kaldırıldı — akım sinyali
-// DOĞRULANMADIĞI için karar mantığına bağlı değil; kapsam
-// test_unverified_current_not_wired ile ters yönde korunuyor.

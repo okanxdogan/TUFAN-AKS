@@ -278,10 +278,10 @@ static_assert(
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
-// byte[2:3]), en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness
-// (E000 timeout). Akım/hücre voltajı/SOC kaynak sinyalleri henüz
-// doğrulanmadığı/kalibre edilmediği için aşağıdaki ilgili eşikler YER
-// TUTUCUDUR ve karar mantığına BAĞLI DEĞİLDİR.
+// byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), en yüksek hücre
+// sıcaklığı (0xE001 byte[6:7]) + BMS freshness (E000 timeout). Hücre
+// voltajı/SOC kaynak sinyalleri henüz doğrulanmadığı için ilgili eşikler
+// YER TUTUCUDUR ve karar mantığına BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
 // Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
@@ -313,10 +313,20 @@ static_assert(
 // eşikler parser ölçeğiyle uçtan uca hizalı; aşırı akım koruması gerçek
 // değerlerde tetiklenebilir (G5 düzeltmesi — eski centi-mA yorumu 1000× kör
 // bırakıyordu).
-// Not: CAN_BMS_CURRENT akımı doğrulanmıştır ve TEL_bmsCurrentCentiA
-// üzerinden erişilebilir.
-#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A       90    // 0.9 A
-#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A   100   // 1.0 A
+//
+// Kaynak sinyal DOĞRULANDI (0xE000 byte[0:1] + saha gözlemi, Temmuz 2026):
+// şarjda +9.9 A, deşarjda gaza bağlı −0.1…−1.5 A gözlendi; işaret
+// konvansiyonu + şarj / − deşarj (BmsModel.h ile uyumlu). KARAR MANTIĞINA
+// BAĞLI: VcuLogic::isCurrentWarning/isCurrentCritical (>= semantiği)
+// hasWarningCondition/hasCriticalCondition içinden çağrılır.
+//
+// CONFIG — şarj eşikleri saha verisine göre kalibre edildi: 9.9 A nominal
+// şarj akımının üstünde marjla WARN 11 A / CRITICAL 13 A önerildi. Nihai
+// değerler BMS/şarj cihazı spec'iyle EKİP ONAYI BEKLİYOR. Deşarj eşikleri
+// (9/15 A) saha gözlemindeki −1.5 A tepe değerin çok üstünde; onlar da aynı
+// onay turunda gözden geçirilmeli.
+#define BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A       1100  // 11.0 A
+#define BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A   1300  // 13.0 A
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi

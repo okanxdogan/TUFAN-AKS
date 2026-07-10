@@ -25,8 +25,12 @@ extern void test_temp_at_warn_threshold_is_warning(void);
 extern void test_temp_below_crit_is_warning_only(void);
 extern void test_temp_at_crit_threshold_is_critical(void);
 
-// Faz 1 — doğrulanmamış sinyaller karar dışı (Ek B)
-extern void test_unverified_current_not_wired(void);
+// Faz 1 — akım eşikleri uçtan uca (DOĞRULANDI + bağlandı; şarj 11/13 A,
+// deşarj 9/15 A) + 9.9 A nominal şarj regresyonu
+extern void test_nominal_charge_current_no_fault(void);
+extern void test_charge_current_at_warn_is_warning_only(void);
+extern void test_charge_current_at_crit_is_critical(void);
+extern void test_discharge_current_at_crit_is_critical(void);
 
 // Faz 1 — voltaj eşikleri
 extern void test_warning_voltage_above_warn_low(void);
@@ -65,7 +69,8 @@ extern void test_reset_interlock_critical_temp_blocks(void);
 extern void test_reset_interlock_warning_temp_does_not_block(void);
 extern void test_reset_interlock_critical_voltage_low_blocks(void);
 extern void test_reset_interlock_critical_voltage_high_blocks(void);
-extern void test_reset_interlock_unverified_current_does_not_block(void);
+extern void test_reset_interlock_critical_current_blocks(void);
+extern void test_reset_interlock_nominal_charge_current_does_not_block(void);
 extern void test_reset_interlock_motor_timeout_in_fault_blocks(void);
 extern void test_reset_interlock_bms_timeout_in_fault_blocks(void);
 extern void test_reset_interlock_warning_level_passes(void);
@@ -140,8 +145,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_temp_below_crit_is_warning_only);
     RUN_TEST(test_temp_at_crit_threshold_is_critical);
 
-    // Faz 1 — doğrulanmamış akım karar dışı + pack voltajı
-    RUN_TEST(test_unverified_current_not_wired);
+    // Faz 1 — akım eşikleri uçtan uca + 9.9 A regresyon + pack voltajı
+    RUN_TEST(test_nominal_charge_current_no_fault);
+    RUN_TEST(test_charge_current_at_warn_is_warning_only);
+    RUN_TEST(test_charge_current_at_crit_is_critical);
+    RUN_TEST(test_discharge_current_at_crit_is_critical);
 
     RUN_TEST(test_warning_voltage_above_warn_low);
     RUN_TEST(test_warning_voltage_at_warn_low);
@@ -178,7 +186,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_reset_interlock_warning_temp_does_not_block);
     RUN_TEST(test_reset_interlock_critical_voltage_low_blocks);
     RUN_TEST(test_reset_interlock_critical_voltage_high_blocks);
-    RUN_TEST(test_reset_interlock_unverified_current_does_not_block);
+    RUN_TEST(test_reset_interlock_critical_current_blocks);
+    RUN_TEST(test_reset_interlock_nominal_charge_current_does_not_block);
     RUN_TEST(test_reset_interlock_motor_timeout_in_fault_blocks);
     RUN_TEST(test_reset_interlock_bms_timeout_in_fault_blocks);
     RUN_TEST(test_reset_interlock_warning_level_passes);

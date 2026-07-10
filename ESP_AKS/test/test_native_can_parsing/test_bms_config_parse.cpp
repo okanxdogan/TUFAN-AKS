@@ -73,7 +73,8 @@ void test_e000_parsing_negative_current(void) {
 // =========================================================================
 // G5 ölçek round-trip: parser çıktısı (centi-A) ile SystemConfig eşikleri
 // (centi-A) UÇTAN UCA hizalı olmalı. Eşik yorumuna değil, parser'ın gerçek
-// ölçeğine bağlı test — 1.0 A kritik eşiği parser çıktısı 100 ile tetiklenir.
+// ölçeğine bağlı test — 13.0 A kritik şarj eşiği parser çıktısı 1300 ile
+// tetiklenir (saha kalibrasyonu: nominal şarj 9.9 A).
 // =========================================================================
 void test_e000_current_scale_round_trip(void) {
     // raw=10 (0.1A birimli) -> 10 * 0.1A = 1.0 A -> parser 100 centi-A
@@ -89,21 +90,24 @@ void test_e000_current_scale_round_trip(void) {
     TEST_ASSERT_EQUAL_INT32(-100, outn.TEL_bmsCurrentCentiA);  // -1.0 A
 }
 
-void test_e000_current_1A_trips_critical_threshold(void) {
-    // 1.0 A şarj: raw=10 -> parser 100 centi-A. BMS_CRITICAL_MAX_CHARGE_
-    // CURRENT_CENTI_A = 100 olduğundan kritik eşiği GERÇEKTEN tetikler.
-    twai_message_t m = makeE000Msg(8, 0x00, 0x0A, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+void test_e000_current_13A_trips_critical_threshold(void) {
+    // 13.0 A şarj: raw=130 (0x00 0x82) -> parser 1300 centi-A.
+    // BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A = 1300 (saha kalibrasyonu)
+    // olduğundan kritik eşiği GERÇEKTEN tetikler.
+    twai_message_t m = makeE000Msg(8, 0x00, 0x82, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
     TelemetryData out{};
     TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(m, out));
     TEST_ASSERT_EQUAL_INT32(BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A,
                             out.TEL_bmsCurrentCentiA);
     TEST_ASSERT_TRUE(VcuLogic::isCurrentCritical(out.TEL_bmsCurrentCentiA));
 
-    // Kontrast: 0.9 A (raw=9) -> parser 90 centi-A, kritik eşiğin ALTINDA.
-    twai_message_t mb = makeE000Msg(8, 0x00, 0x09, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
+    // Kontrast: sahada gözlenen nominal 9.9 A şarj (raw=99 = 0x63) ->
+    // parser 990 centi-A — WARN (1100) ve CRIT (1300) eşiklerinin ALTINDA.
+    twai_message_t mb = makeE000Msg(8, 0x00, 0x63, 0x02, 0x0E, 0x27, 0x10, 0x00, 0x00);
     TelemetryData outb{};
     TEST_ASSERT_TRUE(CanParse::parseLbBmsE000(mb, outb));
-    TEST_ASSERT_EQUAL_INT32(90, outb.TEL_bmsCurrentCentiA);
+    TEST_ASSERT_EQUAL_INT32(990, outb.TEL_bmsCurrentCentiA);
+    TEST_ASSERT_FALSE(VcuLogic::isCurrentWarning(outb.TEL_bmsCurrentCentiA));
     TEST_ASSERT_FALSE(VcuLogic::isCurrentCritical(outb.TEL_bmsCurrentCentiA));
 }
 

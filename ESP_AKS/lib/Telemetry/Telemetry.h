@@ -56,6 +56,14 @@ class Telemetry {
     // motorTimeout,cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
     // bmsValid,tsMs,spdX10\r\n (19 alan; UKS Core/Src/telemetry.c
     // Decode_Line ile sozlesmeli, bkz. tools/e2e/contract.py).
+    //
+    // BIRIM SOZLESMESI — `current` (14. alan, 0-indeksli token; "TEL" = 0):
+    // centi-Amper (0.01 A), isaretli — kaynak TEL_bmsCurrentCentiA, isaret
+    // konvansiyonu + sarj / − desarj (BmsModel.h ile ayni). Ornek: sahada
+    // gozlenen 9.9 A sarj CSV'de `990` olarak gider. Monitor/UKS tarafi
+    // gosterirken degeri /100 ile Amper'e CEVIRMELIDIR (990 -> 9.90 A);
+    // ham degeri A sanmak 100x hataya yol acar. Bkz.
+    // Documents/UKS_LoRa_Protocol.md "Alan Araliklari" bolumu.
     void sendStatus(const TelemetryData& TEL_data);
 
    private:
