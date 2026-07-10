@@ -65,19 +65,44 @@ void test_isCurrentWarning_discharge_at_threshold(void) {
 }
 
 // ---------------------------------------------------------------------------
-// DOĞRULANMAMIŞ sinyaller karar mantığına BAĞLI DEĞİL (Ek B güven kuralı):
-// sıcaklık ve akım alanları hiçbir CAN ID'den parse edilmediği için
-// hasWarning/hasCriticalCondition bunlara bakmaz — aşırı değerler bile
-// koşul tetiklememeli. Kaynak sinyal + ölçek doğrulanınca bu testler
-// gerçek eşik testlerine dönüştürülecek.
+// Sıcaklık eşikleri (politika: ≥55 °C UYARI, ≥70 °C FAULT; >= semantiği).
+// Kaynak sinyal DOĞRULANDI (0xE001 → TEL_bmsTempHighestC) ve
+// hasWarning/hasCriticalCondition'a BAĞLI — sınır değerleri kilitle.
 // ---------------------------------------------------------------------------
-void test_unverified_temp_not_wired(void) {
+void test_temp_below_warn_is_clean(void) {
     TelemetryData d = makeTelemetryDataValid();
-    d.TEL_bmsTempHighestC = 99;  // eşiklerin çok üstünde ama sinyal DOĞRULANMADI
+    d.TEL_bmsTempHighestC = 54;  // WARN eşiğinin 1 °C altı — temiz
     TEST_ASSERT_FALSE(hasWarningCondition(d));
     TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
 }
 
+void test_temp_at_warn_threshold_is_warning(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTempHighestC = 55;  // eşikte — WARN tetikler (>=), kritik değil
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_temp_below_crit_is_warning_only(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTempHighestC = 69;  // CRIT eşiğinin 1 °C altı — hâlâ yalnız WARN
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_temp_at_crit_threshold_is_critical(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTempHighestC = 70;  // eşikte — FAULT tetikler (>=)
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
+}
+
+// ---------------------------------------------------------------------------
+// DOĞRULANMAMIŞ sinyaller karar mantığına BAĞLI DEĞİL (Ek B güven kuralı):
+// akım alanı ölçek/saha kalibrasyonu yapılmadığı için hasWarning/
+// hasCriticalCondition ona bakmaz — aşırı değerler bile koşul tetiklememeli.
+// Kalibrasyon tamamlanınca bu test gerçek eşik testlerine dönüştürülecek.
+// ---------------------------------------------------------------------------
 void test_unverified_current_not_wired(void) {
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_bmsCurrentCentiA = -2000;  // 20 A — ama sinyal DOĞRULANMADI

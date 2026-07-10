@@ -53,9 +53,11 @@ BİLİNMİYOR. Sonuç:
 - `TEL_bmsSystemState` hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
   bunu `4` (FAULT) yapar — **UKS ekranında BMS her zaman FAULT görünür**,
   gerçek bir arıza olmasa bile.
-- VcuLogic içindeki `BMS_WARN_MAX_TEMP_C` / `BMS_CRITICAL_MAX_TEMP_C` (SystemConfig.h)
-  ve akım eşikleri henüz `isTemperatureWarning` / `isCurrentCritical`
-  kısımlarına entegre edilmedi. Saha kalibrasyonu beklenmektedir.
+- Sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`=55 / `BMS_CRITICAL_MAX_TEMP_C`=70,
+  SystemConfig.h) artık `VcuLogic::isTempWarning`/`isTempCritical` üzerinden
+  karar mantığına BAĞLI — 55 °C ve üzeri UYARI, 70 °C ve üzeri FAULT. Akım
+  eşikleri ise henüz `isCurrentWarning`/`isCurrentCritical` üzerinden
+  bağlanmadı; saha kalibrasyonu beklenmektedir.
 
 Boot logunda `ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor ...")` uyarısı
 bu durumu görünür kılar. Teknik kontrol sırasında sıcaklık, akım ve SoC'un

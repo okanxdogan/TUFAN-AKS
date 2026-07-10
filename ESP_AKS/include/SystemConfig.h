@@ -278,8 +278,9 @@ static_assert(
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
-// byte[2:3]) + BMS freshness (E000 timeout). Akım/sıcaklık/hücre voltajı/SOC
-// kaynak sinyalleri henüz doğrulanmadığı için aşağıdaki ilgili eşikler YER
+// byte[2:3]), en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness
+// (E000 timeout). Akım/hücre voltajı/SOC kaynak sinyalleri henüz
+// doğrulanmadığı/kalibre edilmediği için aşağıdaki ilgili eşikler YER
 // TUTUCUDUR ve karar mantığına BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
@@ -297,11 +298,14 @@ static_assert(
 #define BMS_WARN_MAX_PACK_VOLTAGE_DECI_V 852      // 85.2 V (3.55 V/hücre)
 #define BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V 876  // 87.6 V (3.65 V/hücre — spec maks)
 
-// Sıcaklık eşikleri — kaynak sinyal DOĞRULANDI (0xE001 byte[6:7]) ve
-// TEL_bmsTempHighestC'ye parse ediliyor. ANCAK bu eşikler henüz
-// VcuLogic karar mantığına BAĞLANMAMIŞTIR (hasWarningCondition /
-// hasCriticalCondition içinde temp kontrolü yok). Bağlanana kadar
-// YER TUTUCUDUR.
+// Sıcaklık eşikleri — kaynak sinyal DOĞRULANDI (0xE001 byte[6:7],
+// max(temp1,temp2)) ve TEL_bmsTempHighestC'ye parse ediliyor. KARAR
+// MANTIĞINA BAĞLI: VcuLogic::isTempWarning/isTempCritical (>= semantiği)
+// hasWarningCondition/hasCriticalCondition içinden çağrılır — 55 °C ve
+// üzeri UYARI, 70 °C ve üzeri FAULT (sistem kendini kapatır). Kritik
+// sıcaklık isReadyEntryPermitted üzerinden READY girişini de bloklar.
+// HMI katmanı (BmsAlgo.h BMS_TEMP_OVERTEMP_WARN_C/CRIT_C) aynı 55/70
+// değerlerine hizalıdır.
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
 // Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı

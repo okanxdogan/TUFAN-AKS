@@ -10,7 +10,7 @@ BmsPackData makeUniformPack(uint16_t cellMv) {
     d.isValid = true;
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         d.cellVoltageMv[i] = cellMv;
-        d.cellTempC[i] = 25;  // nominal — WARN(50)/CRIT(60) eşiklerinin altında
+        d.cellTempC[i] = 25;  // nominal — WARN(55)/CRIT(70) eşiklerinin altında
     }
     return d;
 }

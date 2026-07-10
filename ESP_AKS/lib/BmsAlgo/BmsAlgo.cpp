@@ -111,17 +111,20 @@ BmsComputed computePack(const BmsPackData& in) {
     }
 
     // --- Uyarı seviyesi: en kötü hücre/sıcaklık koşulu kazanır ---
+    // Sıcaklık karşılaştırması >= : VCU katmanıyla (isTempWarning/isTempCritical)
+    // aynı anda tetiklenir — tam 70 °C'de VCU FAULT'a geçerken ekran da
+    // CRITICAL gösterir. Hücre voltajı strictly < / > semantiğini korur.
     uint8_t level = BMS_WARN_OK;
     // CRITICAL koşulları
     if (minMv < BMS_CELL_UNDERVOLT_CRIT_MV ||
         maxMv > BMS_CELL_OVERVOLT_CRIT_MV ||
-        tMax > BMS_TEMP_OVERTEMP_CRIT_C) {
+        tMax >= BMS_TEMP_OVERTEMP_CRIT_C) {
         level = BMS_WARN_CRITICAL;
     }
     // WARNING koşulları (yalnız henüz CRITICAL değilse)
     else if (minMv < BMS_CELL_UNDERVOLT_WARN_MV ||
              maxMv > BMS_CELL_OVERVOLT_WARN_MV ||
-             tMax > BMS_TEMP_OVERTEMP_WARN_C) {
+             tMax >= BMS_TEMP_OVERTEMP_WARN_C) {
         level = BMS_WARN_WARNING;
     }
     c.warningLevel = level;

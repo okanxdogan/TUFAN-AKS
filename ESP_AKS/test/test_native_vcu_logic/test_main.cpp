@@ -19,8 +19,13 @@ extern void test_isCurrentWarning_charge_at_threshold(void);
 extern void test_isCurrentWarning_discharge_below_threshold(void);
 extern void test_isCurrentWarning_discharge_at_threshold(void);
 
+// Faz 1 — sıcaklık eşikleri (≥55 WARN / ≥70 FAULT, hasWarning/hasCritical'a bağlı)
+extern void test_temp_below_warn_is_clean(void);
+extern void test_temp_at_warn_threshold_is_warning(void);
+extern void test_temp_below_crit_is_warning_only(void);
+extern void test_temp_at_crit_threshold_is_critical(void);
+
 // Faz 1 — doğrulanmamış sinyaller karar dışı (Ek B)
-extern void test_unverified_temp_not_wired(void);
 extern void test_unverified_current_not_wired(void);
 
 // Faz 1 — voltaj eşikleri
@@ -56,7 +61,8 @@ extern void test_baseline_clean_data_no_conditions(void);
 extern void test_reset_interlock_clean_baseline_passes(void);
 extern void test_reset_interlock_motor_error_blocks(void);
 extern void test_reset_interlock_bms_error_blocks(void);
-extern void test_reset_interlock_unverified_temp_does_not_block(void);
+extern void test_reset_interlock_critical_temp_blocks(void);
+extern void test_reset_interlock_warning_temp_does_not_block(void);
 extern void test_reset_interlock_critical_voltage_low_blocks(void);
 extern void test_reset_interlock_critical_voltage_high_blocks(void);
 extern void test_reset_interlock_unverified_current_does_not_block(void);
@@ -78,6 +84,7 @@ extern void test_idle_to_fault_on_fault_event(void);
 extern void test_ready_to_fault_on_fault_event(void);
 extern void test_fault_pending_processed_when_queue_full(void);
 extern void test_ready_to_fault_on_critical_telemetry(void);
+extern void test_ready_to_fault_on_critical_temp(void);
 extern void test_drive_to_fault_on_bms_timeout(void);
 extern void test_fault_to_idle_on_reset_when_clean(void);
 extern void test_emergency_stop_to_idle_on_reset_when_clean(void);
@@ -127,10 +134,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_isCurrentWarning_discharge_below_threshold);
     RUN_TEST(test_isCurrentWarning_discharge_at_threshold);
 
-    // Faz 1 — sıcaklık
+    // Faz 1 — sıcaklık eşikleri (sınır değerleri: 54/55/69/70)
+    RUN_TEST(test_temp_below_warn_is_clean);
+    RUN_TEST(test_temp_at_warn_threshold_is_warning);
+    RUN_TEST(test_temp_below_crit_is_warning_only);
+    RUN_TEST(test_temp_at_crit_threshold_is_critical);
 
-    // Faz 1 — pack voltajı
-    RUN_TEST(test_unverified_temp_not_wired);
+    // Faz 1 — doğrulanmamış akım karar dışı + pack voltajı
     RUN_TEST(test_unverified_current_not_wired);
 
     RUN_TEST(test_warning_voltage_above_warn_low);
@@ -164,7 +174,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_reset_interlock_clean_baseline_passes);
     RUN_TEST(test_reset_interlock_motor_error_blocks);
     RUN_TEST(test_reset_interlock_bms_error_blocks);
-    RUN_TEST(test_reset_interlock_unverified_temp_does_not_block);
+    RUN_TEST(test_reset_interlock_critical_temp_blocks);
+    RUN_TEST(test_reset_interlock_warning_temp_does_not_block);
     RUN_TEST(test_reset_interlock_critical_voltage_low_blocks);
     RUN_TEST(test_reset_interlock_critical_voltage_high_blocks);
     RUN_TEST(test_reset_interlock_unverified_current_does_not_block);
@@ -186,6 +197,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ready_to_fault_on_fault_event);
     RUN_TEST(test_fault_pending_processed_when_queue_full);
     RUN_TEST(test_ready_to_fault_on_critical_telemetry);
+    RUN_TEST(test_ready_to_fault_on_critical_temp);
     RUN_TEST(test_drive_to_fault_on_bms_timeout);
     RUN_TEST(test_fault_to_idle_on_reset_when_clean);
     RUN_TEST(test_emergency_stop_to_idle_on_reset_when_clean);

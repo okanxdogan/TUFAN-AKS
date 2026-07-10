@@ -223,6 +223,24 @@ void test_ready_to_fault_on_critical_telemetry(void) {
                           static_cast<int>(VcuLogic::getState()));
 }
 
+// READY'deyken kritik sıcaklık (≥70 °C, BMS_CRITICAL_MAX_TEMP_C) gelirse
+// aynı otomatik yol FAULT'a alır — sistem kendini kapatır.
+void test_ready_to_fault_on_critical_temp(void) {
+    primeIdle();
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsTempHighestC = 70;  // tam eşikte — >= semantiği FAULT tetikler
+    VcuLogic::setTelemetryData(d);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+}
+
 void test_drive_to_fault_on_bms_timeout(void) {
     primeIdle();
     VcuLogic::postEvent(VcuEvent::START_REQUEST);

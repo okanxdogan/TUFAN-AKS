@@ -37,8 +37,8 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V` | 177 | 600 (60.0 V) | deciV | `VcuLogic::hasCriticalCondition` + `CanManager::handleLbBmsE000` → `CanParse::checkPackVoltageFault` | `TEL_bmsPackVoltageDeciV` | ✅ DOĞRULANDI | ✅ CANLI (iki bağımsız yol) |
 | `BMS_WARN_MAX_PACK_VOLTAGE_DECI_V` | 178 | 852 (85.2 V) | deciV | `VcuLogic::hasWarningCondition` | `TEL_bmsPackVoltageDeciV` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V` | 179 | 876 (87.6 V) | deciV | `VcuLogic::hasCriticalCondition` + `CanManager::handleLbBmsE000` → `CanParse::checkPackVoltageFault` | `TEL_bmsPackVoltageDeciV` | ✅ DOĞRULANDI | ✅ CANLI (iki bağımsız yol) |
-| `BMS_WARN_MAX_TEMP_C` | 185 | 55 | °C | *(yok)* | `TEL_bmsTempHighestC` | ❌ UNVERIFIED — kaynak ID bilinmiyor, hep 0 | ❌ ÖLÜ |
-| `BMS_CRITICAL_MAX_TEMP_C` | 186 | 70 | °C | *(yok)* | `TEL_bmsTempHighestC` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ |
+| `BMS_WARN_MAX_TEMP_C` | 309 | 55 | °C | `VcuLogic::isTempWarning` ← `hasWarningCondition` (>= semantiği; READY girişini de bloklar) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI (0xE001 byte[6:7], max(temp1,temp2)) | ✅ CANLI |
+| `BMS_CRITICAL_MAX_TEMP_C` | 310 | 70 | °C | `VcuLogic::isTempCritical` ← `hasCriticalCondition` (>= semantiği; READY/DRIVE'da otomatik FAULT, reset interlock'unu ve READY girişini bloklar) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI (0xE001 byte[6:7]) | ✅ CANLI |
 | `BMS_WARN_MAX_CHARGE_CURRENT_CENTI_A` | 192 | 90 (0.9 A) | centi-A | `VcuLogic::isCurrentWarning` (saf yardımcı, birim testli — ama çağrılmıyor) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
 | `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 193 | 100 (1.0 A) | centi-A | `VcuLogic::isCurrentCritical` (aynı durum) | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
 | `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 194 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` | `TEL_bmsCurrentCentiA` | ❌ UNVERIFIED — hep 0 | ❌ ÖLÜ (bağlanmamış) |
@@ -77,10 +77,10 @@ VCU karar mantığına hiç girmiyor.
 | `BMS_SOC_FULL_MV` | 52 | 3650 | mV | SoC %100 referansı — LiFePO4 spec maks (3.65 V) |
 | `BMS_CELL_UNDERVOLT_CRIT_MV` | 66 | 2500 | mV | Hücre CRITICAL alt sınır — LiFePO4 spec min |
 | `BMS_CELL_OVERVOLT_CRIT_MV` | 67 | 3650 | mV | Hücre CRITICAL üst sınır — LiFePO4 spec maks |
-| `BMS_TEMP_OVERTEMP_CRIT_C` | 68 | 60 | °C | Hücre CRITICAL sıcaklık — kimyadan bağımsız, DEĞİŞMEDİ |
+| `BMS_TEMP_OVERTEMP_CRIT_C` | 75 | 70 | °C | Hücre CRITICAL sıcaklık — sistem politikasıyla (70 °C FAULT) hem değer hem semantik (>=) olarak hizalı: tam 70 °C'de ekran CRITICAL gösterirken VCU FAULT'a geçer |
 | `BMS_CELL_UNDERVOLT_WARN_MV` | 75 | 2800 | mV | Hücre WARNING alt sınır — CRIT'e 300 mV marj |
 | `BMS_CELL_OVERVOLT_WARN_MV` | 76 | 3550 | mV | Hücre WARNING üst sınır — CRIT'e 100 mV marj |
-| `BMS_TEMP_OVERTEMP_WARN_C` | 77 | 50 | °C | Hücre WARNING sıcaklık — kimyadan bağımsız, DEĞİŞMEDİ |
+| `BMS_TEMP_OVERTEMP_WARN_C` | 84 | 55 | °C | Hücre WARNING sıcaklık — sistem politikasıyla (55 °C UYARI) hem değer hem semantik (>=) olarak hizalı |
 
 Değerler 24S LiFePO4 spec'ine (2.50–3.65 V/hücre) uyarlanmıştır — bkz. bölüm 5.
 CRITICAL uçları (2500/3650 mV) SystemConfig.h pack CRITICAL eşikleriyle
@@ -99,17 +99,22 @@ ama gerçek hücre verisi üzerinde değil.
 ## 4. Fiilen Ölü Eşikler ve Neden Önemli
 
 **Kısmen Ölü** (kaynak sinyal DOĞRULANDI, ancak karar mantığına BAĞLANMADI):
-sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`) ve akım
-eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`). 0xE000 ve
-0xE001'den başarıyla okunuyor ve `TelemetryData`'ya yazılıyor. Fakat `VcuLogic`
-içindeki karar yardımcılarına henüz bağlanmadılar. Saha kalibrasyonu sonrasında
-birlikte bağlanmaları gerekir.
+akım eşikleri (`BMS_WARN_/CRITICAL_MAX_CHARGE_/DISCHARGE_CURRENT_CENTI_A`).
+0xE000'den başarıyla okunuyor ve `TelemetryData`'ya yazılıyor, fakat `VcuLogic`
+içindeki karar yardımcılarına (`isCurrentWarning/isCurrentCritical`) henüz
+bağlanmadı. Saha kalibrasyonu sonrasında bağlanması gerekir.
+
+Sıcaklık eşikleri (`BMS_WARN_MAX_TEMP_C`, `BMS_CRITICAL_MAX_TEMP_C`) bu
+kategoriden ÇIKTI: `VcuLogic::isTempWarning/isTempCritical` üzerinden
+`hasWarningCondition`/`hasCriticalCondition`'a bağlandı ve artık CANLI —
+55 °C ve üzeri UYARI, 70 °C ve üzeri FAULT (bkz. bölüm 2 tablosu).
 
 **Tamamen Ölü** (kaynak sinyal BİLİNMİYOR): hücre voltajı eşikleri
 (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, SystemConfig.h tarafındakiler). Bu
 eşikler `VcuLogic`'te çalıştırılmaz, çünkü kaynak sinyalin ID'si bulunamamıştır.
 
-**Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI) ve
+**Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI),
+sıcaklık eşikleri (`TEL_bmsTempHighestC`, DOĞRULANDI, 55/70 °C) ve
 motor/BMS freshness timeout'ları.
 
 ---
@@ -133,9 +138,10 @@ varsayımıyla yazılmıştı:
 | `BMS_CELL_UNDERVOLT_WARN_MV` | 3200 mV | NMC WARN alt | CRIT'e (yeni: 2500) 300 mV marj hedefleniyor | **2800 mV** |
 | `BMS_CELL_OVERVOLT_WARN_MV` | 4150 mV | NMC WARN üst | CRIT'e (yeni: 3650) 100 mV marj hedefleniyor | **3550 mV** |
 
-Sıcaklık (`BMS_TEMP_OVERTEMP_WARN_C`/`CRIT_C`, 50/60°C) ve dengeleme
+Sıcaklık (`BMS_TEMP_OVERTEMP_WARN_C`/`CRIT_C`, o dönemde 50/60°C) ve dengeleme
 (`BMS_BALANCE_THRESHOLD_MV`/`TOP_MARGIN_MV`, 50/5 mV) eşikleri kimyadan
-bağımsız olduğu için DEĞİŞTİRİLMEDİ.
+bağımsız olduğu için o PR'da DEĞİŞTİRİLMEMİŞTİ. *(Not: sıcaklık eşikleri daha
+sonra sistem sıcaklık politikasıyla hizalanarak 55/70 °C yapıldı — bkz. bölüm 3.)*
 
 Aynı NMC varsayımı üçüncü bir yerde daha vardı: `lib/BmsAlgo/BmsNextionPacket.cpp`
 içindeki `cellBarFill()` fonksiyonunun **lokal** `kBarEmptyMv = 3000` /

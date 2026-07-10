@@ -32,11 +32,11 @@ enum class VcuEvent : uint8_t {
 // çağrılabilir.
 //
 // EK B GÜVEN KURALI: hasWarningCondition/hasCriticalCondition YALNIZCA
-// doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI)
-// + BMS/motor freshness. Akım/sıcaklık kontrolleri, kaynak alanlar
-// (TEL_bmsCurrentCentiA, TEL_bmsTempHighestC) hiçbir CAN ID'den parse
-// edilmediği için karar mantığından ÇIKARILDI; saha kalibrasyonu sonrası
-// aşağıdaki saf yardımcılar üzerinden yeniden bağlanacak.
+// doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI),
+// en yüksek hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI) + BMS/motor
+// freshness. Akım kontrolü ise ölçek/saha kalibrasyonu tamamlanana kadar
+// karar mantığı DIŞINDADIR; hazır olunca aşağıdaki saf yardımcılar
+// üzerinden bağlanacak.
 
 // Akım sinyali DOĞRULANDI (0xE000 byte[0:1], ×0.1A → centi-A) ve
 // TEL_bmsCurrentCentiA'ya parse ediliyor. Bu iki yardımcı karar
@@ -52,17 +52,32 @@ inline bool isCurrentWarning(int32_t bmsCurrentCentiA) {
            bmsCurrentCentiA <= -BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A;
 }
 
+// Sıcaklık politikası: 55 °C ve üzeri UYARI, 70 °C ve üzeri KRİTİK (sistem
+// kendini kapatır — FAULT). Semantik >= : eşik değerinin KENDİSİ tetikler.
+// Kaynak sinyal DOĞRULANDI (0xE001 byte[6:7] → TEL_bmsTempHighestC) ve bu
+// yardımcılar hasWarningCondition/hasCriticalCondition'a BAĞLIDIR (yalnız
+// TEL_bmsDataValid iken değerlendirilir; E001 freshness'ını G12 garanti eder).
+inline bool isTempCritical(int8_t bmsTempHighestC) {
+    return bmsTempHighestC >= BMS_CRITICAL_MAX_TEMP_C;
+}
+
+inline bool isTempWarning(int8_t bmsTempHighestC) {
+    return bmsTempHighestC >= BMS_WARN_MAX_TEMP_C;
+}
+
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
 
-    // Yalnızca DOĞRULANMIŞ pack voltajı (WARN bandı).
-    // TODO: source signal not yet verified — sıcaklık/akım warn kontrolleri
-    // kaynak sinyaller doğrulanınca eklenecek.
+    // Yalnızca DOĞRULANMIŞ sinyaller: pack voltajı (WARN bandı) + en yüksek
+    // hücre sıcaklığı (≥55 °C UYARI).
+    // TODO: source signal not yet verified — akım warn kontrolü kaynak
+    // sinyal kalibre edilince eklenecek.
     return VCU_data.TEL_bmsPackVoltageDeciV <=
                BMS_WARN_MIN_PACK_VOLTAGE_DECI_V ||
            VCU_data.TEL_bmsPackVoltageDeciV >=
-               BMS_WARN_MAX_PACK_VOLTAGE_DECI_V;
+               BMS_WARN_MAX_PACK_VOLTAGE_DECI_V ||
+           isTempWarning(VCU_data.TEL_bmsTempHighestC);
 }
 
 inline bool hasCriticalCondition(const TelemetryData& VCU_data,
@@ -82,13 +97,16 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
     if (!VCU_data.TEL_bmsDataValid)
         return false;
 
-    // Yalnızca DOĞRULANMIŞ pack voltajı (CRITICAL bandı — 24S LiFePO4 spec).
-    // TODO: source signal not yet verified — sıcaklık/akım/hücre-voltaj
-    // kritik kontrolleri kaynak sinyaller doğrulanınca eklenecek.
+    // Yalnızca DOĞRULANMIŞ sinyaller: pack voltajı (CRITICAL bandı — 24S
+    // LiFePO4 spec) + en yüksek hücre sıcaklığı (≥70 °C FAULT). Kritik
+    // sıcaklık isReadyEntryPermitted üzerinden READY girişini de bloklar.
+    // TODO: source signal not yet verified — akım/hücre-voltaj kritik
+    // kontrolleri kaynak sinyaller doğrulanınca eklenecek.
     return VCU_data.TEL_bmsPackVoltageDeciV <=
                BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V ||
            VCU_data.TEL_bmsPackVoltageDeciV >=
-               BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V;
+               BMS_CRITICAL_MAX_PACK_VOLTAGE_DECI_V ||
+           isTempCritical(VCU_data.TEL_bmsTempHighestC);
 }
 
 inline bool isResetInterlockSatisfied(const TelemetryData& VCU_data,
