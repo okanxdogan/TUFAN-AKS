@@ -153,6 +153,12 @@ void run() {
         return;
     }
 
+    // AÇIK İŞ (B12): Warning bandında derating (tork/güç sınırlama) politikası
+    // henüz UYGULANMADI — şimdilik yalnız kenar-tetikli WARN loglanır, araç
+    // davranışı değişmez. Warning READY girişini isReadyEntryPermitted
+    // üzerinden zaten bloklar; sürüş sırasındaki derating, motor sürücüsü
+    // tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye başlayınca
+    // tasarlanacak. Bkz. SystemConfig.h "Phase 2 Safety Thresholds" notu.
     if (hasWarningCondition()) {
         if (!s_VCU_warningLogged) {
             ESP_LOGW(TAG, "Warning threshold active, derating policy pending");

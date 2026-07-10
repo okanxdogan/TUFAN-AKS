@@ -41,9 +41,12 @@ Lithium Balance c-BMS'e geçtiği ekipçe teyit edildi (bkz. `CanManager.cpp`,
 `CanParse.cpp`, `SystemConfig.h`). **Oturum 3 (2026-07-09) itibarıyla CAN
 sniffer logları (zemin gerçeği) ile `0xE000` ve `0xE001` ID'leri KESİN
 olarak doğrulanmıştır**:
-- **0xE000**: Pack Voltajı, Akım, SoC 1, SoC 2.
-- **0xE001**: Temperature 1 ve Temperature 2.
-Bu sinyaller başarıyla okunur ve Nextion HMI + UKS'ye gönderilir.
+- **0xE000**: Pack Voltajı, Akım (centi-Amper, + şarj / − deşarj), SoC 1, SoC 2.
+- **0xE001**: Temperature 1 ve Temperature 2 (byte[6:7], °C).
+Bu sinyaller başarıyla okunur ve Nextion HMI + UKS'ye gönderilir. Tazelik
+(freshness) her iki ID için AYRI izlenir (G12, `bms_evaluate_freshness`):
+E000 veya E001'den biri kesilirse `TEL_bmsDataValid` düşer ve IDLE dışında
+BMS timeout kritik sayılır.
 
 **AÇIK İŞ (Kalan Alanlar)**: `TEL_bmsSystemState` (sistem durumu),
 `TEL_bmsCellVoltageMaxDeciMv`, `TEL_bmsCellVoltageMinDeciMv` gibi alanlar

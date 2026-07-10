@@ -154,7 +154,7 @@ void processExtFrame(const Frame& f, bool sessionAsserts, Stats& st) {
             if (cur != -10 && cur != -20)
                 st.addViolation(std::string(where) + ": E000 akim " +
                                 std::to_string(cur) +
-                                ", beklenen {-10,-20} centiMa (idle)");
+                                ", beklenen {-10,-20} centi-A (idle)");
             break;
         }
         case 0x1806E5F4: {
@@ -174,8 +174,10 @@ void processExtFrame(const Frame& f, bool sessionAsserts, Stats& st) {
                     ", beklenen 880/1000 (88.0 V / 100.0 A)");
             break;
         }
-        // DOĞRULANMAMIŞ ID'ler: stub parser'lar cagrilir — amac "cokmeden
-        // kabul ediyor" regresyonu; TelemetryData'ya anlam yuklenmez.
+        // 0xE001 DOĞRULANDI (sıcaklık byte[6:7] parse edilir); burada yalnız
+        // "cokmeden kabul ediyor" regresyonu kosulur. Sonraki case'ler
+        // (E002-E005, E032, E033) hala DOĞRULANMAMIŞ stub parser'lardır —
+        // TelemetryData'ya anlam yuklenmez.
         case 0x0000E001: {
             TelemetryData out{};
             (void)CanParse::parseLbBmsE001(f.msg, out);

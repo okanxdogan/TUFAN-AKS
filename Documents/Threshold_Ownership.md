@@ -2,7 +2,7 @@
 
 Repoda birbirinden habersiz **iki ayrı batarya eşik seti** var:
 
-1. `include/SystemConfig.h` — **pack-bazlı** (deciV / centi-mA / °C), `src/VcuLogic.h`
+1. `include/SystemConfig.h` — **pack-bazlı** (deciV / centi-A / °C), `src/VcuLogic.h`
    (`hasWarningCondition` / `hasCriticalCondition`) ve `lib/CanManager/CanManager.cpp`
    (`checkPackVoltageFault` üzerinden) tarafından tüketiliyor. Bu set VCU durum
    makinesini (FAULT / kontaktör) besler.
@@ -64,7 +64,7 @@ da pack/paket seviyesinde VCU kararını besler:
 | Sabit | Satır | Değer | Tüketici | Sinyal Durumu | Karar Yolunda CANLI mı? |
 | --- | --- | --- | --- | --- | --- |
 | `CAN_MOTOR_STATUS_TIMEOUT_MS` | 208 | 500 ms | `CanManager::updateMotorStatusValidity` → `TEL_motorTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (frame varlığı, ölçeğe bağlı değil) | ✅ CANLI |
-| `CAN_BMS_STATUS_TIMEOUT_MS` | 209 | 500 ms | `CanManager::updateBmsValidity` → `TEL_bmsTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (E000 frame varlığı) | ✅ CANLI |
+| `CAN_BMS_STATUS_TIMEOUT_MS` | 209 | 500 ms | `CanManager::updateBmsValidity` → `bms_evaluate_freshness` (G12: E000 **ve** E001 ID bazında ayrı izlenir; biri bayatlarsa timeout) → `TEL_bmsTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (E000+E001 frame varlığı) | ✅ CANLI |
 | `CAN_CHARGER_TIMEOUT_MS` | 213 | 2000 ms | Yalnızca charger setpoint'lerini "bayat" işaretler | ✅ DOĞRULANDI | ⚠️ KISMİ — `CAN_Event`/FAULT ÜRETMEZ (bilinçli tasarım, opsiyonel akış) |
 
 ---

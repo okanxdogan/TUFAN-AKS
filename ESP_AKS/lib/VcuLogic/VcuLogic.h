@@ -34,8 +34,11 @@ enum class VcuEvent : uint8_t {
 // EK B GÜVEN KURALI: hasWarningCondition/hasCriticalCondition YALNIZCA
 // doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI),
 // akım (0xE000 byte[0:1], DOĞRULANDI — saha gözlemi Temmuz 2026), en yüksek
-// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI) + BMS/motor freshness.
-// Hücre voltajı kontrolleri kaynak sinyal bilinmediği için hâlâ dışarıda.
+// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI) + BMS/motor freshness
+// (BMS freshness G12 ile E000+E001 ID bazında ayrı ayrı izlenir).
+// AÇIK İŞLER: hücre voltajı kontrolleri kaynak sinyal bilinmediği için hâlâ
+// dışarıda; TEL_bmsSystemState==4 kontrolü kodda durur ama alan hiçbir CAN
+// ID'den parse edilmediği için kaynak bağlanana kadar ETKİSİZDİR (aşağıya bkz.).
 
 // Akım sinyali DOĞRULANDI (0xE000 byte[0:1], ×0.1A → centi-A, işaret: + şarj
 // / − deşarj) ve TEL_bmsCurrentCentiA'ya parse ediliyor. Bu iki yardımcı
@@ -81,6 +84,9 @@ inline bool hasWarningCondition(const TelemetryData& VCU_data) {
 
 inline bool hasCriticalCondition(const TelemetryData& VCU_data,
                                  VcuState currentState) {
+    // NOT: TEL_bmsSystemState hiçbir CAN ID'den parse EDİLMİYOR (üretimde hep
+    // 0 kalır) — ==4 kontrolü kaynak bağlanana kadar ETKİSİZ. Bkz.
+    // Documents/UKS_LoRa_Protocol.md "DOĞRULANACAK".
     if (VCU_data.TEL_motorErrorFlags != 0 || (VCU_data.TEL_bmsDataValid && VCU_data.TEL_bmsSystemState == 4))
         return true;
 
@@ -100,8 +106,9 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
     // LiFePO4 spec) + en yüksek hücre sıcaklığı (≥70 °C FAULT) + akım
     // (şarj ≥13 A / deşarj ≥15 A FAULT). Kritik koşullar
     // isReadyEntryPermitted üzerinden READY girişini de bloklar.
-    // TODO: source signal not yet verified — hücre-voltaj kritik kontrolü
-    // kaynak sinyal doğrulanınca eklenecek.
+    // AÇIK İŞ: hücre-voltaj kritik kontrolü henüz YOK — per-hücre kaynak
+    // sinyali (TEL_bmsCellVoltageMin/MaxDeciMv; E002–E005 adayı) doğrulanınca
+    // eklenecek. Akım ve sıcaklık ARTIK doğrulanmış ve bağlı.
     return VCU_data.TEL_bmsPackVoltageDeciV <=
                BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V ||
            VCU_data.TEL_bmsPackVoltageDeciV >=
@@ -112,6 +119,8 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
 
 inline bool isResetInterlockSatisfied(const TelemetryData& VCU_data,
                                       VcuState currentState) {
+    // NOT: TEL_bmsSystemState==4 kontrolü kaynak bağlanana kadar etkisiz
+    // (alan üretimde parse edilmiyor, hep 0 — bkz. hasCriticalCondition notu).
     if (VCU_data.TEL_motorErrorFlags != 0 || (VCU_data.TEL_bmsDataValid && VCU_data.TEL_bmsSystemState == 4))
         return false;
 

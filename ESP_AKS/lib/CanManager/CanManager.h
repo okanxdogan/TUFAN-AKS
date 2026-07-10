@@ -44,6 +44,9 @@ class CanManager {
     // `out` her zaman son görülen setpoint'lerle doldurulur; dönüş değeri
     // verinin taze olup olmadığını söyler (CAN_CHARGER_TIMEOUT_MS içinde
     // frame görüldüyse true). Charger akışı OPSİYONEL — false FAULT değildir.
+    // NOT: Gözlem/test amaçlı API — firmware'de şu an BİLİNÇLİ olarak hiçbir
+    // çağıranı yok (setpoint'ler karar mantığına bağlanmaz); bench/diagnostik
+    // kullanım için tutulur, "ölü kod" diye SİLİNMEMELİ.
     bool getChargerCommand(ChargerCommand& out) const;
 
    private:

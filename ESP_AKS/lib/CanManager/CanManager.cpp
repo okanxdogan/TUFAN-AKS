@@ -308,11 +308,10 @@ void CanManager::handleMotorStatus(const twai_message_t& msg) {
 
     xSemaphoreGive(s_mutex);
 
+    // notifyFaultIfNeeded mutex İÇİNDE alınan yerel kopyalarla çağrılır —
+    // s_motorStatus/s_telemetryData mutex bırakıldıktan sonra OKUNMAZ.
     notifyFaultIfNeeded(CAN_previousConfirmedFlags, CAN_confirmedErrorFlags,
                         "Motor");
-
- //   ESP_LOGD(TAG, "Motor: RPM=%d, Torque=%d", s_motorStatus.rpm,
-  //           s_motorStatus.torqueFeedback);
 }
 
 // =========================================================================

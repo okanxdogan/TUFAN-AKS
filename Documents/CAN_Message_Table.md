@@ -194,12 +194,12 @@ Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tara
 
 | CAN ID | Tablo Durumu | Firmware'de Parse | TelemetryData'ya Yazılıyor | Karar Mantığına Bağlı |
 | --- | --- | --- | --- | --- |
-| 0xE000 byte[0:1] Current | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsCurrentCentiA | ❌ (isCurrentWarning/Critical bağlanmamış) |
+| 0xE000 byte[0:1] Current | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsCurrentCentiA | ✅ isCurrentWarning/Critical ← hasWarning/CriticalCondition (şarj 11/13 A, deşarj 9/15 A — CONFIG, ekip onayı bekliyor) |
 | 0xE000 byte[2:3] Voltage | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsPackVoltageDeciV | ✅ checkPackVoltageFault + VcuLogic |
 | 0xE000 byte[4:5] SoC 1 | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsSocHundredths | ❌ (gösterim, karar dışı) |
-| 0xE000 byte[6:7] SoC 2 | ✅ DOĞRULANDI | ❌ (parse edilmiyor) | ❌ | ❌ |
-| 0xE001 byte[6] Temp1 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempHighestC | ❌ (eşikler ölü) |
-| 0xE001 byte[7] Temp2 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempLowestC | ❌ (eşikler ölü) |
+| 0xE000 byte[6:7] SoC 2 | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsSoc2Hundredths | ❌ (gösterim/araştırma, karar dışı) |
+| 0xE001 byte[6] Temp1 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempHighestC (max seçimi) | ✅ isTempWarning/Critical ← hasWarning/CriticalCondition (55/70 °C) |
+| 0xE001 byte[7] Temp2 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempLowestC (min seçimi) | ❌ (yalnız gösterim; karar max kanaldan) |
 | 0xE001 byte[0:5] | ❌ BİLİNMİYOR | ❌ | ❌ | ❌ |
 | 0x1806E5F4 byte[0:1] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
 | 0x1806E5F4 byte[2:3] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |

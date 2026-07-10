@@ -64,6 +64,13 @@ class Telemetry {
     // gosterirken degeri /100 ile Amper'e CEVIRMELIDIR (990 -> 9.90 A);
     // ham degeri A sanmak 100x hataya yol acar. Bkz.
     // Documents/UKS_LoRa_Protocol.md "Alan Araliklari" bolumu.
+    //
+    // ALAN DURUMU: `tempH`/`tempL` DOGRULANMIS gercek veridir
+    // (0xE001 byte[6:7] -> TEL_bmsTempHighestC/LowestC, dogrudan derece C);
+    // `packV`, `current`, `soc` da DOGRULANDI (0xE000). ACIK IS:
+    // `cellVMax`/`cellVMin` hicbir CAN ID'den parse edilmiyor (hep 0 gider);
+    // `sysState` de parse edilmiyor — sanitizeSystemState(0) onu 4'e (FAULT)
+    // cevirdigi icin UKS ekraninda BMS surekli FAULT gorunur.
     void sendStatus(const TelemetryData& TEL_data);
 
    private:

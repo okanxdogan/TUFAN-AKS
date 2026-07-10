@@ -68,10 +68,12 @@ bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out) {
     return true;
 }
 
-// --- Aşağıdaki fonksiyonlar, CAN sniffer loglarında görülen ancak alan
-// --- anlamı henüz DOĞRULANMAMIŞ ID'ler içindir. Ham byte'ları kabul eder
-// --- ama TelemetryData'ya anlam yüklenmez. İleride gerçek anlam çözüldükçe
-// --- bu fonksiyonların içi doldurulacaktır.
+// --- Aşağıdaki stub fonksiyonlar (0xE002–0xE005, 0xE032, 0xE033), CAN
+// --- sniffer loglarında görülen ancak alan anlamı henüz DOĞRULANMAMIŞ
+// --- ID'ler içindir. Ham byte'ları kabul eder ama TelemetryData'ya anlam
+// --- yüklenmez; gerçek anlam çözüldükçe içleri doldurulacaktır.
+// --- İSTİSNA: hemen aşağıdaki 0xE001 bu kapsamda DEĞİL — sıcaklık alanları
+// --- (byte[6:7]) DOĞRULANDI ve parse ediliyor; yalnız byte[0:5] bilinmiyor.
 
 // 0xE001 — Sıcaklık Değerleri DOĞRULANDI (bkz. CAN_Message_Table.md)
 // byte[0:5] = BİLİNMİYOR (analog kanal deseni, 0x8000 civarı ofset)

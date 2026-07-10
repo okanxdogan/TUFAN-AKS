@@ -273,15 +273,18 @@ static_assert(
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---
-// Warning levels should eventually trigger derating.
+// Warning levels should eventually trigger derating (AÇIK İŞ B12 —
+// bugün yalnız WARN log + READY giriş bloğu; bkz. VcuLogic.cpp run()).
 // Critical levels should force a transition to FAULT.
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
-// byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), en yüksek hücre
-// sıcaklığı (0xE001 byte[6:7]) + BMS freshness (E000 timeout). Hücre
-// voltajı/SOC kaynak sinyalleri henüz doğrulanmadığı için ilgili eşikler
-// YER TUTUCUDUR ve karar mantığına BAĞLI DEĞİLDİR.
+// byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), SoC (0xE000 byte[4:5]),
+// en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness (G12: E000 ve
+// E001 ID bazında ayrı ayrı izlenir, bms_evaluate_freshness). AÇIK İŞ: hücre
+// voltajı kaynak sinyalleri (E002–E005 adayı) ve TEL_bmsSystemState kaynağı
+// henüz doğrulanmadığı için ilgili eşikler/kontroller YER TUTUCUDUR ve karar
+// mantığına fiilen BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
 // Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
