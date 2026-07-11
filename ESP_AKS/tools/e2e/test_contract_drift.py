@@ -306,14 +306,16 @@ def test_monitor_config_confirmed_flag_exists(monitor_root):
 # unutmamak icin bilincli bir hatirlatma mekanizmasidir.
 # ===========================================================================
 
-_LB_STUB_IDS = ["E001", "E002", "E003", "E004", "E005", "E032", "E033"]
-
+_LB_STUB_IDS = ["E001", "E002", "E003", "E004", "E005", "E006"]
+# E001 hâlâ listede çünkü sysState kısmı (byte[0:5] dışındaki)
+# parse edilmiyor — xfail yine geçerli ama liste küçüldü.
+# E015-E020 stub olmaktan çıktı → bu liste'den çıkar.
 
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "9.2.c.ii AÇIK İŞ: Lithium Balance c-BMS'in bazi CAN ID'leri (E001-E005,"
-        " E032, E033) henuz TelemetryData'ya tam alan yazmiyor (packV E000 ve"
+        "9.2.c.ii AÇIK İŞ: Lithium Balance c-BMS'in bazi CAN ID'leri (E001-E006)"
+        " henuz TelemetryData'ya tam alan yazmiyor (packV E000 ve"
         " 24 hücre E015-E020 cozuldu). Biri gercek parse kazanirsa bu test XPASS eder —"
         " TEKNIK_KONTROL_PROVASI.md 'AÇIK İŞ' maddesini ve boot-log"
         " uyarisini guncelleyip bu testi kaldirin/genisletin."

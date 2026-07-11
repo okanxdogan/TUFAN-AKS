@@ -84,6 +84,9 @@ bool parseLbBmsE004(const twai_message_t& msg, TelemetryData& out);
 // 0xE005 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
 bool parseLbBmsE005(const twai_message_t& msg, TelemetryData& out);
 
+// 0xE006 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+bool parseLbBmsE006(const twai_message_t& msg, TelemetryData& out);
+
 // 0xE032 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
 bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out);
 

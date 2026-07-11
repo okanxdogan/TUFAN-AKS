@@ -48,9 +48,8 @@ Bu sinyaller başarıyla okunur ve Nextion HMI + UKS'ye gönderilir. Tazelik
 E000 veya E001'den biri kesilirse `TEL_bmsDataValid` düşer ve IDLE dışında
 BMS timeout kritik sayılır.
 
-**AÇIK İŞ (Kalan Alanlar)**: `TEL_bmsSystemState` (sistem durumu)
-`0xE002-E006` ID'lerinde bulunuyor olabilir, ancak alan anlamları henüz
-BİLİNMİYOR. Sonuç:
+**AÇIK İŞ (Kalan Alanlar)**: 24 hücre voltajı (E015-E020) ÇÖZÜLDÜ ve firmware'e entegre edildi.
+Kalan açık iş: TEL_bmsSystemState (E002-E006 stub, sysState parse edilmiyor) ve hücre fiziksel sıralama sahada teyit edilecek. Sonuç:
 
 - `TEL_bmsSystemState` hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
   bunu `4` (FAULT) yapar — **UKS ekranında BMS her zaman FAULT görünür**,
