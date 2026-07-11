@@ -34,7 +34,7 @@ The current firmware expects these object names on the Nextion page:
 | `rpm` | numeric | `rpm.val=<value>` |
 | `torque` | numeric | `torque.val=<value>` |
 | `temp` | numeric | `temp.val=<value>` |
-| `packv` | float (2 dp) | `packv.val=<deciV × 10>` |
+| `packv` | float (1 dp) | `packv.val=<deciV>` |
 | `packa` | float (2 dp) | `packa.val=<centiA>` |
 | `state` | text | `state.txt="..."` |
 | `motorErr` | text | `motorErr.txt="..."` |
@@ -43,11 +43,11 @@ The current firmware expects these object names on the Nextion page:
 
 ### Float (xfloat) fields
 
-`packv` and `packa` are Nextion **float** components with 2 decimal places
-(`"00.00"`). A Nextion xfloat interprets the integer `.val` it receives as
-`display_value × 100`. The firmware therefore scales before sending:
+`packv` is a Nextion **float** component with 1 decimal place (`"00.0"`) and
+`packa` a **float** component with 2 decimal places (`"00.00"`). A Nextion
+xfloat interprets the integer `.val` it receives as `display_value × 10^(decimal places)`:
 
-- `packv`: source is deci-volts (`× 0.1 V`), so `.val = deciV × 10` (e.g. `800` → `8000` → `80.00`).
+- `packv`: source is deci-volts (`× 0.1 V`), which already equals `V × 10`, so `.val` is sent unscaled (e.g. `790` → `79.0`).
 - `packa`: source is centi-amps (`× 0.01 A`), which already equals `A × 100`, so `.val` is sent unscaled (e.g. `1250` → `12.50`, `-2000` → `-20.00`).
 
 Scaling lives in `HMI_packVoltageToXfloat` / `HMI_packCurrentToXfloat`

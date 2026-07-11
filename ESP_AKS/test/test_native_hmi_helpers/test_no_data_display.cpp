@@ -67,18 +67,20 @@ void test_temp_verified_valid_passes_through(void) {
 }
 
 // =========================================================================
-// Nextion float (xfloat) ölçekleme — packv (×10) ve packa (×1)
-// packv/packa 2 ondalıklı float bileşeni; .val = gerçek_değer×100 olmalı.
+// Nextion float (xfloat) ölçekleme — packv (×1) ve packa (×1)
+// packv 1 ondalıklı float; .val = gerçek_değer×10 (deciV zaten öyle).
+// packa 2 ondalıklı float; .val = gerçek_değer×100 (centiA zaten öyle).
 // =========================================================================
 
 void test_packv_decivolt_scaled_to_xfloat(void) {
-    // 800 deciV = 80.0 V -> 8000 -> "80.00"
-    TEST_ASSERT_EQUAL_INT32(8000, HMI_packVoltageToXfloat(800));
-    // 526 deciV = 52.6 V -> 5260 -> "52.60"
-    TEST_ASSERT_EQUAL_INT32(5260, HMI_packVoltageToXfloat(526));
+    // deciV zaten V×10 -> ek ölçekleme yok
+    // 800 deciV = 80.0 V -> 800 -> "80.0"
+    TEST_ASSERT_EQUAL_INT32(800, HMI_packVoltageToXfloat(800));
+    // 526 deciV = 52.6 V -> 526 -> "52.6"
+    TEST_ASSERT_EQUAL_INT32(526, HMI_packVoltageToXfloat(526));
     TEST_ASSERT_EQUAL_INT32(0, HMI_packVoltageToXfloat(0));
-    // Üst sınır uint16 (65535 deciV) int32'ye taşmadan sığar
-    TEST_ASSERT_EQUAL_INT32(655350, HMI_packVoltageToXfloat(65535));
+    // Üst sınır uint16 (65535 deciV) değişmeden geçer
+    TEST_ASSERT_EQUAL_INT32(65535, HMI_packVoltageToXfloat(65535));
 }
 
 void test_packa_centiamp_passes_through_as_xfloat(void) {
