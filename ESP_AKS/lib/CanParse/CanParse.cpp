@@ -123,6 +123,13 @@ bool parseLbBmsE005(const twai_message_t& msg, TelemetryData& out) {
     return msg.data_length_code > 0;
 }
 
+// 0xE006 — TODO: alan anlamı doğrulanmadı
+bool parseLbBmsE006(const twai_message_t& msg, TelemetryData& out) {
+    (void)out;
+    // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
+    return msg.data_length_code > 0;
+}
+
 // 0xE032 — TODO: alan anlamı doğrulanmadı
 bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out) {
     (void)out;
