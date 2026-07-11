@@ -98,10 +98,10 @@ ESP-AKS ve Lithium Balance c-BMS entegrasyonu başarıyla devreye alınmıştır
 
 **Doğrulanan Veriler (DOĞRULANDI):**
 - **0xE000**: Pack Voltajı (deciV), Pack Akımı (centiA, deşarjda negatif), SoC1 ve SoC2 (yüzde).
-- **0xE001**: BMS Sıcaklığı (byte[6:7] üzerinden max/min seçimi).
+- **0xE001**: BMS Sıcaklığı (byte[6:7] üzerinden max/min seçimi) ve Hücre Özeti (byte[0:1]=min, byte[2:3]=max, byte[4:5]=avg hücre voltajı).
+- **0xE015–0xE020**: 24 Hücrenin Bireysel Voltajları (her CAN frame 4 hücre barındırır, raw/10=mV).
 - **0x1806E5F4**: Şarj cihazı gerilim ve akım hedefi (Charger command - Sadece okunuyor).
 
 **Açık İşler ve Bilinmeyenler (BİLİNMİYOR):**
-- **24 Hücre Voltajı:** Şu anda CAN üzerinde hücre verilerini içeren ID bulunamadı. Ekranda güvenlik amaçlı bilinçli olarak `--` gösteriliyor (`HMI_CELL_VOLTAGE_SOURCE_VERIFIED = false`). Çözümü için diagnostik sniffer modu koda eklenmiştir; araştırma adımları [CELL_VOLTAGE_INVESTIGATION.md](Documents/CELL_VOLTAGE_INVESTIGATION.md) belgesinde açıklanmıştır.
-- **0xE001 byte[0:5]:** BMS sistem durumu ve hata kodları barındırdığı düşünülüyor, henüz doğrulanmadı.
+- **0xE002-0xE006**: BMS statik durumu ve limit parametreleri yayını olduğu düşünülüyor, alan anlamları tamamen çözülemedi. HMI karar mantığını etkilemez.
 - **Bitrate Teyidi:** Gerçek araç testinde CAN bus hızının `500kbps` mi yoksa `125kbps` mi olacağı belirsizdir. `CanManager::begin()` içinde **otomatik hız bulucu (auto-baud)** devreye alınarak bu risk giderilmiştir (bkz. [BRING_UP_CHECKLIST.md](Documents/BRING_UP_CHECKLIST.md)).

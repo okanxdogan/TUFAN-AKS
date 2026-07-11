@@ -22,11 +22,18 @@
 // E002-E005, E032, E033: alan anlamları BİLİNMİYOR.
 // Bkz. Documents/CAN_Message_Table.md (tek doğruluk kaynağı).
 #define CAN_ID_LB_BMS_E000 0x0000E000  // DOĞRULANDI: PackV, Current, SoC1, SoC2
-#define CAN_ID_LB_BMS_E001 0x0000E001  // DOĞRULANDI: Temp1 & Temp2 (byte[6:7]); byte[0:5] BİLİNMİYOR
-#define CAN_ID_LB_BMS_E002 0x0000E002  // BİLİNMİYOR — alan anlamı çözülmedi
-#define CAN_ID_LB_BMS_E003 0x0000E003  // BİLİNMİYOR — alan anlamı çözülmedi
-#define CAN_ID_LB_BMS_E004 0x0000E004  // BİLİNMİYOR — alan anlamı çözülmedi
-#define CAN_ID_LB_BMS_E005 0x0000E005  // BİLİNMİYOR — alan anlamı çözülmedi
+#define CAN_ID_LB_BMS_E001 0x0000E001  // DOĞRULANDI: Temp (byte[6:7]), min/max/avg cellV (byte[0:5])
+#define CAN_ID_LB_BMS_E002 0x0000E002  // statik konfig/limit yayını (sabit, oturum boyunca değişmez, anlam kesin doğrulanmadı)
+#define CAN_ID_LB_BMS_E003 0x0000E003  // statik konfig/limit yayını (sabit, oturum boyunca değişmez, anlam kesin doğrulanmadı)
+#define CAN_ID_LB_BMS_E004 0x0000E004  // statik konfig/limit yayını (sabit, oturum boyunca değişmez, anlam kesin doğrulanmadı)
+#define CAN_ID_LB_BMS_E005 0x0000E005  // statik konfig/limit yayını (sabit, oturum boyunca değişmez, anlam kesin doğrulanmadı)
+#define CAN_ID_LB_BMS_E006 0x0000E006  // statik konfig/limit yayını (sabit, oturum boyunca değişmez, anlam kesin doğrulanmadı)
+#define CAN_ID_LB_BMS_E015 0x0000E015  // DOĞRULANDI: hücre 0-3 voltajı (raw/10 = mV)
+#define CAN_ID_LB_BMS_E016 0x0000E016  // DOĞRULANDI: hücre 4-7 voltajı
+#define CAN_ID_LB_BMS_E017 0x0000E017  // DOĞRULANDI: hücre 8-11 voltajı
+#define CAN_ID_LB_BMS_E018 0x0000E018  // DOĞRULANDI: hücre 12-15 voltajı
+#define CAN_ID_LB_BMS_E019 0x0000E019  // DOĞRULANDI: hücre 16-19 voltajı
+#define CAN_ID_LB_BMS_E020 0x0000E020  // DOĞRULANDI: hücre 20-23 voltajı
 #define CAN_ID_LB_BMS_E032 0x0000E032  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
 #define CAN_ID_LB_BMS_E033 0x0000E033  // BİLİNMİYOR — gözlemlenen oturumda hep sıfır
 
@@ -346,6 +353,7 @@ static_assert(
 // --- CAN Freshness Thresholds ---
 #define CAN_MOTOR_STATUS_TIMEOUT_MS 1500
 #define CAN_BMS_STATUS_TIMEOUT_MS   500
+#define CAN_CELL_VOLTAGE_TIMEOUT_MS 500  // E015-E020 grubu
 // Charger komut frame'i (0x1806E5F4) OPSİYONEL bir akıştır: araç sürüşteyken
 // charger bağlı olmayabilir. Timeout yalnızca saklanan setpoint'leri "bayat"
 // işaretler; CAN_Event/FAULT ÜRETMEZ (krş. motor timeout -> FAULT).

@@ -3,6 +3,7 @@
 #include "IRelayActuator.h"
 #include "SystemConfig.h"
 #include "VehicleData.h"  // TelemetryData (M3)
+#include "BmsAlgo.h"
 
 namespace VcuLogic {
 
@@ -72,6 +73,15 @@ inline bool hasWarningCondition(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
 
+    // Hücre voltaj WARN kontrolü (kaynak doğrulandı — E015-E020)
+    // Yalnızca tüm 24 hücre verisi tazeyse
+    if (VCU_data.TEL_cellVoltageDataValid) {
+        // Min hücre WARN altında mı?
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_WARN_MV) return true;
+        // Max hücre WARN üstünde mı?
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_WARN_MV) return true;
+    }
+
     // Yalnızca DOĞRULANMIŞ sinyaller: pack voltajı (WARN bandı) + en yüksek
     // hücre sıcaklığı (≥55 °C UYARI) + akım (şarj ≥11 A / deşarj ≥9 A WARN).
     return VCU_data.TEL_bmsPackVoltageDeciV <=
@@ -106,9 +116,12 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
     // LiFePO4 spec) + en yüksek hücre sıcaklığı (≥70 °C FAULT) + akım
     // (şarj ≥13 A / deşarj ≥15 A FAULT). Kritik koşullar
     // isReadyEntryPermitted üzerinden READY girişini de bloklar.
-    // AÇIK İŞ: hücre-voltaj kritik kontrolü henüz YOK — per-hücre kaynak
-    // sinyali (TEL_bmsCellVoltageMin/MaxDeciMv; E002–E005 adayı) doğrulanınca
-    // eklenecek. Akım ve sıcaklık ARTIK doğrulanmış ve bağlı.
+    // Hücre voltaj CRITICAL kontrolü (kaynak doğrulandı — E015-E020)
+    if (VCU_data.TEL_cellVoltageDataValid) {
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_CRIT_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_CRIT_MV) return true;
+    }
+
     return VCU_data.TEL_bmsPackVoltageDeciV <=
                BMS_CRITICAL_MIN_PACK_VOLTAGE_DECI_V ||
            VCU_data.TEL_bmsPackVoltageDeciV >=

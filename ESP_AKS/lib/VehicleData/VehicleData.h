@@ -20,11 +20,15 @@ struct TelemetryData {
     bool TEL_motorDataValid;
     bool TEL_motorTimeoutActive;
 
-    // Lithium Balance c-BMS — per-hücre alanlar (kaynak CAN ID henüz BİLİNMİYOR)
-    uint16_t TEL_bmsCellVoltages[24];      // BİLİNMİYOR — 24 hücre voltajı (mV/deciMv?)
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // BİLİNMİYOR — kaynak ID çözülmedi
+    // Lithium Balance c-BMS — per-hücre alanlar (kaynak DOĞRULANDI)
+    uint16_t TEL_bmsCellVoltages[24];      // DOĞRULANDI — kaynak: E015(hücre 0-3) E016(4-7) E017(8-11) E018(12-15) E019(16-19) E020(20-23), raw/10 = mV
+    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANDI — 0xE001 byte[2:3], raw/10 = mV
+    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANDI — 0xE001 byte[0:1], raw/10 = mV
+    uint16_t TEL_bmsCellVoltageAvgDeciMv = 0; // DOĞRULANDI — 0xE001 byte[4:5], raw/10 = mV (ortalama hücre voltajı)
     uint8_t TEL_bmsSystemState;            // BİLİNMİYOR — kaynak ID çözülmedi
+
+    bool TEL_cellVoltageDataValid = false;
+    bool TEL_cellVoltageTimeoutActive = false;
 
     // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI, bkz. CAN_Message_Table.md)
     uint16_t TEL_bmsPackVoltageDeciV;  // byte[2:3], raw × 0.1 = V — DOĞRULANDI

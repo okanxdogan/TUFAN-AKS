@@ -48,9 +48,8 @@ Bu sinyaller başarıyla okunur ve Nextion HMI + UKS'ye gönderilir. Tazelik
 E000 veya E001'den biri kesilirse `TEL_bmsDataValid` düşer ve IDLE dışında
 BMS timeout kritik sayılır.
 
-**AÇIK İŞ (Kalan Alanlar)**: `TEL_bmsSystemState` (sistem durumu),
-`TEL_bmsCellVoltageMaxDeciMv`, `TEL_bmsCellVoltageMinDeciMv` gibi alanlar
-`0xE002-E005` ID'lerinde bulunuyor olabilir, ancak alan anlamları henüz
+**AÇIK İŞ (Kalan Alanlar)**: `TEL_bmsSystemState` (sistem durumu)
+`0xE002-E006` ID'lerinde bulunuyor olabilir, ancak alan anlamları henüz
 BİLİNMİYOR. Sonuç:
 
 - `TEL_bmsSystemState` hep `0` kalır; `TelemetrySanitize::sanitizeSystemState(0)`
@@ -65,10 +64,10 @@ BİLİNMİYOR. Sonuç:
   ekip onayı bekliyor (CONFIG).
 
 Boot logunda `ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor ...")` uyarısı
-bu durumu görünür kılar. Teknik kontrol sırasında sıcaklık, akım ve SoC'un
-**gerçek** olduğu, ancak BMS hata durumunun (sysState) geçici olduğu belirtilmelidir. Kalan
-CAN ID'leri araç yola çıktıktan sonra sniffer loglarıyla çözülmeye devam edilecektir
-(bkz. `Documents/CAN_Message_Table.md`).
+bu durumu görünür kılar. Teknik kontrol sırasında 24 hücre voltajı (E015-E020), 
+sıcaklık, akım ve SoC'un **gerçek** olduğu, ancak BMS hata durumunun (sysState) 
+geçici olduğu belirtilmelidir. Kalan CAN ID'leri (E002-E006) araç yola çıktıktan 
+sonra sniffer loglarıyla çözülmeye devam edilecektir (bkz. `Documents/CAN_Message_Table.md`).
 
 ---
 

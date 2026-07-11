@@ -67,7 +67,7 @@ constexpr uint16_t HMI_CELL_VOLTAGE_NO_DATA = 65535;
 
 constexpr bool HMI_SOC_SOURCE_VERIFIED = true;          // TEL_bmsSocHundredths — ÇÖZÜLDÜ (0xE000)
 constexpr bool HMI_TEMP_SOURCE_VERIFIED = true;         // TEL_bmsTempHighestC — ÇÖZÜLDÜ (0xE001)
-constexpr bool HMI_CELL_VOLTAGE_SOURCE_VERIFIED = false; // TEL_bmsCellVoltageMaxDeciMv/MinDeciMv — DOĞRULANMADI
+constexpr bool HMI_CELL_VOLTAGE_SOURCE_VERIFIED = true; // TEL_bmsCellVoltages[24], TEL_bmsCellVoltageMax/MinDeciMv DOĞRULANDI — kaynak: E015-E020 (hücre voltajı) + E001 byte[0:5] (min/max/avg)
 
 inline uint8_t HMI_batteryDisplayValue(bool HMI_sourceVerified,
                                        bool HMI_bmsDataValid,

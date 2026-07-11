@@ -1,6 +1,9 @@
 # Lithium Balance c-BMS 24 Hücre Voltajı Analizi ve Çözüm Yolları
 
-Bu doküman, şu anda (2026-07) ESP-AKS repomuzda henüz CAN ID'si bilinmeyen ve Nextion HMI ekranında "--" olarak gösterilen 24 hücre voltajı (`TEL_bmsCellVoltages[24]`) verisinin **nasıl bulunacağı** ve **sisteme nasıl entegre edileceği** süreçlerini açıklar.
+> **GÜNCELLEME (2026-07-11): BU KONU ÇÖZÜLMÜŞTÜR.**
+> Yapılan son çalışmalarla 24 hücre voltajı verisinin CAN ID **0xE015** ile **0xE020** aralığında (her biri 4 hücre barındıracak şekilde) aktarıldığı doğrulanmış ve parseLbBmsE015..E020 fonksiyonlarıyla firmware'e entegre edilmiştir. Bu doküman tarihsel bilgi (araştırma adımları) amacıyla korunmaktadır.
+
+Bu doküman, geçmişte ESP-AKS repomuzda henüz CAN ID'si bilinmeyen ve Nextion HMI ekranında "--" olarak gösterilen 24 hücre voltajı (`TEL_bmsCellVoltages[24]`) verisinin **nasıl bulunacağı** ve **sisteme nasıl entegre edileceği** süreçlerini açıklar.
 
 ## Sorunun Tespiti
 Şu an elimizdeki sniffer loglarında yalnızca şu CAN ID'ler aktif olarak görülmektedir:
