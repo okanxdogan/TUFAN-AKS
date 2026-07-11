@@ -207,6 +207,15 @@ void CanManager::processRxMessages() {
                 case CAN_ID_LB_BMS_E003:
                 case CAN_ID_LB_BMS_E004:  // sabit limit/config adayı; E002 ile multiplex
                 case CAN_ID_LB_BMS_E005:  // sabit limit/config adayı
+                case CAN_ID_LB_BMS_E006:
+                    handleLbBmsStub(msg, msg.identifier);
+                    break;
+                case CAN_ID_LB_BMS_E015: handleLbBmsE015(msg); break;
+                case CAN_ID_LB_BMS_E016: handleLbBmsE016(msg); break;
+                case CAN_ID_LB_BMS_E017: handleLbBmsE017(msg); break;
+                case CAN_ID_LB_BMS_E018: handleLbBmsE018(msg); break;
+                case CAN_ID_LB_BMS_E019: handleLbBmsE019(msg); break;
+                case CAN_ID_LB_BMS_E020: handleLbBmsE020(msg); break;
                 case CAN_ID_LB_BMS_E032:  // gözlemlenen oturumda hep sıfır — reserved/heartbeat adayı
                 case CAN_ID_LB_BMS_E033:  // gözlemlenen oturumda hep sıfır — reserved/heartbeat adayı
                     handleLbBmsStub(msg, msg.identifier);
@@ -235,6 +244,7 @@ void CanManager::processRxMessages() {
 
     updateMotorStatusValidity();
     updateBmsValidity();
+    updateCellVoltageValidity();
     updateChargerValidity();
 }
 
@@ -402,6 +412,11 @@ void CanManager::handleLbBmsE001(const twai_message_t& msg) {
     }
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
+    // YENİ — byte[0:5] min/max/avg
+    s_telemetryData.TEL_bmsCellVoltageMinDeciMv = parsed.TEL_bmsCellVoltageMinDeciMv;
+    s_telemetryData.TEL_bmsCellVoltageMaxDeciMv = parsed.TEL_bmsCellVoltageMaxDeciMv;
+    s_telemetryData.TEL_bmsCellVoltageAvgDeciMv = parsed.TEL_bmsCellVoltageAvgDeciMv;
+    // MEVCUT — temp (değişmez)
     s_telemetryData.TEL_bmsTempHighestC = parsed.TEL_bmsTempHighestC;
     s_telemetryData.TEL_bmsTempLowestC = parsed.TEL_bmsTempLowestC;
     CAN_lastBmsE001Tick = xTaskGetTickCount();  // G12: E001 freshness izleme
@@ -411,6 +426,73 @@ void CanManager::handleLbBmsE001(const twai_message_t& msg) {
     ESP_LOGD(TAG, "LB-E001: temp1=%d C, temp2=%d C",
              parsed.TEL_bmsTempHighestC,
              parsed.TEL_bmsTempLowestC);
+}
+
+void CanManager::handleLbBmsE015(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE015(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=0;i<4;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<0);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
+}
+void CanManager::handleLbBmsE016(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE016(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=4;i<8;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<1);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
+}
+void CanManager::handleLbBmsE017(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE017(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=8;i<12;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<2);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
+}
+void CanManager::handleLbBmsE018(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE018(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=12;i<16;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<3);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
+}
+void CanManager::handleLbBmsE019(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE019(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=16;i<20;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<4);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
+}
+void CanManager::handleLbBmsE020(const twai_message_t& msg) {
+    TelemetryData parsed{};
+    if (!CanParse::parseLbBmsE020(msg, parsed)) return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for (int i=20;i<24;i++) s_telemetryData.TEL_bmsCellVoltages[i] = parsed.TEL_bmsCellVoltages[i];
+    CAN_lastCellVoltageTick = xTaskGetTickCount();
+    CAN_hasSeen_CellVoltage = true;
+    CAN_cellVoltageSeenMask |= (1<<5);
+    if (CAN_cellVoltageSeenMask == 0x3F) s_telemetryData.TEL_cellVoltageDataValid = CAN_cellVoltageComplete = true;
+    xSemaphoreGive(s_mutex);
 }
 
 // 0x1806E5F4 — Charger komut frame'i (BMS -> Charger, DOĞRULANDI decode).
@@ -563,6 +645,32 @@ void CanManager::updateBmsValidity() {
                  "BMS status timeout after %d ms (E000/E001 freshness) — IDLE "
                  "disinda kritik fault (TEL_bmsTimeoutActive)",
                  CAN_BMS_STATUS_TIMEOUT_MS);
+    }
+}
+
+void CanManager::updateCellVoltageValidity() {
+    if (s_mutex == nullptr) return;
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+    bool CAN_shouldLogTimeout = false;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    
+    if (CAN_hasSeen_CellVoltage && static_cast<TickType_t>(CAN_nowTick - CAN_lastCellVoltageTick) >= pdMS_TO_TICKS(CAN_CELL_VOLTAGE_TIMEOUT_MS)) {
+        if (s_telemetryData.TEL_cellVoltageDataValid) {
+            s_telemetryData.TEL_cellVoltageDataValid = false;
+            CAN_cellVoltageComplete = false;
+            CAN_cellVoltageSeenMask = 0; // Reset freshness state completely
+        }
+        s_telemetryData.TEL_cellVoltageTimeoutActive = true;
+        CAN_shouldLogTimeout = !CAN_cellVoltageTimeoutLogged;
+        CAN_cellVoltageTimeoutLogged = true;
+    } else if (s_telemetryData.TEL_cellVoltageDataValid) {
+        CAN_cellVoltageTimeoutLogged = false;
+        s_telemetryData.TEL_cellVoltageTimeoutActive = false;
+    }
+    xSemaphoreGive(s_mutex);
+
+    if (CAN_shouldLogTimeout) {
+        ESP_LOGE(TAG, "Cell Voltage status timeout after %d ms", CAN_CELL_VOLTAGE_TIMEOUT_MS);
     }
 }
 

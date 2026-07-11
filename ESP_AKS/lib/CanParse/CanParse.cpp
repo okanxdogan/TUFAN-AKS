@@ -75,13 +75,15 @@ bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out) {
 // --- İSTİSNA: hemen aşağıdaki 0xE001 bu kapsamda DEĞİL — sıcaklık alanları
 // --- (byte[6:7]) DOĞRULANDI ve parse ediliyor; yalnız byte[0:5] bilinmiyor.
 
-// 0xE001 — Sıcaklık Değerleri DOĞRULANDI (bkz. CAN_Message_Table.md)
-// byte[0:5] = BİLİNMİYOR (analog kanal deseni, 0x8000 civarı ofset)
-// byte[6]   = Temperature 1 (Kanal 1), int8_t, °C
-// byte[7]   = Temperature 2 (Kanal 2), int8_t, °C
+// 0xE001 — Sıcaklık ve Hücre Özeti DOĞRULANDI (bkz. CAN_Message_Table.md)
 bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8)
         return false;
+
+    // YENİ: byte[0:1]=min, byte[2:3]=max, byte[4:5]=avg (raw/10 = mV)
+    out.TEL_bmsCellVoltageMinDeciMv = (msg.data[0] << 8) | msg.data[1];
+    out.TEL_bmsCellVoltageMaxDeciMv = (msg.data[2] << 8) | msg.data[3];
+    out.TEL_bmsCellVoltageAvgDeciMv = (msg.data[4] << 8) | msg.data[5];
 
     // DOĞRULANDI: byte[6] = Temp1, byte[7] = Temp2, int8_t, ofset yok, doğrudan °C.
     // Hangi kanalın daha sıcak olduğu garanti değil → max/min ile atanır.
@@ -133,6 +135,60 @@ bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out) {
     (void)out;
     // TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
     return msg.data_length_code > 0;
+}
+
+bool parseLbBmsE015(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[0] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[1] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[2] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[3] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
+}
+
+bool parseLbBmsE016(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[4] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[5] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[6] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[7] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
+}
+
+bool parseLbBmsE017(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[8] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[9] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[10] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[11] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
+}
+
+bool parseLbBmsE018(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[12] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[13] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[14] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[15] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
+}
+
+bool parseLbBmsE019(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[16] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[17] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[18] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[19] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
+}
+
+bool parseLbBmsE020(const twai_message_t& msg, TelemetryData& out) {
+    if (msg.data_length_code < 8) return false;
+    out.TEL_bmsCellVoltages[20] = ((msg.data[0]<<8)|msg.data[1]) / 10;
+    out.TEL_bmsCellVoltages[21] = ((msg.data[2]<<8)|msg.data[3]) / 10;
+    out.TEL_bmsCellVoltages[22] = ((msg.data[4]<<8)|msg.data[5]) / 10;
+    out.TEL_bmsCellVoltages[23] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    return true;
 }
 
 BmsPackVoltageFault checkPackVoltageFault(uint16_t packVoltageDeciV,

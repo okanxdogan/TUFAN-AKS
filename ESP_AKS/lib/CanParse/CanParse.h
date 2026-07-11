@@ -66,10 +66,9 @@ bool parseLbBmsE000(const twai_message_t& msg, TelemetryData& out);
 // DLC < 4 ise false döner ve `out` değiştirilmez.
 bool parseCharger1806E5F4(const twai_message_t& msg, ChargerCommand& out);
 
-// 0xE001 — Sıcaklık Değerleri DOĞRULANDI (bkz. CAN_Message_Table.md)
-//   byte[0:5] = BİLİNMİYOR (analog kanal deseni, 0x8000 civarı ofset)
-//   byte[6]   = Temperature 1 (Kanal 1), int8_t, °C
-//   byte[7]   = Temperature 2 (Kanal 2), int8_t, °C
+// 0xE001 — Sıcaklık ve Hücre Özeti DOĞRULANDI (bkz. CAN_Message_Table.md)
+//   byte[0:1]=min hücre mV, byte[2:3]=max hücre mV, byte[4:5]=avg
+//   hücre mV (DOĞRULANDI), byte[6:7]=sıcaklık (DOĞRULANDI)
 // TEL_bmsTempHighestC = max(temp1, temp2), TEL_bmsTempLowestC = min(temp1, temp2).
 bool parseLbBmsE001(const twai_message_t& msg, TelemetryData& out);
 
@@ -90,6 +89,19 @@ bool parseLbBmsE032(const twai_message_t& msg, TelemetryData& out);
 
 // 0xE033 — TODO: alan anlamı doğrulanmadı, ham byte'lar loglanıyor
 bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out);
+
+// 0xE015 — hücre 0-3 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE015(const twai_message_t& msg, TelemetryData& out);
+// 0xE016 — hücre 4-7 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE016(const twai_message_t& msg, TelemetryData& out);
+// 0xE017 — hücre 8-11 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE017(const twai_message_t& msg, TelemetryData& out);
+// 0xE018 — hücre 12-15 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE018(const twai_message_t& msg, TelemetryData& out);
+// 0xE019 — hücre 16-19 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE019(const twai_message_t& msg, TelemetryData& out);
+// 0xE020 — hücre 20-23 voltajı, DLC>=8, DOĞRULANDI
+bool parseLbBmsE020(const twai_message_t& msg, TelemetryData& out);
 
 // Pack voltajı güvenlik eşiği sonucu (yalnızca DOĞRULANMIŞ packV alanına
 // uygulanır — bkz. SystemConfig.h "Phase 2 Safety Thresholds").

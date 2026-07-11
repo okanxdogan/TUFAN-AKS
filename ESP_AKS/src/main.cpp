@@ -358,24 +358,20 @@ void vTask_HMI_Display(void *pvParameters) {
             // Kaynak DOĞRULANDIĞINDA (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=true):
             // gerçek 24 hücre TEL_data'dan buraya doldurulup cellDataValid=true
             // yapılacak; o zaman computePack gerçek min/max/denge/uyarıyı hesaplar.
-            BMS_raw.cellDataValid = HMI_CELL_VOLTAGE_SOURCE_VERIFIED;
-            for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
-                BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
-                BMS_raw.cellTempC[i] = 0;  // ekranda kullanılmaz (sıcaklık ayrı yolla)
+            BMS_raw.cellDataValid = TEL_data.TEL_cellVoltageDataValid;
+            if (BMS_raw.cellDataValid) {
+                for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                    BMS_raw.cellVoltageMv[i] = TEL_data.TEL_bmsCellVoltages[i];
+                    BMS_raw.cellTempC[i] = 0;
+                }
+            } else {
+                for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
+                    BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
+                    BMS_raw.cellTempC[i] = 0;
+                }
             }
 
             BMS_comp = computePack(BMS_raw);
-
-            // Özet min/max hücre gerilimi de per-hücre kaynağa bağlı: doğrulanana
-            // kadar sentinel ("--"). Pack voltajı/sıcaklık/akım GERÇEK ve ayrı
-            // (updateScreen) yolla gösterilir — bunlar fabrikasyon değil.
-            if (!HMI_CELL_VOLTAGE_SOURCE_VERIFIED) {
-                BMS_comp.cellMaxMv = HMI_CELL_VOLTAGE_NO_DATA;
-                BMS_comp.cellMinMv = HMI_CELL_VOLTAGE_NO_DATA;
-            } else {
-                BMS_comp.cellMaxMv = TEL_data.TEL_bmsCellVoltageMaxDeciMv / 10;
-                BMS_comp.cellMinMv = TEL_data.TEL_bmsCellVoltageMinDeciMv / 10;
-            }
         } else {
             // Geçersiz/bayat veri durumu: Ekranda son değerlerin donup kalmaması
             // için "--" (sentinel) ve boş bar gönderilir. Uyarı durumu CRITICAL yapılır.
@@ -724,8 +720,8 @@ extern "C" void app_main() {
   // ekranında BMS her zaman FAULT görünür. Per-hücre voltajı (E002-E005)
   // ve hücre sıcaklığı (E032-E033) alan anlamları BİLİNMİYOR.
   // Bkz. Documents/CAN_Message_Table.md.
-  ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor — UKS'te FAULT gorunur. "
-                "Per-hucre voltaj/sicaklik acik is.");
+  ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor (E002-E006 stub). "
+                "Hucre voltajlari (E015-E020) DOGRULANDI ve aktif.");
 
   // --- Hardware initialization (before any tasks) ---
 

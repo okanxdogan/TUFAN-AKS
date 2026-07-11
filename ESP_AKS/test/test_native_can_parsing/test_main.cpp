@@ -60,6 +60,14 @@ extern void test_e032_stub_accepts_valid_dlc(void);
 extern void test_e033_stub_accepts_valid_dlc(void);
 extern void test_stubs_do_not_write_telemetry(void);
 
+// Cell voltage parsing (E015-E020) and E001 min/max/avg
+extern void test_e015_dlc_too_short(void);
+extern void test_e015_parses_four_cells_correctly(void);
+extern void test_e015_cells_in_lifepo4_range(void);
+extern void test_e020_parses_four_cells_correctly(void);
+extern void test_e001_parses_min_max_avg_cell_voltages(void);
+extern void test_e001_preserves_temperature_fields(void);
+
 // Motor timeout
 extern void test_timeout_not_seen_yet(void);
 extern void test_timeout_already_invalidated(void);
@@ -136,6 +144,14 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_e032_stub_accepts_valid_dlc);
     RUN_TEST(test_e033_stub_accepts_valid_dlc);
     RUN_TEST(test_stubs_do_not_write_telemetry);
+
+    // Cell voltage parsing (E015-E020) and E001 min/max/avg
+    RUN_TEST(test_e015_dlc_too_short);
+    RUN_TEST(test_e015_parses_four_cells_correctly);
+    RUN_TEST(test_e015_cells_in_lifepo4_range);
+    RUN_TEST(test_e020_parses_four_cells_correctly);
+    RUN_TEST(test_e001_parses_min_max_avg_cell_voltages);
+    RUN_TEST(test_e001_preserves_temperature_fields);
 
     // Motor timeout
     RUN_TEST(test_timeout_not_seen_yet);

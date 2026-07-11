@@ -55,11 +55,18 @@ class CanManager {
     // Lithium Balance c-BMS handler'ları
     void handleLbBmsE000(const twai_message_t& msg);        // packV, akım, SoC — DOĞRULANDI
     void handleLbBmsE001(const twai_message_t& msg);        // Sıcaklıklar — DOĞRULANDI
+    void handleLbBmsE015(const twai_message_t& msg);
+    void handleLbBmsE016(const twai_message_t& msg);
+    void handleLbBmsE017(const twai_message_t& msg);
+    void handleLbBmsE018(const twai_message_t& msg);
+    void handleLbBmsE019(const twai_message_t& msg);
+    void handleLbBmsE020(const twai_message_t& msg);
     void handleCharger1806E5F4(const twai_message_t& msg);  // setpoint'ler — DOĞRULANDI (AKS yalnızca dinler)
     void handleLbBmsStub(const twai_message_t& msg, uint32_t canId);  // diğer ID'ler — DOĞRULANMADI
 
     void updateMotorStatusValidity();
     void updateBmsValidity();
+    void updateCellVoltageValidity();
     void updateChargerValidity();
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
@@ -103,6 +110,13 @@ class CanManager {
     TickType_t CAN_lastBmsE001Tick = 0;
     bool CAN_hasSeen_BmsE001 = false;
     bool CAN_bmsTimeoutLogged = false;
+
+    // Cell voltage freshness tracking (E015-E020)
+    TickType_t CAN_lastCellVoltageTick = 0;
+    bool CAN_hasSeen_CellVoltage = false;
+    bool CAN_cellVoltageTimeoutLogged = false;
+    uint8_t CAN_cellVoltageSeenMask = 0;  // bit0=E015, bit1=E016... bit5=E020
+    bool CAN_cellVoltageComplete = false; // true if all 6 received
 
     // Pack voltajı eşik ihlali bayrakları (bit0 = undervoltage,
     // bit1 = overvoltage). Motor errorFlags ile aynı edge-trigger deseni:

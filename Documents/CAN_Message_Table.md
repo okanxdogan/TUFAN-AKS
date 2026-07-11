@@ -86,16 +86,39 @@ Direction: `BMS → AKS` | DLC: 8 | Status: **Kısmi — byte[6:7] DOĞRULANDI, 
 
 | Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek / Çarpan | Durum | Kanıt |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0–1 | Bilinmiyor (Analog Kanal 1 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 1D`=0x821D, `82 25`=0x8225, `82 22`=0x8222, `82 1E`=0x821E, `82 24`=0x8224, `82 23`=0x8223 — 0x8000 civarında ofsete sahip, küçük varyasyonlu analog kanal deseni. Anlam/ölçek bilinmiyor. |
-| 2–3 | Bilinmiyor (Analog Kanal 2 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 35`=0x8235, `82 36`=0x8236, `82 33`=0x8233, `82 34`=0x8234 — aynı 0x8000 ofseti deseni. |
-| 4–5 | Bilinmiyor (Analog Kanal 3 ?) | — | — | — | — | ❌ BİLİNMİYOR | `82 27`=0x8227, `82 2E`=0x822E, `82 2B`=0x822B, `82 28`=0x8228 — aynı desen. |
+| 0–1 | Min Cell Voltage | uint16_t | Big | unsigned | raw/10 = mV | ✅ DOĞRULANDI | `82 1D`=33309 → 3330 mV. En düşük hücre gerilimi. |
+| 2–3 | Max Cell Voltage | uint16_t | Big | unsigned | raw/10 = mV | ✅ DOĞRULANDI | `82 35`=33333 → 3333 mV. En yüksek hücre gerilimi. |
+| 4–5 | Avg Cell Voltage | uint16_t | Big | unsigned | raw/10 = mV | ✅ DOĞRULANDI | `82 27`=33319 → 3331 mV. Ortalama hücre gerilimi. |
 | 6 | Temperature 1 (Kanal 1) | int8_t | — | signed | 1 °C (ofset yok) | ✅ DOĞRULANDI | `19` = 25 → **25°C** (log: "Batarya Sicakligi (Kanal 1) : 25 °C" ✓). Tüm 7 frame'de sabit `0x19`. |
 | 7 | Temperature 2 (Kanal 2) | int8_t | — | signed | 1 °C (ofset yok) | ✅ DOĞRULANDI | `18` = 24 → **24°C** (log: "Batarya Sicakligi (Kanal 2) : 24 °C" ✓). Tüm 7 frame'de sabit `0x18`. |
 
 **Firmware mapping:**
 - `TEL_bmsTempHighestC` = max(byte[6], byte[7])
 - `TEL_bmsTempLowestC` = min(byte[6], byte[7])
-- byte[0:5] → yalnızca debug log, TelemetryData'ya YAZILMAZ
+- `TEL_bmsCellVoltageMinDeciMv` = byte[0:1] (raw / 10 = mV)
+- `TEL_bmsCellVoltageMaxDeciMv` = byte[2:3]
+- `TEL_bmsCellVoltageAvgDeciMv` = byte[4:5]
+
+---
+
+### `0x0000E015` – `0x0000E020` — 24 Hücre Voltajı (TAMAMEN ÇÖZÜLDÜ)
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **✅ DOĞRULANDI**
+
+Her bir frame 4 adet hücre gerilimini barındırır (toplam 6 frame × 4 = 24 hücre).
+
+| CAN ID | Hücreler | Veri Tipi | Endian | İşaret | Ölçek |
+| --- | --- | --- | --- | --- | --- |
+| 0xE015 | Hücre 0–3 | uint16_t | Big | unsigned | raw / 10 = mV |
+| 0xE016 | Hücre 4–7 | uint16_t | Big | unsigned | raw / 10 = mV |
+| 0xE017 | Hücre 8–11 | uint16_t | Big | unsigned | raw / 10 = mV |
+| 0xE018 | Hücre 12–15 | uint16_t | Big | unsigned | raw / 10 = mV |
+| 0xE019 | Hücre 16–19 | uint16_t | Big | unsigned | raw / 10 = mV |
+| 0xE020 | Hücre 20–23 | uint16_t | Big | unsigned | raw / 10 = mV |
+
+**Firmware mapping:**
+- `TEL_bmsCellVoltages[0..23]` = raw / 10 (mV)
+- Güvenlik ve HMI logic'ine bağlandı.
 
 ---
 
@@ -200,7 +223,8 @@ Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tara
 | 0xE000 byte[6:7] SoC 2 | ✅ DOĞRULANDI | ✅ parseLbBmsE000 | ✅ TEL_bmsSoc2Hundredths | ❌ (gösterim/araştırma, karar dışı) |
 | 0xE001 byte[6] Temp1 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempHighestC (max seçimi) | ✅ isTempWarning/Critical ← hasWarning/CriticalCondition (55/70 °C) |
 | 0xE001 byte[7] Temp2 | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsTempLowestC (min seçimi) | ❌ (yalnız gösterim; karar max kanaldan) |
-| 0xE001 byte[0:5] | ❌ BİLİNMİYOR | ❌ | ❌ | ❌ |
+| 0xE001 byte[0:5] Min/Max/Avg | ✅ DOĞRULANDI | ✅ parseLbBmsE001 | ✅ TEL_bmsCellVoltageMin/Max/AvgDeciMv | ✅ hasWarning/CriticalCondition (Hücre koruması) |
+| 0xE015-E020 Bireysel Hücre Voltajları | ✅ DOĞRULANDI | ✅ parseLbBmsE015-E020 | ✅ TEL_bmsCellVoltages[24] | ❌ (HMI gösterimi için, kararlar Min/Max üstünden) |
 | 0x1806E5F4 byte[0:1] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
 | 0x1806E5F4 byte[2:3] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
 | 0xE002–E005, E032, E033, 0x000 | ❌ BİLİNMİYOR | ❌ (stub) | ❌ | ❌ |
@@ -209,10 +233,7 @@ Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tara
 
 ## Sonraki Adımlar
 
-1. **E001 byte[0:5] çözümü:** 0x8000 civarındaki ofsette analog kanal deseni — olası
-   bireysel hücre voltajı (offset-binary?). Tek hücreye yük uygulayarak korelasyon testi.
-2. **E002–E005 çözümü:** Diagnostic sniffer modu ile çapraz gözlem; LiBAL c-BMS CREATOR ile
-   PeakCAN doğrulama.
+1. **E002–E006 çözümü:** Diagnostic sniffer modu ile çapraz gözlem; LiBAL c-BMS CREATOR ile PeakCAN doğrulama. (HMI kararlarını etkilemiyor)
 3. **Bitrate teyidi:** 500 kbps çalışıyor (frame'ler geliyor); Solion föyü "standart 125 kbps"
    diyor ama bu farklı bir yapılandırma olabilir.
 4. **SoC 2 kullanımı:** SoC 1 vs SoC 2 arasındaki 0.37% farkın anlamı araştırılacak (farklı

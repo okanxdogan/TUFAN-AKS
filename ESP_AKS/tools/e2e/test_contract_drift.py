@@ -312,9 +312,9 @@ _LB_STUB_IDS = ["E001", "E002", "E003", "E004", "E005", "E032", "E033"]
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "9.2.c.ii AÇIK İŞ: Lithium Balance c-BMS'in 7 CAN ID'si (E001-E005,"
-        " E032, E033) henuz TelemetryData'ya alan yazmiyor (yalnizca packV/"
-        " E000 cozuldu). Biri gercek parse kazanirsa bu test XPASS eder —"
+        "9.2.c.ii AÇIK İŞ: Lithium Balance c-BMS'in bazi CAN ID'leri (E001-E005,"
+        " E032, E033) henuz TelemetryData'ya tam alan yazmiyor (packV E000 ve"
+        " 24 hücre E015-E020 cozuldu). Biri gercek parse kazanirsa bu test XPASS eder —"
         " TEKNIK_KONTROL_PROVASI.md 'AÇIK İŞ' maddesini ve boot-log"
         " uyarisini guncelleyip bu testi kaldirin/genisletin."
     ),
