@@ -5,6 +5,20 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+// G2 derleme-zamanı emniyeti: MOTOR_DRIVER_PRESENT=1 yapılıp motor torque CAN
+// frame formatı (ID/DLC/byte düzeni) HENÜZ doğrulanmadan (MOTOR_TORQUE_FRAME_
+// DEFINED tanımlanmadan) biri yanlışlıkla boş/uydurma bir frame göndermeye
+// başlamasın diye buradaki derleme BİLEREK kırılır. Entegrasyon günü: motor
+// sürücü spec'inden formatı DOĞRULA (UYDURMA YOK), aşağıdaki
+// drainTorqueQueue() içindeki TODO'yu gerçek frame ile doldur, SONRA
+// SystemConfig.h'ye `#define MOTOR_TORQUE_FRAME_DEFINED 1` ekle. Bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md madde 3.
+#if MOTOR_DRIVER_PRESENT
+#ifndef MOTOR_TORQUE_FRAME_DEFINED
+#error "MOTOR_DRIVER_PRESENT=1 ama motor torque CAN frame formati henuz dogrulanmadi (MOTOR_TORQUE_FRAME_DEFINED tanimli degil). CanManager.cpp::drainTorqueQueue() icindeki TODO'yu gercek, DOGRULANMIS frame ile doldurmadan bu bayragi acmayin — bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md madde 3."
+#endif
+#endif
+
 static constexpr const char* TAG = "CanManager";
 
 CanManager::CanManager(gpio_num_t tx_pin, gpio_num_t rx_pin)
@@ -85,27 +99,21 @@ bool CanManager::begin() {
 
 // Motor sürücüsü torque komutu. Motor sürücüsü henüz araca entegre DEĞİL
 // (MOTOR_DRIVER_PRESENT=0): bu fazda GERÇEK FRAME GÖNDERİLMEZ. E-STOP/FAULT
-// güvenli kapanış sırası (VcuLogic) bu fonksiyonu torque(0) ile çağırır;
-// bayrak 0 iken yalnızca bir kez uyarı loglanır (E-STOP yolunda spam yok) ve
-// false döner (frame üretilmedi). Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md.
+// güvenli kapanış sırası (VcuLogic) bu fonksiyonu torque(0) ile çağırır —
+// ÇAĞIRAN TARAF VCU TASK'İDİR, CAN task DEĞİL. Bayrak 1 iken bile
+// twai_transmit BURADAN DOĞRUDAN YAPILMAZ (G2 thread-safety): istek yalnızca
+// s_torqueQueue'ya yazılır (push, thread-safe/atomic), gerçek gönderim CAN
+// task döngüsünde drainTorqueQueue() ile yapılır (bkz. processRxMessages()).
+// Bayrak 0 iken yalnızca bir kez uyarı loglanır (E-STOP yolunda spam yok) ve
+// false döner (frame üretilmedi, kuyruğa da yazılmaz). Bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md.
 bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
     if (!isInitialized)
         return false;
 
 #if MOTOR_DRIVER_PRESENT
-    // TODO(motor entegrasyonu): GERÇEK torque frame'i burada kurulacak.
-    // CAN ID ve frame formatı motor sürücü spec'i gelince tanımlanacak
-    // (UYDURMA YOK). Fonksiyon imzası, çağrı noktaları ve E-STOP/FAULT
-    // sıralaması ŞİMDİ hazır; yalnızca frame içeriği ve twai_transmit çağrısı
-    // eksik:
-    //   twai_message_t msg = {};
-    //   msg.identifier = CAN_ID_TORQUE_CMD;              // ID doğrulanacak
-    //   msg.data_length_code = /* spec */;               // format doğrulanacak
-    //   ...
-    //   return twai_transmit(&msg, pdMS_TO_TICKS(10)) == ESP_OK;
-    (void)torqueValue;
-    ESP_LOGW(TAG, "sendTorqueCommand: MOTOR_DRIVER_PRESENT=1 ama frame TODO");
-    return false;
+    s_torqueQueue.push(torqueValue);
+    return true;  // istek kuyruklandi; gercek gonderim CAN task'inde (asagida)
 #else
     (void)torqueValue;
     if (!CAN_torqueSkipLogged) {
@@ -114,6 +122,32 @@ bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
         CAN_torqueSkipLogged = true;
     }
     return false;  // frame ÜRETİLMEDİ
+#endif
+}
+
+// G2: CAN task döngüsünde (processRxMessages ile aynı yerde) her tik
+// çağrılır. s_torqueQueue'da bekleyen bir istek varsa gerçek twai_transmit'i
+// BURADAN (CAN task'inden) yapar — twai_transmit hiçbir zaman VCU task'inden
+// doğrudan çağrılmaz. MOTOR_DRIVER_PRESENT=0 iken hiçbir şey yapmaz (kuyruğa
+// zaten yazılmıyor, bkz. sendTorqueCommand).
+void CanManager::drainTorqueQueue() {
+#if MOTOR_DRIVER_PRESENT
+    // Bu satıra ulaşılması, dosya başındaki #error guard'ının (MOTOR_
+    // TORQUE_FRAME_DEFINED) geçtiği — yani frame formatının DOĞRULANDIĞI
+    // anlamına gelir.
+    uint16_t torqueValue = 0;
+    if (!s_torqueQueue.drainPending(torqueValue))
+        return;
+
+    // TODO(motor entegrasyonu): GERÇEK torque frame'i burada kurulacak.
+    // CAN ID ve frame formatı motor sürücü spec'i gelince tanımlanacak
+    // (UYDURMA YOK):
+    //   twai_message_t msg = {};
+    //   msg.identifier = CAN_ID_TORQUE_CMD;              // ID doğrulanacak
+    //   msg.data_length_code = /* spec */;               // format doğrulanacak
+    //   ...
+    //   twai_transmit(&msg, pdMS_TO_TICKS(10));
+    (void)torqueValue;
 #endif
 }
 
@@ -246,6 +280,11 @@ void CanManager::processRxMessages() {
     updateBmsValidity();
     updateCellVoltageValidity();
     updateChargerValidity();
+
+    // G2: bekleyen tork isteği varsa gerçek gönderimi BURADA (CAN task'i,
+    // bu fonksiyonun çağrıldığı yer) yap — twai_transmit VCU task'inden
+    // asla doğrudan çağrılmaz. Bkz. sendTorqueCommand/drainTorqueQueue.
+    drainTorqueQueue();
 }
 
 MotorStatus CanManager::getMotorStatus() const {

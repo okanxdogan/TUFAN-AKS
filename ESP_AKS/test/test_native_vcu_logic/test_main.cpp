@@ -110,7 +110,15 @@ extern void test_reset_from_fault_clears_actuator_fault(void);
 extern void test_estop_requests_zero_torque_before_opening_contactors(void);
 extern void test_fault_requests_zero_torque_before_opening_contactors(void);
 extern void test_estop_without_torque_sink_still_opens_contactors(void);
+extern void test_estop_zero_torque_reaches_can_queue_before_contactor_open(void);
 extern void test_flag0_torque_frame_disabled(void);
+
+// G2 — TorqueRequestQueue (VCU task -> CAN task tork isteği kuyruğu)
+extern void test_torque_queue_drain_empty_returns_false(void);
+extern void test_torque_queue_push_then_drain_returns_value_once(void);
+extern void test_torque_queue_zero_value_is_a_valid_pending_request(void);
+extern void test_torque_queue_overwrites_undrained_value_with_latest(void);
+extern void test_torque_queue_push_after_drain_is_pending_again(void);
 
 // Faz 0 sanity
 static void test_smoke_arithmetic(void) {
@@ -225,7 +233,14 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_estop_requests_zero_torque_before_opening_contactors);
     RUN_TEST(test_fault_requests_zero_torque_before_opening_contactors);
     RUN_TEST(test_estop_without_torque_sink_still_opens_contactors);
+    RUN_TEST(test_estop_zero_torque_reaches_can_queue_before_contactor_open);
     RUN_TEST(test_flag0_torque_frame_disabled);
+
+    RUN_TEST(test_torque_queue_drain_empty_returns_false);
+    RUN_TEST(test_torque_queue_push_then_drain_returns_value_once);
+    RUN_TEST(test_torque_queue_zero_value_is_a_valid_pending_request);
+    RUN_TEST(test_torque_queue_overwrites_undrained_value_with_latest);
+    RUN_TEST(test_torque_queue_push_after_drain_is_pending_again);
 
     return UNITY_END();
 }
