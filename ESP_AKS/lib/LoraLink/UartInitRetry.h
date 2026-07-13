@@ -26,3 +26,17 @@ inline UartInitDecision uart_init_retry_decision(int failedAttempts,
         return UartInitDecision::GIVE_UP_DISABLED;
     return UartInitDecision::RETRY;
 }
+
+// ---------------------------------------------------------------------------
+// G11-b — GIVE_UP_DISABLED SONRASI periyodik yeniden deneme kararı.
+// ---------------------------------------------------------------------------
+// yukarıdaki uart_init_retry_decision() GIVE_UP_DISABLED dediğinde (N deneme
+// tükendi) görev artık SONSUZA DEK devre dışı KALMAMALI: LORA_INIT_RETRY_
+// INTERVAL_MS sabit aralıkla begin() yeniden denenmeli. Bu SAF fonksiyon
+// "şimdi tekrar deneme zamanı mı geldi" kararını (donanım/FreeRTOS bağımsız,
+// native test edilebilir) verir — çağıran taraf (main.cpp) bu true dönene
+// kadar wdt besleyerek bekler, sonra EspLoraHal::begin()'i tekrar çağırır.
+inline bool lora_task_retry_due(uint64_t nowMs, uint64_t lastAttemptMs,
+                                uint32_t retryIntervalMs) {
+    return (nowMs - lastAttemptMs) >= (uint64_t)retryIntervalMs;
+}

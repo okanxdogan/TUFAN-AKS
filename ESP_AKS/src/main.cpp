@@ -51,7 +51,14 @@ extern "C" bool LoRa_IsLinkDown(void) {
 }
 
 // G11: UART init N kez başarısız olunca set edilir; LoRa task telemetrisiz moda
-// geçer (araç durmaz). Cross-task okunur (LoRa_IsLinkDown deseni) → atomic.
+// geçer (araç durmaz). G11-b: KALICI DEĞİLDİR — vTask_LoRa_UKS
+// LORA_INIT_RETRY_INTERVAL_MS'te bir begin()'i yeniden dener; retry başarılı
+// olursa bu bayrak TEKRAR false'a döner (bkz. vTask_LoRa_UKS retry döngüsü).
+// Cross-task okunur (LoRa_IsLinkDown deseni) → atomic. NOT: şu an bu bayrağı
+// OKUYAN bir HMI/VcuLogic çağrı noktası YOK (grep ile doğrulandı, 2026-07-13)
+// — API gelecekte telemetri kaybını arayüzde göstermek isteyen bir tüketici
+// için hazır tutuluyor (bkz. CanManager::getChargerCommand'daki "bilinçli
+// çağıransız API" deseniyle aynı gerekçe); "ölü kod" diye SİLİNMEMELİ.
 static std::atomic<bool> s_loraTelemetryDisabled{false};
 
 extern "C" bool LoRa_IsTelemetryDisabled(void) {
@@ -464,6 +471,24 @@ class EspLoraHal : public ILoraHal {
   // GPIO mode/aux pinleri + UART (retry) kurulumu — eski task preamble'ı.
   // G11: UART bounded-retry. Kurulursa true; N denemede kurulamazsa false
   // döner (çağıran telemetrisiz moda geçer, reboot YOK).
+  //
+  // RETRY-SAFE (G11-b): bu fonksiyon TEKRAR ÇAĞRILABİLİR — vTask_LoRa_UKS
+  // ilk çağrı false dönerse LORA_INIT_RETRY_INTERVAL_MS'te bir begin()'i
+  // YENİDEN çağırır (bkz. çağıran taraf, Documents/LoRa_Link_Analysis.md
+  // "G11-b"). Gerekçe: `uart_driver_install`, sürücü zaten kuruluyken
+  // (ESP_ERR_INVALID_STATE ile) çağrılırsa SONSUZA dek başarısız kalır —
+  // aşağıdaki döngünün HER iterasyonu (ilk çağrının kendi iç denemeleri
+  // KADAR, bir SONRAKİ dış çağrının İLK iterasyonu DAHİL) `uart_is_driver_
+  // installed()` ile önce kontrol edip gerekirse `uart_driver_delete()` ile
+  // temizler; bu kontrol döngünün EN BAŞINDA olduğu için hangi err1/err2/
+  // err3 kombinasyonuyla önceki çağrı yarım kaldıysa kalsın, yeni bir
+  // begin() çağrısı da SIFIRDAN temiz kurulum dener. BU KONTROLÜ (satırdaki
+  // `if (uart_is_driver_installed(...))` bloğunu) KALDIRMAYIN — kaldırılırsa
+  // G11-b retry döngüsü ikinci denemeden itibaren kalıcı olarak
+  // ESP_ERR_INVALID_STATE'e takılır. (GPIO `ESP_ERROR_CHECK` çağrıları bu
+  // döngünün DIŞINDA, her begin() çağrısında bir kez çalışır; aynı pin
+  // bitmask'iyle tekrar `gpio_config` çağırmak ESP-IDF'te normal/idempotent
+  // bir işlemdir, retry'e özgü bir tuzak değildir.)
   bool begin() {
     gpio_config_t modePinsConfig = {};
     modePinsConfig.pin_bit_mask = (1ULL << LORA_M0_PIN) | (1ULL << LORA_M1_PIN);
@@ -604,18 +629,45 @@ void vTask_LoRa_UKS(void *pvParameters) {
   // Donanım kurulumu + E22 boot-config el sıkışması (LoraLink).
   Telemetry LO_telemetry;
   EspLoraHal LO_hal;
-  // G11: UART kurulamazsa (N deneme) telemetrisiz moda geç — aracı DURDURMA
-  // (FAULT yok), esp_restart YOK. Task canlı kalır (wdt beslenir) ama RX/TX
-  // yapmaz; durum LoRa_IsTelemetryDisabled() ile HMI/VcuLogic'e bildirilir.
-  if (!LO_hal.begin()) {
+  // G11: UART kurulamazsa (N deneme, EspLoraHal::begin() içi) telemetrisiz
+  // moda geç — aracı DURDURMA (FAULT yok), esp_restart YOK. Task canlı kalır
+  // (wdt beslenir) ama RX/TX yapmaz; durum LoRa_IsTelemetryDisabled() ile
+  // sorgulanabilir hale getirilir (şu an okuyan bir HMI/VcuLogic çağrı
+  // noktası YOK — bkz. s_loraTelemetryDisabled tanım yorumu).
+  //
+  // G11-b: bu mod ARTIK KALICI DEĞİL (ne de "bir kez true olup kalan" bir
+  // durum) — retry başarılı olduğunda aşağıda s_loraTelemetryDisabled tekrar
+  // false'a çekilir. Geçici bir UART/donanım aksaklığı
+  // (ör. gevşek kablo, geçici gürültü) sahada reboot beklemeden kendi kendine
+  // düzelebilsin diye LORA_INIT_RETRY_INTERVAL_MS (30 sn) sabit aralıkla
+  // begin() yeniden denenir (lora_task_retry_due, bkz. UartInitRetry.h).
+  // Watchdog bekleme sırasında da beslenir. Araç bu süre boyunca zaten
+  // etkilenmiyordu (telemetri kaybı FAULT tetiklemez) — bu değişiklik yalnız
+  // telemetrinin KENDİ KENDİNE toparlanmasını ekliyor.
+  uint64_t LO_lastInitAttemptMs = LO_hal.nowMs();
+  bool LO_wasDisabled = false;
+  while (!LO_hal.begin()) {
     s_loraTelemetryDisabled.store(true, std::memory_order_release);
-    ESP_LOGE(TAG, "LoRa telemetri devre disi — task telemetrisiz modda "
-                  "(RX/TX yok, arac etkilenmez)");
-    while (true) {
+    if (!LO_wasDisabled) {
+      ESP_LOGE(TAG,
+               "LoRa telemetri devre disi — %lu sn'de bir yeniden denenecek "
+               "(RX/TX yok, arac etkilenmez)",
+               (unsigned long)(LORA_INIT_RETRY_INTERVAL_MS / 1000U));
+      LO_wasDisabled = true;
+    }
+    LO_lastInitAttemptMs = LO_hal.nowMs();
+    while (!lora_task_retry_due(LO_hal.nowMs(), LO_lastInitAttemptMs,
+                                LORA_INIT_RETRY_INTERVAL_MS)) {
       esp_task_wdt_reset();
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
   }
+  if (LO_wasDisabled) {
+    ESP_LOGI(TAG, "LoRa telemetri KURTARILDI — retry basarili, normal "
+                  "akisa donuluyor");
+    s_loraTelemetryDisabled.store(false, std::memory_order_release);
+  }
+
   LoraLink(LO_hal).configureE22();
   LO_telemetry.begin();
 

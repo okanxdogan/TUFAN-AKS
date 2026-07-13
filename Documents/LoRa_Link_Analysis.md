@@ -59,6 +59,24 @@ Implemented now:
 - Link-down detection via heartbeat timeout (`LINK_TIMEOUT_MS = 9000`) with a boot-grace window (`BOOT_LINK_GRACE_MS = 5000`) so a UKS that's silent from power-on doesn't look falsely "up".
 - OfflineBuffer ring buffer (`OB_CAPACITY = 75`) retains telemetry during link loss, sampled at 1 Hz (`OFFLINE_SAMPLE_PERIOD_MS = 1000`) while offline.
 - On reconnect: up to `REPLAY_BURST_PER_TICK = 1` buffered packets are replayed per TX tick, plus 1 live packet, until the buffer drains.
+- **G11-b (2026-07-13) — LoRa UART init self-healing:** if `EspLoraHal::begin()`
+  fails after its bounded `LORA_UART_MAX_INIT_ATTEMPTS` (G11), `vTask_LoRa_UKS`
+  no longer parks in a permanent empty loop. It retries `begin()` (+
+  `configureE22()`) every `LORA_INIT_RETRY_INTERVAL_MS` (30 s, see
+  `lora_task_retry_due()` in `lib/LoraLink/UartInitRetry.h`, natively tested
+  in `test/test_native_uart_init_retry`) until it succeeds. The watchdog is
+  fed throughout the wait (both inside `EspLoraHal::begin()`'s own retry loop
+  and the outer 30 s wait). `LoRa_IsTelemetryDisabled()` reports `true` for
+  the whole disabled window and flips back to `false` on recovery — the
+  vehicle is never affected either way (telemetry loss never triggers FAULT).
+  On successful recovery, the `UplinkScheduler` (link FSM, offline buffer,
+  replay) and the boot-grace timestamp are constructed **fresh, at the
+  recovery moment** — they were already positioned after the init step in
+  the task body, so no separate reset logic was needed; this means UKS is
+  not falsely assumed "UP" using a stale boot time from before the outage.
+  `LoRa_IsLinkDown()`'s cross-task pointer (`s_uplink`) is null-checked before
+  dereferencing, so other tasks querying link state during the (re)init
+  window get a safe default (`false`, i.e. "not down") rather than crashing.
 
 ## Replay-Mode Budget
 

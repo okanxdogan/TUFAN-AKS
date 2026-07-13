@@ -236,6 +236,16 @@ static_assert(
 // EspLoraHal::begin / vTask_LoRa_UKS + lib/LoraLink/UartInitRetry.h).
 #define LORA_UART_MAX_INIT_ATTEMPTS 5
 
+// --- G11-b: LoRa görev-başı kurulumu KALICI devre dışı kalmasın ---
+// EspLoraHal::begin() (yukarıdaki LORA_UART_MAX_INIT_ATTEMPTS denemesi)
+// başarısız olup "devre dışı" moduna geçtikten SONRA vTask_LoRa_UKS artık
+// SONSUZA DEK boş döngüde kalmaz — bu sabit aralıkla begin()'i (+ E22
+// config'i) yeniden dener; geçici bir UART/donanım aksaklığı reboot
+// beklemeden kendi kendine düzelebilir (araç bu süre boyunca zaten
+// etkilenmiyordu — bkz. Documents/LoRa_Link_Analysis.md "Current
+// Reliability Policy"). Watchdog retry beklemesi sırasında da beslenir.
+#define LORA_INIT_RETRY_INTERVAL_MS 30000U
+
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
 
