@@ -75,13 +75,19 @@ inline bool hasWarningCondition(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
 
-    // Hücre voltaj WARN kontrolü (kaynak doğrulandı — E015-E020)
-    // Yalnızca tüm 24 hücre verisi tazeyse
+    // Hücre voltaj WARN kontrolü (freshness E015-E020 mask'ından, değerler
+    // 0xE001'den — bkz. TEL_cellVoltageDataValid tanımı VehicleData.h).
+    // Yalnızca tüm 24 hücre verisi tazeyse. TEL_bmsCellVoltageMin/MaxDeciMv
+    // deci-mV ölçeğindedir — eşikler de deci-mV (BMS_CELL_*_DECI_MV, bkz.
+    // BmsAlgo.h). GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13): önceden mV-ölçekli
+    // makrolarla (BMS_CELL_*_MV) karşılaştırılıyordu — gerçekçi bir hücre
+    // voltajıyla (deci-mV ~28000-40000) bu, overvolt dalının HER ZAMAN,
+    // undervolt dalının ise NEREDEYSE HİÇ tetiklenmemesi anlamına geliyordu.
     if (VCU_data.TEL_cellVoltageDataValid) {
         // Min hücre WARN altında mı?
-        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_WARN_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_WARN_DECI_MV) return true;
         // Max hücre WARN üstünde mı?
-        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_WARN_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_WARN_DECI_MV) return true;
     }
 
     // Yalnızca DOĞRULANMIŞ sinyaller: pack voltajı (WARN bandı) + en yüksek
@@ -118,10 +124,11 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
     // LiFePO4 spec) + en yüksek hücre sıcaklığı (≥70 °C FAULT) + akım
     // (şarj ≥13 A / deşarj ≥15 A FAULT). Kritik koşullar
     // isReadyEntryPermitted üzerinden READY girişini de bloklar.
-    // Hücre voltaj CRITICAL kontrolü (kaynak doğrulandı — E015-E020)
+    // Hücre voltaj CRITICAL kontrolü — deci-mV alan, deci-mV eşik (bkz.
+    // hasWarningCondition yorumu ve BmsAlgo.h "deci-mV ESDEĞERLERİ").
     if (VCU_data.TEL_cellVoltageDataValid) {
-        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_CRIT_MV) return true;
-        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_CRIT_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_CRIT_DECI_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_CRIT_DECI_MV) return true;
     }
 
     return VCU_data.TEL_bmsPackVoltageDeciV <=

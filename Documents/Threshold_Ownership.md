@@ -51,7 +51,11 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 > idi (bkz. bölüm 3 tablosu). `SystemConfig.h`'deki iki makro aynı değerlerle
 > (2500/3650 mV) hiçbir yerden referans edilmeyen kullanılmayan bir kopyaydı;
 > grep ile doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğinin TEK doğruluk
-> kaynağı `BmsAlgo.h`'dir (bölüm 3).
+> kaynağı `BmsAlgo.h`'dir (bölüm 3). NOT (2026-07-13 GÜVENLİK-EŞİĞİ
+> DÜZELTMESİ): `VcuLogic::hasCriticalCondition`/`hasWarningCondition` bu
+> makroların **mV** değil, bunlardan türetilen **`_DECI_MV`** eşdeğerini
+> kullanır (`TEL_bmsCellVoltageMin/MaxDeciMv` alanının ölçeğiyle uyumlu —
+> bkz. bölüm 3 altındaki "GÜVENLİK-EŞİĞİ DÜZELTMESİ" alt bölümü).
 
 > **Birim kararı (G5):** Akım için tek birim **centi-Amper (0.01 A)**'dir — parser
 > çıktısı (`TEL_bmsCurrentCentiA` = ham 0.1A × 10), eşikler ve `isCurrentWarning/
@@ -95,8 +99,42 @@ VCU karar mantığına hiç girmiyor.
 | `BMS_CELL_UNDERVOLT_WARN_MV` | 75 | 2800 | mV | Hücre WARNING alt sınır — CRIT'e 300 mV marj |
 | `BMS_CELL_OVERVOLT_WARN_MV` | 76 | 3550 | mV | Hücre WARNING üst sınır — CRIT'e 100 mV marj |
 | `BMS_TEMP_OVERTEMP_WARN_C` | 84 | 55 | °C | Hücre WARNING sıcaklık — sistem politikasıyla (55 °C UYARI) hem değer hem semantik (>=) olarak hizalı |
+| `BMS_CELL_UNDERVOLT_CRIT_DECI_MV` | 107 | 25000 | deci-mV | = yukarıdaki `_CRIT_MV` × 10 — VcuLogic.h/DeratingPolicy.h için (bkz. GÜVENLİK-EŞİĞİ DÜZELTMESİ altbölümü) |
+| `BMS_CELL_OVERVOLT_CRIT_DECI_MV` | 108 | 36500 | deci-mV | = yukarıdaki `_CRIT_MV` × 10 |
+| `BMS_CELL_UNDERVOLT_WARN_DECI_MV` | 109 | 28000 | deci-mV | = yukarıdaki `_WARN_MV` × 10 |
+| `BMS_CELL_OVERVOLT_WARN_DECI_MV` | 110 | 35500 | deci-mV | = yukarıdaki `_WARN_MV` × 10 |
 
 Değerler 24S LiFePO4 spec'ine (2.50–3.65 V/hücre) uyarlanmıştır — bkz. bölüm 5.
+
+### GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13) — hücre voltajı deci-mV/mV birim uyumsuzluğu
+
+**Bulgu:** `BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV` (yukarıdaki tablo) tek bir
+sabit seti olarak İKİ farklı karşılaştırma bağlamında kullanılıyordu:
+
+1. `BmsAlgo.cpp::computePack` — `BmsPackData::cellVoltageMv[]` ile karşılaştırır.
+   Bu dizi GERÇEKTEN mV (main.cpp, `TEL_bmsCellVoltages[]`'ten kopyalar — o da
+   `CanParse::parseLbBmsE015..E020`'de ham CAN byte'ının `/10`'a bölünmesiyle
+   üretilir). **Bu kullanım her zaman DOĞRUYDU, DEĞİŞTİRİLMEDİ.**
+2. `VcuLogic.h::hasWarningCondition/hasCriticalCondition` ve
+   `DeratingPolicy.h::computeTorqueAllowPercent` — `TEL_bmsCellVoltageMin/
+   MaxDeciMv` ile karşılaştırır. Bu alanlar `CanParse::parseLbBmsE001`'de HİÇ
+   `/10` YAPILMADAN doğrudan yazılır — gerçekte **deci-mV** (~28000-40000).
+
+**Önceki (hatalı) davranış:** (2) numaralı yol mV-ölçekli eşiklerle (2500-3650)
+karşılaştırıyordu. Gerçekçi bir hücre voltajı (deci-mV, ör. 33500) bu
+eşiklerin çok üzerinde olduğundan **overvolt WARN/CRITICAL her zaman
+tetiklenir**, **undervolt WARN/CRITICAL ise neredeyse hiç tetiklenmezdi**.
+`hasCriticalCondition` READY/DRIVE'da FAULT'a geçişi de tetiklediğinden
+(`VcuLogic.cpp run()`), olası saha belirtisi yalnızca "BMS canlıyken araç
+READY'ye giremiyor" değil, **DRIVE sırasında beklenmedik FAULT'a geçiş**
+olabilirdi.
+
+**Düzeltme:** `BmsAlgo.h`'ye yukarıdaki mV sabitlerinden TÜRETİLEN
+(`× 10`) yeni `_DECI_MV` sabitleri eklendi (aynı fiziksel eşik, doğru
+ölçek). `VcuLogic.h` ve `DeratingPolicy.h` artık bu `_DECI_MV` sabitlerini
+kullanır. `BmsAlgo.cpp`'nin kendi kullanımı (mV sabitler, mV alan) DOKUNULMADI.
+Wire formatı (`cellVMax`/`cellVMin` ×0.1 mV) ve CAN parse mantığı (`CanParse.cpp`)
+DEĞİŞMEDİ — bu yalnızca dahili karşılaştırma eşiklerinin düzeltilmesidir.
 CRITICAL uçları (2500/3650 mV) SystemConfig.h pack CRITICAL eşikleriyle
 (600/876 deciV) hücre×24 ilişkisiyle birebir örtüşür; WARN bandı bu katmana
 özgüdür (SystemConfig.h WARN eşikleriyle 1:1 eşleşmesi gerekmez).

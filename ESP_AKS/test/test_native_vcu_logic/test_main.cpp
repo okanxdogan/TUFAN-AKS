@@ -40,6 +40,13 @@ extern void test_warning_voltage_below_warn_high(void);
 extern void test_warning_voltage_at_warn_high(void);
 extern void test_critical_voltage_at_crit_high(void);
 
+// GÜVENLİK-EŞİĞİ DÜZELTMESİ — hücre voltajı deci-mV/mV birim uyumsuzluğu
+extern void test_cell_voltage_realistic_nominal_no_condition(void);
+extern void test_cell_undervoltage_warn_threshold_deci_mv(void);
+extern void test_cell_undervoltage_critical_realistic(void);
+extern void test_cell_overvoltage_warn_threshold_deci_mv(void);
+extern void test_cell_overvoltage_critical_realistic(void);
+
 // Faz 1 — error flag'ler
 extern void test_critical_motor_error_flag_set(void);
 extern void test_critical_bms_error_flag_set(void);
@@ -142,6 +149,9 @@ extern void test_derating_pack_overvoltage_at_approach_boundary_is_approaching_t
 extern void test_derating_ignores_cell_voltage_when_not_fresh(void);
 extern void test_derating_cell_undervoltage_at_warn_is_warning_tier(void);
 extern void test_derating_cell_undervoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_cell_overvoltage_at_warn_is_warning_tier(void);
+extern void test_derating_cell_overvoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_cell_voltage_realistic_nominal_is_nominal(void);
 extern void test_derating_multiple_warnings_worst_case_wins(void);
 extern void test_derating_two_warning_tier_signals_stay_at_warning_tier(void);
 
@@ -190,6 +200,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_warning_voltage_below_warn_high);
     RUN_TEST(test_warning_voltage_at_warn_high);
     RUN_TEST(test_critical_voltage_at_crit_high);
+
+    RUN_TEST(test_cell_voltage_realistic_nominal_no_condition);
+    RUN_TEST(test_cell_undervoltage_warn_threshold_deci_mv);
+    RUN_TEST(test_cell_undervoltage_critical_realistic);
+    RUN_TEST(test_cell_overvoltage_warn_threshold_deci_mv);
+    RUN_TEST(test_cell_overvoltage_critical_realistic);
 
     // Faz 1 — error flag'ler
     RUN_TEST(test_critical_motor_error_flag_set);
@@ -288,6 +304,9 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_derating_ignores_cell_voltage_when_not_fresh);
     RUN_TEST(test_derating_cell_undervoltage_at_warn_is_warning_tier);
     RUN_TEST(test_derating_cell_undervoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_cell_overvoltage_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_cell_overvoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_cell_voltage_realistic_nominal_is_nominal);
     RUN_TEST(test_derating_multiple_warnings_worst_case_wins);
     RUN_TEST(test_derating_two_warning_tier_signals_stay_at_warning_tier);
 

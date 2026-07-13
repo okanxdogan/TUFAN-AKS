@@ -330,10 +330,11 @@ static_assert(
 // + BMS freshness (G12: E000/E001 ID bazında, hücre voltajı ise
 // CAN_cellVoltageSeenMask ile ayrı izlenir). Hücre voltajı eşikleri artık
 // karar mantığına BAĞLI: VcuLogic::hasWarningCondition/hasCriticalCondition
-// (bkz. VcuLogic.h) BmsAlgo.h'deki BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV
-// eşiklerini TEL_cellVoltageDataValid iken kullanır — SystemConfig.h'deki
-// BMS_CRITICAL_MIN/MAX_CELL_VOLTAGE_MV (aşağıda) BUNLARDAN AYRI, kullanılmayan
-// bir kopyadır (bkz. o bloktaki not). AÇIK İŞ: yalnızca TEL_bmsSystemState
+// (bkz. VcuLogic.h) BmsAlgo.h'deki BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_
+// DECI_MV eşiklerini (deci-mV — TEL_bmsCellVoltageMin/MaxDeciMv alanıyla AYNI
+// ölçek; GÜVENLİK-EŞİĞİ DÜZELTMESİ 2026-07-13, önceden mV-ölçekli makrolarla
+// karşılaştırılıyordu, bkz. Documents/Threshold_Ownership.md) TEL_
+// cellVoltageDataValid iken kullanır. AÇIK İŞ: yalnızca TEL_bmsSystemState
 // kaynağı henüz doğrulanmadığı için ilgili kontrol (==4 FAULT) YER
 // TUTUCUDUR ve karar mantığına fiilen BAĞLI DEĞİLDİR.
 

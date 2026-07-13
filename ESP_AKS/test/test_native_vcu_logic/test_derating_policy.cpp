@@ -142,46 +142,63 @@ void test_derating_pack_overvoltage_at_approach_boundary_is_approaching_tier(voi
 void test_derating_ignores_cell_voltage_when_not_fresh(void) {
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_cellVoltageDataValid = false;
-    d.TEL_bmsCellVoltageMinDeciMv = 2000;  // acikca CRITICAL-altinda bir deger
+    d.TEL_bmsCellVoltageMinDeciMv = 20000;  // acikca CRITICAL-altinda bir deger (deci-mV)
     TEST_ASSERT_EQUAL_UINT8(100, DeratingPolicy::computeTorqueAllowPercent(d));
 }
 
-// Hucre dusuk gerilim: WARN=2800, CRIT=2500, span=300,
-// approachAt = 2800 - (300*90)/100 = 2800-270 = 2530.
+// GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13): asagidaki degerler artik deci-mV
+// olcegindedir (BMS_CELL_UNDERVOLT_WARN_DECI_MV=28000, _CRIT_DECI_MV=25000,
+// bkz. BmsAlgo.h) — TEL_bmsCellVoltageMin/MaxDeciMv alaniyla AYNI olcek.
+// Onceden burada mV-olcekli (2800/2500) degerler kullaniliyordu ve kod da
+// mV-olcekli esiklerle karsilastiriyordu; DeratingPolicy.h artik deci-mV
+// esikleri (BMS_CELL_*_DECI_MV) kullandigi icin test degerleri de gercekci
+// deci-mV araligina (bkz. test_native_can_parsing/test_cell_voltage_parse.cpp
+// ~33505/34311 gibi degerler) tasindi.
 //
-// NOT (onemli, kapsam disi bir kesif): BMS_CELL_UNDERVOLT/OVERVOLT_WARN/
-// CRIT_MV (BmsAlgo.h) VcuLogic.h::hasWarningCondition/hasCriticalCondition
-// icinde TEL_bmsCellVoltageMin/MaxDeciMv alanlarina HICBIR birim donusumu
-// OLMADAN dogrudan karsilastirilir (bkz. VcuLogic.h). Ancak bu alanlar
-// gercekte DECI-mV olcegindedir (CanParse::parseLbBmsE001 raw degeri
-// DOGRUDAN yazar, /10 YAPMAZ — bkz. test_native_can_parsing/
-// test_cell_voltage_parse.cpp: gercek bir hucre icin ~33505/34311 gibi
-// degerler bekleniyor) — oysa esik makrolari duz mV olcegindedir (2500-3650,
-// "LiFePO4 spec 2.50/3.65 V" yorumuyla). Yani mevcut (bu gorevin KAPSAMI
-// DISINDAKI) kodda gercekci bir hucre voltajiyla asiri-gerilim kontrolu
-// HER ZAMAN tetiklenir, dusuk-gerilim kontrolu ISE NEREDEYSE HICBIR ZAMAN
-// tetiklenmez. DeratingPolicy, hasWarningCondition ile AYNI (yorumla
-// gecerli) sinyal setini/karsilastirmasini BIREBIR yansitir (kapsam kilidi:
-// bu gorev yalniz bir loglama iskeleti ekliyor, mevcut esik/birim mantigini
-// DUZELTMEZ) — bu yuzden test degerleri de KODUN FIILEN yaptigi
-// karsilastirmayla (esik makrolariyla AYNI kucuk sayisal araliktaki ham
-// alan degerleri) uyumlu secildi, "gercekci" bir hucre voltaji DEGIL. Max
-// burada esiklerin (3550/3650) ALTINDA bir degere sabitlenerek yalniz
-// dusuk-gerilim sinyali izole edilir.
+// Hucre dusuk gerilim: WARN=28000, CRIT=25000, span=3000,
+// approachAt = 28000 - (3000*90)/100 = 28000-2700 = 25300.
 void test_derating_cell_undervoltage_at_warn_is_warning_tier(void) {
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_cellVoltageDataValid = true;
-    d.TEL_bmsCellVoltageMaxDeciMv = 3300;  // esiklerin (3550/3650) altinda — izolasyon
-    d.TEL_bmsCellVoltageMinDeciMv = 2800;
+    d.TEL_bmsCellVoltageMaxDeciMv = 33000;  // 3300.0 mV — nominal, esiklerin altinda — izolasyon
+    d.TEL_bmsCellVoltageMinDeciMv = 28000;
     TEST_ASSERT_EQUAL_UINT8(50, DeratingPolicy::computeTorqueAllowPercent(d));
 }
 
 void test_derating_cell_undervoltage_at_approach_boundary_is_approaching_tier(void) {
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_cellVoltageDataValid = true;
-    d.TEL_bmsCellVoltageMaxDeciMv = 3300;  // esiklerin (3550/3650) altinda — izolasyon
-    d.TEL_bmsCellVoltageMinDeciMv = 2530;
+    d.TEL_bmsCellVoltageMaxDeciMv = 33000;  // nominal — izolasyon
+    d.TEL_bmsCellVoltageMinDeciMv = 25300;
     TEST_ASSERT_EQUAL_UINT8(20, DeratingPolicy::computeTorqueAllowPercent(d));
+}
+
+// Hucre asiri gerilim: WARN=35500, CRIT=36500, span=1000,
+// approachAt = 35500 + (1000*90)/100 = 35500+900 = 36400.
+void test_derating_cell_overvoltage_at_warn_is_warning_tier(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // nominal — izolasyon
+    d.TEL_bmsCellVoltageMaxDeciMv = 35500;
+    TEST_ASSERT_EQUAL_UINT8(50, DeratingPolicy::computeTorqueAllowPercent(d));
+}
+
+void test_derating_cell_overvoltage_at_approach_boundary_is_approaching_tier(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // nominal — izolasyon
+    d.TEL_bmsCellVoltageMaxDeciMv = 36400;
+    TEST_ASSERT_EQUAL_UINT8(20, DeratingPolicy::computeTorqueAllowPercent(d));
+}
+
+// REGRESYON: gercekci bir hucre voltajiyla (3300-3350 mV, DUZELTME ONCESI
+// eski mV-olcekli esikle HER ZAMAN overvolt WARN tetiklerdi) artik NOMINAL.
+void test_derating_cell_voltage_realistic_nominal_is_nominal(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // 3300.0 mV
+    d.TEL_bmsCellVoltageMaxDeciMv = 33500;  // 3350.0 mV
+    TEST_ASSERT_EQUAL_UINT8(100, DeratingPolicy::computeTorqueAllowPercent(d));
 }
 
 // --- Coklu-WARN kombinasyonu: en kisitlayici (en dusuk yuzde) kazanir ------

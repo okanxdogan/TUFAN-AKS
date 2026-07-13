@@ -182,6 +182,66 @@ void test_critical_voltage_at_crit_high(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Hücre voltajı (0xE001 min/max — TEL_bmsCellVoltageMin/MaxDeciMv, deci-mV
+// ölçekli, yalnızca TEL_cellVoltageDataValid iken değerlendirilir).
+// GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13): önceden burada mV-ölçekli eşikler
+// (BMS_CELL_*_MV) kullanılıyordu — gerçekçi bir hücre voltajıyla (deci-mV
+// ~28000-40000) overvolt dalı HER ZAMAN, undervolt dalı ise NEREDEYSE HİÇ
+// tetiklenmiyordu (saha belirtisi: BMS canlıyken araç READY'ye giremiyordu).
+// Artık deci-mV eşiklerle (BMS_CELL_*_DECI_MV, bkz. BmsAlgo.h) karşılaştırılır
+// — aşağıdaki testler hem eski hatayı hem doğru davranışı kilitler.
+// ---------------------------------------------------------------------------
+void test_cell_voltage_realistic_nominal_no_condition(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // 3300.0 mV — nominal LiFePO4 hücre
+    d.TEL_bmsCellVoltageMaxDeciMv = 33500;  // 3350.0 mV — nominal
+    // DÜZELTME ÖNCESİ: 33500 > eski mV eşiği (3550) olduğundan bu her zaman
+    // overvolt WARN tetiklerdi — düzeltmeden önce bu test BAŞARISIZ olurdu.
+    TEST_ASSERT_FALSE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_cell_undervoltage_warn_threshold_deci_mv(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    // Hücre voltajı semantiği strictly < / > (BmsAlgo.h'deki gibi) — eşiğin
+    // KENDİSİ tetiklemez, bir altı tetikler.
+    d.TEL_bmsCellVoltageMinDeciMv = 27999;  // 2799.9 mV — WARN (2800) eşiğinin 0.1 mV altı
+    d.TEL_bmsCellVoltageMaxDeciMv = 33000;  // temiz
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_cell_undervoltage_critical_realistic(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 24900;  // 2490.0 mV — CRIT (2500 mV) altında
+    d.TEL_bmsCellVoltageMaxDeciMv = 33000;  // temiz
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_cell_overvoltage_warn_threshold_deci_mv(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // temiz
+    // Hücre voltajı semantiği strictly < / > — eşiğin KENDİSİ tetiklemez.
+    d.TEL_bmsCellVoltageMaxDeciMv = 35501;  // 3550.1 mV — WARN (3550) eşiğinin 0.1 mV üstü
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_FALSE(hasCriticalCondition(d, VcuState::READY));
+}
+
+void test_cell_overvoltage_critical_realistic(void) {
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_cellVoltageDataValid = true;
+    d.TEL_bmsCellVoltageMinDeciMv = 33000;  // temiz
+    d.TEL_bmsCellVoltageMaxDeciMv = 36600;  // 3660.0 mV — CRIT (3650 mV) üstünde
+    TEST_ASSERT_TRUE(hasWarningCondition(d));
+    TEST_ASSERT_TRUE(hasCriticalCondition(d, VcuState::READY));
+}
+
+// ---------------------------------------------------------------------------
 // BMS FAULT state her zaman critical tetikler.
 // ---------------------------------------------------------------------------
 void test_critical_motor_error_flag_set(void) {

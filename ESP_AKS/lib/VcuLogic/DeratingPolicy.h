@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-#include "BmsAlgo.h"      // BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV
+#include "BmsAlgo.h"      // BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_DECI_MV
 #include "SystemConfig.h" // DERATING_*, BMS_WARN_/CRITICAL_* esikleri
 #include "VehicleData.h"  // TelemetryData (M3)
 
@@ -126,33 +126,20 @@ inline uint8_t computeTorqueAllowPercent(const TelemetryData& d) {
     if (packOverTier < percent) percent = packOverTier;
 
     // Hücre voltajı — yalnızca tüm 24 hücre verisi tazeyse (hasWarningCondition
-    // ile aynı kapı, bkz. VcuLogic.h).
-    //
-    // KAPSAM DIŞI KEŞİF (2026-07-15, düzeltilmedi — bu görev yalnız bir
-    // loglama iskeleti ekliyor): BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV
-    // (BmsAlgo.h) burada da, VcuLogic.h::hasWarningCondition/
-    // hasCriticalCondition'da da, TEL_bmsCellVoltageMin/MaxDeciMv alanlarına
-    // HİÇBİR birim dönüşümü OLMADAN karşılaştırılıyor. Bu alanlar fiilen
-    // DECİ-mV ölçeğinde (CanParse::parseLbBmsE001 ham değeri DOĞRUDAN yazar,
-    // /10 YAPMAZ — gerçek bir hücre için ~28000-40000 aralığında, bkz.
-    // test_native_can_parsing/test_cell_voltage_parse.cpp), eşik makroları
-    // ise düz mV ölçeğinde (2500-3650). Sonuç: gerçekçi bir hücre voltajıyla
-    // aşırı-gerilim dalı HER ZAMAN tetiklenir, düşük-gerilim dalı ise
-    // NEREDEYSE HİÇ tetiklenmez — bu, bu görevden BAĞIMSIZ, önceden var olan
-    // bir birim uyumsuzluğu gibi görünüyor. Bu fonksiyon, hasWarningCondition
-    // ile TUTARLI kalmak için AYNI (yorumla geçerli) karşılaştırmayı
-    // BİREBİR yansıtıyor — burada SESSİZCE "düzeltilmedi" çünkü bu, bu
-    // görevin kapsamı dışında, ayrı bir inceleme/onay gerektiren bir
-    // güvenlik-eşiği değişikliği olur.
+    // ile aynı kapı, bkz. VcuLogic.h). TEL_bmsCellVoltageMin/MaxDeciMv deci-mV
+    // ölçeğindedir; eşikler de deci-mV (BMS_CELL_*_DECI_MV, bkz. BmsAlgo.h
+    // "deci-mV ESDEĞERLERİ" — GÜVENLİK-EŞİĞİ DÜZELTMESİ 2026-07-13, önceden
+    // burada mV-ölçekli makrolarla karşılaştırılıyordu; bkz. Threshold_
+    // Ownership.md için önceki/sonraki davranış özeti).
     if (d.TEL_cellVoltageDataValid) {
         const uint8_t cellUnderTier = detail::tierFromLowerBound(
-            d.TEL_bmsCellVoltageMinDeciMv, BMS_CELL_UNDERVOLT_WARN_MV,
-            BMS_CELL_UNDERVOLT_CRIT_MV);
+            d.TEL_bmsCellVoltageMinDeciMv, BMS_CELL_UNDERVOLT_WARN_DECI_MV,
+            BMS_CELL_UNDERVOLT_CRIT_DECI_MV);
         if (cellUnderTier < percent) percent = cellUnderTier;
 
         const uint8_t cellOverTier = detail::tierFromUpperBound(
-            d.TEL_bmsCellVoltageMaxDeciMv, BMS_CELL_OVERVOLT_WARN_MV,
-            BMS_CELL_OVERVOLT_CRIT_MV);
+            d.TEL_bmsCellVoltageMaxDeciMv, BMS_CELL_OVERVOLT_WARN_DECI_MV,
+            BMS_CELL_OVERVOLT_CRIT_DECI_MV);
         if (cellOverTier < percent) percent = cellOverTier;
     }
 
