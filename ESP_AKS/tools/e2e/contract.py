@@ -172,6 +172,13 @@ REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
 BOOT_LINK_GRACE_MS = 5000        # boot'tan itibaren ilk heartbeat icin tanina sure
 LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-6 sn'lik fiili heartbeat araligina marj (bkz. SystemConfig.h)
 
+# TERS YON: UKS'in TEL frame timeout'u (UKS Core/Inc/telemetry.h). AKS'in
+# LINK_TIMEOUT_MS'i (yukarida) UKS->AKS heartbeat icindir; bu ise AKS->UKS
+# TEL frame'leri icin UKS tarafinda simetrik bir bekci — bkz. Documents/
+# LoRa_Link_Analysis.md "UKS-side TEL Timeout Margin" (nominal 4x marj,
+# 3 ardisik atlanmis TX tik'i tolere edilir, 4.'sunde false LINK,DOWN).
+TEL_LINK_TIMEOUT_MS = 2000
+
 
 def build_tel_line(f: dict) -> str:
     """AKS Telemetry.cpp::sendStatus format string'inin Python eslenigi.

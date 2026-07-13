@@ -70,6 +70,41 @@ def test_uks_current_unit_is_centiamp_not_centima(uks_telemetry_dir, uks_root, a
         )
 
 
+def test_uks_tel_link_timeout_matches_contract(uks_telemetry_dir):
+    """contract.TEL_LINK_TIMEOUT_MS, UKS telemetry.h'daki gercek degerden
+    SAPMAMALI (bkz. Documents/LoRa_Link_Analysis.md 'UKS-side TEL Timeout
+    Margin')."""
+    header = read(uks_telemetry_dir / "Core/Inc/telemetry.h")
+    uks_value = extract_define_int(header, "TEL_LINK_TIMEOUT_MS", source="UKS telemetry.h")
+    assert uks_value == contract.TEL_LINK_TIMEOUT_MS, (
+        f"UKS TEL_LINK_TIMEOUT_MS={uks_value} contract.py degerinden "
+        f"({contract.TEL_LINK_TIMEOUT_MS}) sapmis — iki tarafi senkronla."
+    )
+
+
+def test_uks_tel_link_timeout_has_enough_margin_over_tx_period(uks_telemetry_dir):
+    """Invariant: TEL_LINK_TIMEOUT_MS >= 3 x LORA_TX_PERIOD_MS.
+
+    Bkz. Documents/LoRa_Link_Analysis.md 'UKS-side TEL Timeout Margin': bu
+    oran, UKS'in ardisik 3 atlanmis (AUX mesgul / TX ring dolu ertelemesi)
+    TX tik'ini FALSE LINK,DOWN vermeden tolere etmesini garanti eder (4.
+    ardisik atlanmis tik gerekir tetiklenmesi icin). Biri LORA_TX_PERIOD_MS'i
+    (AKS SystemConfig.h) tek tarafli artirirsa ve UKS TEL_LINK_TIMEOUT_MS
+    buna gore yeniden hesaplanmazsa, bu marj sessizce erir — bu bekci CI'da
+    ANINDA yakalar."""
+    header = read(uks_telemetry_dir / "Core/Inc/telemetry.h")
+    uks_timeout = extract_define_int(header, "TEL_LINK_TIMEOUT_MS", source="UKS telemetry.h")
+
+    assert uks_timeout >= 3 * contract.LORA_TX_PERIOD_MS, (
+        f"UKS TEL_LINK_TIMEOUT_MS ({uks_timeout} ms) artik en az 3x AKS "
+        f"LORA_TX_PERIOD_MS'i ({contract.LORA_TX_PERIOD_MS} ms) karsilamiyor "
+        "— ardisik tik atlama toleransi (bkz. Documents/LoRa_Link_Analysis.md "
+        "'UKS-side TEL Timeout Margin' tablosu) 3'un altina dusmus olabilir. "
+        "LORA_TX_PERIOD_MS degistiyse TEL_LINK_TIMEOUT_MS'i (UKS telemetry.h) "
+        "AYNI COMMIT SETINDE yeniden kalibre edin ve analiz tablosunu guncelleyin."
+    )
+
+
 def test_uks_telemetry_c_has_parse_u32(uks_telemetry_dir):
     src = read(uks_telemetry_dir / "Core/Src/telemetry.c")
     assert re.search(r"\bstatic\s+int\s+Parse_U32\s*\(", src), (
