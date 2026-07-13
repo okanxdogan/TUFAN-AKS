@@ -313,8 +313,14 @@ static_assert(
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---
-// Warning levels should eventually trigger derating (AÇIK İŞ B12 —
-// bugün yalnız WARN log + READY giriş bloğu; bkz. VcuLogic.cpp run()).
+// Warning levels should eventually trigger derating (AÇIK İŞ B12 — İSKELET
+// KURULDU 2026-07-15: lib/VcuLogic/DeratingPolicy.h WARN sinyallerinden
+// 0..100 bir tork-izin yüzdesi hesaplıyor ve VcuLogic.cpp run() bunu yalnız
+// LOGLUYOR ("derating önerisi %N" — bkz. aşağıdaki DERATING_* sabitleri).
+// KALAN AÇIK İŞ: (1) bu yüzdeleri gerçek bir tork komutuna bağlamak —
+// motor sürücüsü tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye
+// başlayınca tasarlanacak; (2) DERATING_* yüzdelerinin/eşik-yaklaşma
+// oranının saha kalibrasyonu/ekip onayı. Bugün araç davranışı DEĞİŞMEZ.
 // Critical levels should force a transition to FAULT.
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
@@ -387,6 +393,25 @@ static_assert(
 // VOLTAGE_MV) vardı — 2026-07-13'te grep ile hiçbir referans bulunmadığı
 // doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğini değiştirecekseniz
 // BmsAlgo.h'yi güncelleyin (tek doğruluk kaynağı).
+
+// --- B12: Derating Policy (İSKELET — bkz. lib/VcuLogic/DeratingPolicy.h) ---
+// WARN bandında (hasWarningCondition==true) 0..100 bir tork-izin yüzdesi
+// hesaplanır; ŞU AN yalnızca run() içinde LOGLANIR, gerçek bir tork komutuna
+// BAĞLANMAZ (motor sürücüsü tork yolu hazır olunca, bkz. G2/MOTOR_ENTEGRASYON_
+// NOTU.md). Basit 3 kademeli harita — ekip kalibrasyonu BEKLİYOR (CONFIG):
+//   WARN yok            -> DERATING_TORQUE_PERCENT_NOMINAL
+//   WARN aktif          -> DERATING_TORQUE_PERCENT_WARNING
+//   CRITICAL'e yaklaşma  -> DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL
+// "Yaklaşma" WARN->CRITICAL aralığının DERATING_APPROACHING_CRITICAL_
+// FRACTION_PERCENT kadarının tüketilmesi olarak tanımlanır (bkz.
+// DeratingPolicy.h yorumu — ham eşik değerinin doğrudan yüzdesi DEĞİL: bu,
+// sıfırdan uzak mutlak eşiklerde (ör. pack aşırı gerilim 852/876 deciV)
+// ters sonuç verirdi, WARN->CRITICAL ARALIĞININ yüzdesi fiziksel olarak
+// anlamlıdır).
+#define DERATING_TORQUE_PERCENT_NOMINAL 100
+#define DERATING_TORQUE_PERCENT_WARNING 50
+#define DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL 20
+#define DERATING_APPROACHING_CRITICAL_FRACTION_PERCENT 90
 
 // Task watchdog timing is still using the ESP-IDF default configuration.
 // The shorter LoRa RX timeout below improves scheduling margin, but the global
