@@ -42,6 +42,19 @@ inline int32_t sanitizeCurrent(int32_t raw) {
     return (raw == INT32_MIN) ? (INT32_MIN + 1) : raw;
 }
 
+// UKS Decode_Line: Parse_Int(f[4]="torque", min=-32768, max=32767) —
+// int16_t. BILINEN SEMANTIK UYUMSUZLUK: sozlesme bu alani "torque" olarak
+// adlandirir, ancak AKS encoder'i (Telemetry.cpp::sendStatus) buraya FIILEN
+// TEL_motorVoltageDeciV (motor voltaji, deciV, uint16_t) yazar — gercek tork
+// degil. TEL_motorVoltageDeciV 32767'yi asabilir (ornek: 40000 deciV =
+// 4000.0 V), asarsa UKS Parse_Int TUM frame'i reddeder (parse_fail) ve rpm,
+// BMS vb. diger tum gecerli alanlar da kaybolur. Kalici cozume kadar (bkz.
+// Documents/TORQUE_ALAN_KARAR_NOTU.md) bu deger 32767'ye KIRPILIR — bu
+// yalnizca frame reddini engeller, "dogru tork degeri" uretmez.
+inline uint16_t sanitizeMotorVoltForTorqueField(uint16_t raw) {
+    return (raw > 32767U) ? 32767U : raw;
+}
+
 // Tek ortak sanitize kapısı: canlı VE replay (OfflineBuffer'dan gelen)
 // paketler, UKS'e gitmeden hemen önce (sendStatus çağrısının hemen
 // öncesinde) buradan geçer — böylece ikisi de aynı garantiye sahip olur
@@ -52,6 +65,7 @@ inline TelemetryData sanitizeForUplink(const TelemetryData& raw) {
     out.TEL_bmsSystemState     = sanitizeSystemState(out.TEL_bmsSystemState);
     out.TEL_bmsSocHundredths   = sanitizeSoc(out.TEL_bmsSocHundredths);
     out.TEL_bmsCurrentCentiA  = sanitizeCurrent(out.TEL_bmsCurrentCentiA);
+    out.TEL_motorVoltageDeciV  = sanitizeMotorVoltForTorqueField(out.TEL_motorVoltageDeciV);
     return out;
 }
 

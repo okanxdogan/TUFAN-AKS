@@ -44,6 +44,15 @@ extern void test_sanitize_for_uplink_passthrough_when_all_valid(void);
 extern void test_sanitize_for_uplink_corrects_invalid_system_state(void);
 extern void test_sanitize_for_uplink_corrects_soc_and_current_together(void);
 
+// TelemetrySanitize::sanitizeMotorVoltForTorqueField (torque alanı semantik
+// uyumsuzluk clamp'i — bkz. Documents/TORQUE_ALAN_KARAR_NOTU.md) testleri
+extern void test_sanitize_motor_volt_for_torque_field_within_range_passthrough(void);
+extern void test_sanitize_motor_volt_for_torque_field_at_boundary_passthrough(void);
+extern void test_sanitize_motor_volt_for_torque_field_above_boundary_clamped(void);
+extern void test_sanitize_motor_volt_for_torque_field_uint16_max_clamped(void);
+extern void test_sanitize_for_uplink_clamps_motor_volt_above_torque_range(void);
+extern void test_sendStatus_output_clamps_motor_volt_field_via_sanitize_gate(void);
+
 // Replay sanitize-sırası (S4) ve seq semantiği (madde 4) testleri
 extern void test_replay_output_sanitizes_corrupted_system_state(void);
 extern void test_replay_output_sanitizes_zero_system_state(void);
@@ -94,6 +103,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_sanitize_for_uplink_passthrough_when_all_valid);
     RUN_TEST(test_sanitize_for_uplink_corrects_invalid_system_state);
     RUN_TEST(test_sanitize_for_uplink_corrects_soc_and_current_together);
+
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_within_range_passthrough);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_at_boundary_passthrough);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_above_boundary_clamped);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_uint16_max_clamped);
+    RUN_TEST(test_sanitize_for_uplink_clamps_motor_volt_above_torque_range);
+    RUN_TEST(test_sendStatus_output_clamps_motor_volt_field_via_sanitize_gate);
 
     RUN_TEST(test_replay_output_sanitizes_corrupted_system_state);
     RUN_TEST(test_replay_output_sanitizes_zero_system_state);

@@ -104,6 +104,18 @@ def sanitize_current(raw: int) -> int:
     return INT32_MIN + 1 if raw == INT32_MIN else raw
 
 
+# BILINEN SEMANTIK UYUMSUZLUK (torque alani, bkz. Documents/
+# TORQUE_ALAN_KARAR_NOTU.md): sozlesme 4. alani "torque" (int16,
+# -32768..32767) olarak adlandirir; AKS burada FIILEN TEL_motorVoltageDeciV
+# (uint16_t, motor voltaji) gonderir. Bu deger 32767'yi asabilir; asarsa UKS
+# Parse_Int TUM frame'i reddeder. TelemetrySanitize::
+# sanitizeMotorVoltForTorqueField'in Python eslenigi:
+def sanitize_motor_volt_for_torque_field(raw: int) -> int:
+    """TelemetrySanitize::sanitizeMotorVoltForTorqueField — 32767'ye clamp
+    eder (frame reddini engeller, "dogru tork" uretmez)."""
+    return 32767 if raw > 32767 else raw
+
+
 # AKS lib/Telemetry/Telemetry.h: TEL_SPD_X10_MAX — rpmToSpeedKmhX10Impl
 # icinde spd_x10 bu degere clamp'lenir (sanitizeForUplink'in DISINDA, hiz
 # hesaplama zincirinde).

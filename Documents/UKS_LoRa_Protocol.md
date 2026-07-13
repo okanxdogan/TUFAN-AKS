@@ -67,7 +67,7 @@ Field order is fixed and must be parsed positionally:
 | 1 | `ver` | `uint8` | — | Protocol version (current: `2`) |
 | 2 | `seq` | `uint32` | — | Increments on each successful TX |
 | 3 | `rpm` | `uint16` | raw | Latest motor RPM |
-| 4 | `torque` | `int16` | raw | Latest signed torque feedback |
+| 4 | `torque` | `int16` | raw | Latest signed torque feedback — **kaynak: `TEL_motorVoltageDeciV` (motor voltajı, deciV), sözleşme adı `torque` — semantik uyumsuzluk kaydı, bkz. "Alan Aralıkları" tablosu ve `Documents/TORQUE_ALAN_KARAR_NOTU.md`** |
 | 5 | `motorErr` | `uint8` | bit flags | Motor fault flags |
 | 6 | `motorValid` | `0/1` | — | `1` if latest motor frame is considered fresh |
 | 7 | `motorTimeout` | `0/1` | — | `1` if motor status timed out after first reception |
@@ -119,6 +119,7 @@ UKS'in kabul aralığı dışına kesinlikle çıkmayan değerler üretmelidir.
 | `sysState` | `1..4` | Garantili | `CanManager::getTelemetryData()` içinde `TelemetrySanitize::sanitizeSystemState()` — aralık dışı değer `4` (FAULT) yapılır |
 | `soc` | `0..10000` | Garantili | `TelemetrySanitize::sanitizeSoc()` — `10000`'e clamp edilir |
 | `current` | `-2147483647..2147483647` (tam `int32_t` değil, `INT32_MIN` hariç) | Garantili | `TelemetrySanitize::sanitizeCurrent()` — tam `INT32_MIN` görülürse `INT32_MIN+1`'e kaydırılır |
+| `torque` (4. alan) | `-32768..32767` (`int16_t`) | Garantili (clamp ile) — **ama SEMANTİK OLARAK YANLIŞ ETİKETLİ** | Kaynak: `TEL_motorVoltageDeciV` (motor voltajı, deciV, `uint16_t`, tip sınırı `0..65535`) — sözleşme adı `torque` ile çelişir. `TelemetrySanitize::sanitizeMotorVoltForTorqueField()` bu değeri `32767`'ye kırpar (`sanitizeForUplink` içinde çağrılır), böylece UKS `Parse_Int` frame'i reddetmez. Bu yalnızca **frame reddini** engeller, alan adı/içerik uyumsuzluğunu **çözmez** — kalıcı seçenekler için bkz. `Documents/TORQUE_ALAN_KARAR_NOTU.md` (ekip kararı bekliyor) |
 
 > **BİRİM SÖZLEŞMESİ — `current` (14. alan, 0-indeksli token; `TEL` = token 0):**
 > birim **centi-Amper (0.01 A)**, işaretli; kaynak `TEL_bmsCurrentCentiA`
