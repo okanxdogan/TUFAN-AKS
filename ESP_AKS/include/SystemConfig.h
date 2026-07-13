@@ -287,11 +287,16 @@ static_assert(
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
 // byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), SoC (0xE000 byte[4:5]),
-// en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness (G12: E000 ve
-// E001 ID bazında ayrı ayrı izlenir, bms_evaluate_freshness). AÇIK İŞ: hücre
-// voltajı kaynak sinyalleri (E002–E005 adayı) ve TEL_bmsSystemState kaynağı
-// henüz doğrulanmadığı için ilgili eşikler/kontroller YER TUTUCUDUR ve karar
-// mantığına fiilen BAĞLI DEĞİLDİR.
+// en yüksek hücre sıcaklığı (0xE001 byte[6:7]), 24 hücre voltajı (E015-E020)
+// + BMS freshness (G12: E000/E001 ID bazında, hücre voltajı ise
+// CAN_cellVoltageSeenMask ile ayrı izlenir). Hücre voltajı eşikleri artık
+// karar mantığına BAĞLI: VcuLogic::hasWarningCondition/hasCriticalCondition
+// (bkz. VcuLogic.h) BmsAlgo.h'deki BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV
+// eşiklerini TEL_cellVoltageDataValid iken kullanır — SystemConfig.h'deki
+// BMS_CRITICAL_MIN/MAX_CELL_VOLTAGE_MV (aşağıda) BUNLARDAN AYRI, kullanılmayan
+// bir kopyadır (bkz. o bloktaki not). AÇIK İŞ: yalnızca TEL_bmsSystemState
+// kaynağı henüz doğrulanmadığı için ilgili kontrol (==4 FAULT) YER
+// TUTUCUDUR ve karar mantığına fiilen BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
 // Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
@@ -341,8 +346,14 @@ static_assert(
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
 // (2.50 V / 3.65 V per hücre).
-// Kaynak sinyal BİLİNMİYOR — TEL_bmsCellVoltageMin/MaxDeciMv hiçbir
-// CAN ID'den parse edilmiyor. BAĞLANMAMALI.
+// GÜNCELLEME: TEL_bmsCellVoltageMin/MaxDeciMv artık DOĞRULANDI ve parse
+// ediliyor (0xE001 byte[0:1]/byte[2:3], bkz. CanParse::parseLbBmsE001) ve
+// karar mantığına BAĞLI — ancak BU İKİ MAKRO değil: fiilen kullanılan eşik
+// seti BmsAlgo.h'deki BMS_CELL_UNDERVOLT_CRIT_MV/BMS_CELL_OVERVOLT_CRIT_MV
+// (VcuLogic::hasCriticalCondition tarafından çağrılır). Bu ikisi
+// (BMS_CRITICAL_MIN/MAX_CELL_VOLTAGE_MV) aynı değerlerle KULLANILMAYAN bir
+// kopyadır — hiçbir yerden referans edilmiyor. Kafa karışıklığını önlemek
+// için gerçek eşikleri değiştirecekseniz BmsAlgo.h'yi güncelleyin.
 #define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
 #define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
 

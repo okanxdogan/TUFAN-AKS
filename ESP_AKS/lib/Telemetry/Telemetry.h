@@ -67,10 +67,11 @@ class Telemetry {
     //
     // ALAN DURUMU: `tempH`/`tempL` DOGRULANMIS gercek veridir
     // (0xE001 byte[6:7] -> TEL_bmsTempHighestC/LowestC, dogrudan derece C);
-    // `packV`, `current`, `soc` da DOGRULANDI (0xE000). ACIK IS:
-    // `cellVMax`/`cellVMin` hicbir CAN ID'den parse edilmiyor (hep 0 gider);
-    // `sysState` de parse edilmiyor — sanitizeSystemState(0) onu 4'e (FAULT)
-    // cevirdigi icin UKS ekraninda BMS surekli FAULT gorunur.
+    // `packV`, `current`, `soc` da DOGRULANDI (0xE000). `cellVMax`/`cellVMin`
+    // de DOGRULANDI: CanParse::parseLbBmsE001 byte[0:1]=min, byte[2:3]=max,
+    // byte[4:5]=avg olarak parse ediyor (raw/10 = mV). ACIK IS: `sysState`
+    // hicbir CAN ID'den parse edilmiyor — sanitizeSystemState(0) onu 4'e
+    // (FAULT) cevirdigi icin UKS ekraninda BMS surekli FAULT gorunur.
     void sendStatus(const TelemetryData& TEL_data);
 
    private:

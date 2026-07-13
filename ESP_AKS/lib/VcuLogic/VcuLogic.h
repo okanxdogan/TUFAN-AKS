@@ -35,10 +35,12 @@ enum class VcuEvent : uint8_t {
 // EK B GÜVEN KURALI: hasWarningCondition/hasCriticalCondition YALNIZCA
 // doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI),
 // akım (0xE000 byte[0:1], DOĞRULANDI — saha gözlemi Temmuz 2026), en yüksek
-// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI) + BMS/motor freshness
-// (BMS freshness G12 ile E000+E001 ID bazında ayrı ayrı izlenir).
-// AÇIK İŞLER: hücre voltajı kontrolleri kaynak sinyal bilinmediği için hâlâ
-// dışarıda; TEL_bmsSystemState==4 kontrolü kodda durur ama alan hiçbir CAN
+// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI), 24 hücre voltajı (E015-E020,
+// DOĞRULANDI — yalnızca TEL_cellVoltageDataValid iken degerlendirilir) +
+// BMS/motor freshness (BMS freshness G12 ile E000+E001 ID bazında ayrı ayrı
+// izlenir; hücre voltajı freshness'ı CAN_cellVoltageSeenMask/E015-E020 ile
+// ayrı izlenir, bkz. TEL_cellVoltageTimeoutActive).
+// AÇIK İŞ: TEL_bmsSystemState==4 kontrolü kodda durur ama alan hiçbir CAN
 // ID'den parse edilmediği için kaynak bağlanana kadar ETKİSİZDİR (aşağıya bkz.).
 
 // Akım sinyali DOĞRULANDI (0xE000 byte[0:1], ×0.1A → centi-A, işaret: + şarj

@@ -15,13 +15,17 @@ BmsComputed makeSafeInvalid() {
     return c;
 }
 
-// G8/M4: Paket geçerli (isValid=true) AMA per-hücre kaynağı DOĞRULANMADI
-// (cellDataValid=false). Bu durumda dengeleme/uyarı/min-max hücre gerçek
-// veriye dayanamaz — pack ortalamasından fabrike per-hücre değere GÜVENMEK
-// gerçek dengesizliği maskeler (bir hücre 2.3 V'a düşse bile ekran sağlıklı
-// görünürdü). Bu yüzden "veri yok" döndürülür: hiçbir hücre dengelenmez,
-// uyarı NO_DATA (nötr). makeSafeInvalid'den FARKI: burada pack bayat/arızalı
-// DEĞİL, yalnız hücre görünürlüğü yok → CRITICAL yalancı alarmı üretilmez.
+// Paket geçerli (isValid=true) AMA bu anlık görüntüde 24 hücrenin TAMAMI
+// henüz taze/tam değil (cellDataValid=false — kaynak mapping'i DOĞRULANDI,
+// E015-E020, G8/M4 FIX; false burada yalnız "boot sonrası tüm CAN ID'leri
+// henüz gelmedi / freshness timeout" anlamına gelir). Bu durumda
+// dengeleme/uyarı/min-max hücre gerçek veriye dayanamaz — pack
+// ortalamasından fabrike per-hücre değere GÜVENMEK gerçek dengesizliği
+// maskeler (bir hücre 2.3 V'a düşse bile ekran sağlıklı görünürdü). Bu
+// yüzden "veri yok" döndürülür: hiçbir hücre dengelenmez, uyarı NO_DATA
+// (nötr). makeSafeInvalid'den FARKI: burada pack bayat/arızalı DEĞİL,
+// yalnız hücre görünürlüğü henüz tam değil → CRITICAL yalancı alarmı
+// üretilmez.
 BmsComputed makeNoCellData() {
     BmsComputed c{};                   // tüm alanlar 0 / balanceFlag tümü false
     c.warningLevel = BMS_WARN_NO_DATA;

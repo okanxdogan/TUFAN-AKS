@@ -93,8 +93,13 @@ UKS parser requirements:
 
 ## Alan Aralıkları ve AKS Tarafı Sanitizasyon (v2, 19 alan)
 
-> **NOT — bu bölüm günceldir, yukarıdaki "AKS -> UKS Telemetry Format"
-> tablosu ise eski v1 (15 alan) protokolünü anlatır ve güncel değildir.**
+> **NOT (2026-07-13 güncellendi):** Bu bölüm günceldir. Yukarıdaki
+> "AKS -> UKS Telemetry Format" tablosu da ARTIK GÜNCELDİR (v2, 19 alan) —
+> bu notta önceden "eski v1 (15 alan) protokolünü anlatır ve güncel
+> değildir" yazıyordu, bu artık YANLIŞ: yukarıdaki tablo zaten "(v2, 19
+> fields)" başlığı taşıyor ve alan sayısı/sırası aşağıdaki tabloyla
+> birebir tutarlıdır (bkz. `DEGISIKLIK_NOTU.md` "Bilinen istisna —
+> kasıtlı olarak dokunulmadı" bölümü, artık çözüldü olarak işaretlendi).
 > Güncel format `ESP_AKS/lib/Telemetry/Telemetry.cpp::sendStatus()` ve
 > `TUFAN-UKS-TELEMETRY/Core/Src/telemetry.c::Decode_Line()` ile birebir
 > doğrulanmıştır: toplam **19 token** (ilk token literal `"TEL"`, ardından

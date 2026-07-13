@@ -345,19 +345,20 @@ void vTask_HMI_Display(void *pvParameters) {
             // teyit edilecek.
             BMS_raw.packCurrentMa = TEL_data.TEL_bmsCurrentCentiA * 10;
 
-            // G8/M4: Hücre gerilimi kaynağı DOĞRULANMADI
-            // (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=false). Eski kod pack/24
-            // ortalamasını 24 hücrenin HEPSİNE yazıp en yüksek sıcaklığı tüm
-            // hücrelere kopyalıyordu; bu FABRİKASYON gerçek bir hücre
-            // dengesizliğini (tek hücre 2.3 V'a düşse bile) maskeleyip ekranı
-            // SAĞLIKLI gösteriyordu. Fabrikasyon KALDIRILDI: per-hücre alanlara
-            // sentinel yazılır → ekranda hücreler "--", barlar boş, dengeleme
-            // yok. cellDataValid=false olduğundan computePack dengeleme/uyarıyı
-            // "veri yok" (NO_DATA) döndürür.
-            //
-            // Kaynak DOĞRULANDIĞINDA (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=true):
-            // gerçek 24 hücre TEL_data'dan buraya doldurulup cellDataValid=true
-            // yapılacak; o zaman computePack gerçek min/max/denge/uyarıyı hesaplar.
+            // G8/M4 FIX: Hücre gerilimi kaynağı DOĞRULANDI
+            // (HMI_CELL_VOLTAGE_SOURCE_VERIFIED=true, bkz. HMIHelpers.h) —
+            // E015-E020, gerçek 24 hücre verisi. Eski kod (kaynak DOĞRULANMADAN
+            // önce) pack/24 ortalamasını 24 hücrenin HEPSİNE yazıp en yüksek
+            // sıcaklığı tüm hücrelere kopyalıyordu; bu FABRİKASYON gerçek bir
+            // hücre dengesizliğini (tek hücre 2.3 V'a düşse bile) maskeleyip
+            // ekranı SAĞLIKLI gösteriyordu. Fabrikasyon KALDIRILDI, yerine
+            // gerçek veri yazılıyor (aşağıda). `cellDataValid` (=
+            // `TEL_cellVoltageDataValid`) yalnız bu anlık görüntüde 24
+            // hücrenin TAMAMI henüz taze/tam DEĞİLSE (boot sonrası tüm CAN
+            // ID'leri henüz gelmedi / freshness timeout) false olur; o
+            // durumda per-hücre alanlara sentinel yazılır (aşağıdaki else
+            // dalı) → ekranda hücreler "--", barlar boş, dengeleme yok, ve
+            // computePack dengeleme/uyarıyı "veri yok" (NO_DATA) döndürür.
             BMS_raw.cellDataValid = TEL_data.TEL_cellVoltageDataValid;
             if (BMS_raw.cellDataValid) {
                 for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
@@ -714,11 +715,12 @@ extern "C" void app_main() {
                 "(VehicleParams.h)");
 #endif
 
-  // BMS durumu: 0xE000 ve 0xE001 DOĞRULANDI (packV, current, SoC, temp).
-  // Açık iş: TEL_bmsSystemState hiçbir CAN ID'den parse EDİLMİYOR —
-  // TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar → UKS
-  // ekranında BMS her zaman FAULT görünür. Per-hücre voltajı (E002-E005)
-  // ve hücre sıcaklığı (E032-E033) alan anlamları BİLİNMİYOR.
+  // BMS durumu: 0xE000 ve 0xE001 DOĞRULANDI (packV, current, SoC, temp,
+  // hücre min/max/avg). 24 hücrenin tekil voltajları (E015-E020) da
+  // DOĞRULANDI. Açık iş: TEL_bmsSystemState hiçbir CAN ID'den parse
+  // EDİLMİYOR — TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4)
+  // yapar → UKS ekranında BMS her zaman FAULT görünür. Hücre sıcaklığı
+  // (E032-E033) alan anlamı hâlâ BİLİNMİYOR (stub).
   // Bkz. Documents/CAN_Message_Table.md.
   ESP_LOGW(TAG, "BMS: sysState henuz parse edilmiyor (E002-E006 stub). "
                 "Hucre voltajlari (E015-E020) DOGRULANDI ve aktif.");

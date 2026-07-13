@@ -87,10 +87,15 @@ static constexpr int16_t BMS_TEMP_OVERTEMP_WARN_C = 55;       // >= => WARNING �
 // Tek anlık görüntüyü yorumla.
 //   * in.isValid == false        => güvenli taraf: warningLevel = CRITICAL,
 //                                    zararsız varsayılanlar (bayat/yok veri).
-//   * in.cellDataValid == false  => (paket geçerli ama hücre kaynağı DOĞRULANMADI)
+//   * in.cellDataValid == false  => (paket geçerli ama bu anlık görüntüde 24
+//                                    hücrenin TAMAMI henüz taze/tam değil —
+//                                    kaynak mapping'i DOĞRULANDI (E015-E020,
+//                                    G8/M4 FIX), ancak boot sonrası tüm CAN
+//                                    ID'leri gelene kadar / freshness timeout
+//                                    sırasında geçici olarak false olabilir)
 //                                    dengeleme/uyarı HESAPLANMAZ; warningLevel =
 //                                    NO_DATA, hiçbir hücre dengelenmez. Fabrike
-//                                    per-hücre veriye güvenilmez (G8/M4).
+//                                    per-hücre veriye güvenilmez.
 //   * aksi halde                 => gerçek min/max/denge/SoC/uyarı hesaplanır.
 // ---------------------------------------------------------------------------
 BmsComputed computePack(const BmsPackData& in);

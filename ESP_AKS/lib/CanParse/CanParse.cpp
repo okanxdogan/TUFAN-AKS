@@ -4,10 +4,8 @@ namespace CanParse {
 
 bool parseMotorStatus(const twai_message_t& msg, MotorStatus& out) {
     // MSTest/mock_motor ile doğrulanmış 8-byte payload:
-    //   data[0] = RPM High Byte
-    //   data[1] = RPM Low Byte
-    //   data[2] = Rezerve (0x00)
-    //   data[3] = Voltaj (raw * 0.1 = V, ör: 240 → 24.0 V)
+    //   data[0:1] = RPM (big-endian int16)
+    //   data[2:3] = Voltaj (big-endian uint16, raw * 0.1 = V, ör: 240 → 24.0 V)
     //   data[4] = Rezerve (0x00)
     //   data[5] = Rezerve (0x00)
     //   data[6] = Rezerve (0x00)
