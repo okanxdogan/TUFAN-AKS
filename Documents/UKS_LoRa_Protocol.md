@@ -77,7 +77,7 @@ Field order is fixed and must be parsed positionally:
 | 11 | `tempL` | `int16` (source `int8`) | °C | Lowest BMS temperature |
 | 12 | `sysState` | `uint8` | enum | `1`=Discharge `2`=IDLE `3`=Charge `4`=FAULT |
 | 13 | `packV` | `uint16` | ×0.1 V | Pack voltage |
-| 14 | `current` | `int32` | ×0.01 mA | Pack current (`+`charge / `-`discharge) |
+| 14 | `current` | `int32` | ×0.01 A (centi-Amper) | Pack current (`+`charge / `-`discharge) |
 | 15 | `soc` | `uint16` | ×0.01 % | State of charge (`10000`=100.00%) |
 | 16 | `bmsValid` | `0/1` | — | `1` if BMS telemetry fields are populated |
 | 17 | `ts_ms` | `uint32` | ms | Milliseconds since AKS boot |
