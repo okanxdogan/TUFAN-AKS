@@ -44,6 +44,29 @@ Aşağıdaki dört dosya **aynı commit setinde** güncellendi:
 > değeri gizli-config/secret mekanizmasına taşımayı değerlendirin; şimdilik
 > her iki firmware de derleme-zamanı sabit olarak taşıyor.
 
+## Risk-kabul kararı (2026-07)
+
+Değerlendirildi: repolar public'e alındı, 0x5A3C anahtarı ifşa kabul edildi.
+Secret-config'e taşıma ve rotasyon YAPILMADI — bilinçli risk kabulü.
+
+Gerekçe (tehdit modeli):
+- Saldırı yalnızca fiziksel RF yakınlığı gerektirir (433.125 MHz'de,
+  aracın menzilinde bir E22 modülü); internetten sömürülemez.
+- Kazanç sınırlı: sahte heartbeat/telemetri enjeksiyonu (G7'nin kapattığı
+  senaryo geri açılır). Araç kontrolü MÜMKÜN DEĞİL — UKS→AKS komut kanalı
+  sistemden tamamen kaldırıldı (9.2.a, e2e one-directionality guard).
+
+Kayıtlı kalan dikkat senaryosu: yarışma/saha gününde aynı frekansta başka
+E22 kullanıcıları (kasıtsız çakışma dahil). O gün linkte açıklanamayan
+davranış görülürse ilk şüphelilerden biri budur. Gerekirse ucuz önlem:
+yarış öncesi anahtarı iki firmware'de değiştirip flash'lamak yeterli —
+G7-FIX-2 her boot'ta C2/RAM yazımı yaptığı için başka adım gerekmez
+(kalıcı yazma istenirse bkz. E22_ZORLA_YAZMA_CHECKLIST.md).
+
+Bu karar değişirse (ör. anahtar rotasyonu + secret-config'e geçiş), bu
+bölüm güncellenmeli ve değişiklik İKİ REPODA AYNI COMMIT SETİNDE yapılmalı
+(yukarıdaki "Geçmiş" bölümündeki tek-taraflı-değişiklik dersi geçerli).
+
 ## Geçmiş (aynı hata tekrarlanmasın)
 
 - Bu senkronizasyon daha önce bir kez denenmiş: commit `90c8e1b` ("fix:e22
