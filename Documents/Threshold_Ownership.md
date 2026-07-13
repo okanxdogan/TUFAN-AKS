@@ -43,8 +43,15 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 329 | 1300 (13.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` (READY girişini ve reset'i de bloklar) | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 330 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (deşarjda −0.1…−1.5 A gözlendi) | ✅ CANLI |
 | `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 331 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
-| `BMS_CRITICAL_MIN_CELL_VOLTAGE_MV` | 200 | 2500 | mV | `VcuLogic::hasCriticalCondition` | `TEL_bmsCellVoltageMinDeciMv` | ✅ DOĞRULANDI (0xE001 byte[0:1]) | ✅ CANLI |
-| `BMS_CRITICAL_MAX_CELL_VOLTAGE_MV` | 201 | 3650 | mV | `VcuLogic::hasCriticalCondition` | `TEL_bmsCellVoltageMaxDeciMv` | ✅ DOĞRULANDI (0xE001 byte[2:3]) | ✅ CANLI |
+> **DÜZELTME (2026-07-13):** Bu tabloda önceden `BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`
+> (`SystemConfig.h`) diye iki satır vardı, "CANLI" ve `VcuLogic::hasCriticalCondition`
+> tüketicisi olarak işaretliydi — bu **yanlıştı**. `VcuLogic::hasCriticalCondition`
+> hücre voltajı için bu makroları HİÇ kullanmıyordu; gerçek eşik seti her zaman
+> `BmsAlgo.h`'deki `BMS_CELL_UNDERVOLT_CRIT_MV`/`BMS_CELL_OVERVOLT_CRIT_MV`
+> idi (bkz. bölüm 3 tablosu). `SystemConfig.h`'deki iki makro aynı değerlerle
+> (2500/3650 mV) hiçbir yerden referans edilmeyen kullanılmayan bir kopyaydı;
+> grep ile doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğinin TEK doğruluk
+> kaynağı `BmsAlgo.h`'dir (bölüm 3).
 
 > **Birim kararı (G5):** Akım için tek birim **centi-Amper (0.01 A)**'dir — parser
 > çıktısı (`TEL_bmsCurrentCentiA` = ham 0.1A × 10), eşikler ve `isCurrentWarning/
@@ -117,7 +124,12 @@ mantığına bağlandı ve artık CANLI —
 
 (Bkz. bölüm 2 tablosu.)
 
-**Tamamen Ölü**: Artık tamamen ölü hiçbir eşik kalmamıştır. Önceden ölü olan hücre voltajı eşikleri (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`), 0xE015-E020 ve 0xE001 mesajlarının çözülmesi ile `VcuLogic`'e bağlanmış ve CANLI statüsüne geçmiştir.
+**Tamamen Ölü**: `SystemConfig.h`'de artık tamamen ölü hiçbir eşik kalmamıştır
+— tek gerçek ölü kopya (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, bkz. bölüm 2
+düzeltme notu) 2026-07-13'te silindi. Hücre voltajı için karar mantığına
+BAĞLI olan eşikler zaten hep `BmsAlgo.h`'de yaşıyordu (`BMS_CELL_UNDERVOLT_/
+OVERVOLT_CRIT_MV`, bölüm 3) — 0xE015-E020 ve 0xE001 mesajlarının çözülmesiyle
+CANLI hale gelen bunlardır, `SystemConfig.h`'deki silinen kopya DEĞİL.
 
 **Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI),
 sıcaklık eşikleri (`TEL_bmsTempHighestC`, DOĞRULANDI, 55/70 °C), akım

@@ -355,17 +355,15 @@ static_assert(
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
-// (2.50 V / 3.65 V per hücre).
-// GÜNCELLEME: TEL_bmsCellVoltageMin/MaxDeciMv artık DOĞRULANDI ve parse
-// ediliyor (0xE001 byte[0:1]/byte[2:3], bkz. CanParse::parseLbBmsE001) ve
-// karar mantığına BAĞLI — ancak BU İKİ MAKRO değil: fiilen kullanılan eşik
-// seti BmsAlgo.h'deki BMS_CELL_UNDERVOLT_CRIT_MV/BMS_CELL_OVERVOLT_CRIT_MV
-// (VcuLogic::hasCriticalCondition tarafından çağrılır). Bu ikisi
-// (BMS_CRITICAL_MIN/MAX_CELL_VOLTAGE_MV) aynı değerlerle KULLANILMAYAN bir
-// kopyadır — hiçbir yerden referans edilmiyor. Kafa karışıklığını önlemek
-// için gerçek eşikleri değiştirecekseniz BmsAlgo.h'yi güncelleyin.
-#define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
-#define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
+// (2.50 V / 3.65 V per hücre). TEL_bmsCellVoltageMin/MaxDeciMv DOĞRULANDI ve
+// parse ediliyor (0xE001 byte[0:1]/byte[2:3], bkz. CanParse::parseLbBmsE001)
+// ve karar mantığına BAĞLI — fiilen kullanılan eşik seti burada DEĞİL,
+// BmsAlgo.h'de: BMS_CELL_UNDERVOLT_CRIT_MV/BMS_CELL_OVERVOLT_CRIT_MV
+// (VcuLogic::hasCriticalCondition tarafından çağrılır). Bu dosyada AYNI
+// değerlerle kullanılmayan bir kopya makro seti (BMS_CRITICAL_MIN/MAX_CELL_
+// VOLTAGE_MV) vardı — 2026-07-13'te grep ile hiçbir referans bulunmadığı
+// doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğini değiştirecekseniz
+// BmsAlgo.h'yi güncelleyin (tek doğruluk kaynağı).
 
 // Task watchdog timing is still using the ESP-IDF default configuration.
 // The shorter LoRa RX timeout below improves scheduling margin, but the global
