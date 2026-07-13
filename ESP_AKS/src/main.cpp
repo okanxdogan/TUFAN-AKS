@@ -21,6 +21,7 @@
 #include "UplinkScheduler.h"
 #include "RelayManager.h"
 #include "SystemConfig.h"
+#include "SysStateDerive.h"
 #include "Telemetry.h"
 #include "TelemetrySanitize.h"
 #include "VcuLogic.h"
@@ -612,7 +613,16 @@ static bool LoRa_txSend(const TelemetryData &pkt, bool isReplay, void *ctxv) {
     }
     return false;
   }
-  c->tel->sendStatus(TelemetrySanitize::sanitizeForUplink(pkt));
+  // HİPOTEZ (bkz. SysStateDerive.h, Documents/CAN_Message_Table.md "0x0000E003"):
+  // sanitize'DAN ÖNCE — sanitizeSystemState(0) çalışırsa 0'ı zaten FAULT(4)
+  // yapar, türetilmiş 1/2/3 değeri o noktadan sonra uygulanırsa etkisiz kalır.
+  // Yalnızca LoRa TX paketleme kopyası (pktForUplink) değişir; VcuLogic'in
+  // okuduğu paylaşılan TelemetryData (pkt / TEL_sensorDataQueue) DOKUNULMADAN
+  // kalır (EK B güven kuralı — bu türetilmiş değer VCU karar mantığına
+  // BAĞLANMAZ).
+  TelemetryData pktForUplink = pkt;
+  SysStateDerive::applyIfEnabled(pktForUplink);
+  c->tel->sendStatus(TelemetrySanitize::sanitizeForUplink(pktForUplink));
   *c->auxNotReadyLogged = false;
   if (isReplay) {
     c->hal->feedWatchdog();  // eski: her başarılı replay sonrası esp_task_wdt_reset

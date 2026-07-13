@@ -267,6 +267,29 @@ static_assert(
 #define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
 #endif
 
+// --- HİPOTEZ: Akımdan türetilmiş sysState (bkz. Documents/CAN_Message_Table.md
+// "0x0000E003" ve lib/Telemetry/SysStateDerive.h) ---
+// UKS `sysState` alanı (TEL alan 12) hiçbir CAN ID'den DOĞRULANMIŞ parse
+// almıyor (bkz. Documents/UKS_LoRa_Protocol.md "DOĞRULANACAK") —
+// TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar, UKS
+// ekranında BMS her zaman FAULT görünür. Bu bayrak (varsayılan KAPALI),
+// DOĞRULANMIŞ akım sinyalinden (0xE000 byte[0:1]) basit bir Discharge/IDLE/
+// Charge tahmini üretmeyi dener — E003 byte[0:1]'in gerçek sysState olup
+// olmadığı henüz TEYİT EDİLMEDİ (⚠️ HİPOTEZ, bkz. CAN_Message_Table.md).
+// EK B GÜVEN KURALI gereği bu türetilmiş değer YALNIZCA UKS telemetri
+// gösterimi içindir — VCU karar mantığına (FAULT/kontaktör) ASLA BAĞLANMAZ
+// (bkz. SysStateDerive.h "applyIfEnabled" çağrı noktası: yalnız LoRa TX
+// paketleme yolunda, VcuLogic'in okuduğu TelemetryData'ya DOKUNMAZ).
+#ifndef SYSSTATE_DERIVE_FROM_CURRENT
+#define SYSSTATE_DERIVE_FROM_CURRENT 0
+#endif
+
+// CONFIG — akımın "IDLE" sayılacağı simetrik bant (centi-Amper, TEL_bmsCurrentCentiA
+// ile aynı birim). Öneri: 50 (=0.5 A) — 0xE000 byte[0:1] çözünürlüğü 0.1 A
+// (bkz. CAN_Message_Table.md) olduğundan birkaç LSB'lik ölçüm gürültüsüne
+// karşı marj bırakır. Saha kalibrasyonu/ekip onayı BEKLİYOR.
+#define SYSSTATE_CURRENT_IDLE_BAND_CENTI_A 50
+
 // --- Motor Error-Flag Debounce (G9) ---
 // Motor errorFlags → FAULT yolu, geçici/tek-seferlik hata bitine (ör. CAN CRC
 // bit hatası) süratle kontaktör açtırmasın diye N ARDIŞIK frame onayı ister.
