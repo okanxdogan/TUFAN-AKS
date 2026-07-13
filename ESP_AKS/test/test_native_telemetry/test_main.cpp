@@ -29,6 +29,7 @@ extern void test_impl_hand_calc_different_wheel_and_gear_ratio(void);
 extern void test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio(void);
 extern void test_impl_motor_rpm_false_applies_gear_ratio(void);
 extern void test_impl_applies_clamp(void);
+extern void test_impl_realistic_range_sweep_stays_within_bounds(void);
 
 // TelemetrySanitize (UKS aralik-disi alan sanitizasyonu) birim testleri
 extern void test_sanitize_system_state_valid_passthrough(void);
@@ -103,6 +104,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio);
     RUN_TEST(test_impl_motor_rpm_false_applies_gear_ratio);
     RUN_TEST(test_impl_applies_clamp);
+    RUN_TEST(test_impl_realistic_range_sweep_stays_within_bounds);
 
     RUN_TEST(test_sanitize_system_state_valid_passthrough);
     RUN_TEST(test_sanitize_system_state_zero_becomes_fault);
