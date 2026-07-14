@@ -32,6 +32,17 @@ void CanManager::setEventCallback(CAN_EventCallback CAN_callback,
     CAN_eventContext = CAN_context;
 }
 
+// Boot'ta 500/125/250 kbps'i sırayla dener (her hızda en fazla 1 sn
+// twai_receive bekler). Üçü de başarısız olursa 500 kbps'e fallback yapar —
+// ANCAK bu fallback ARTIK KALICI DEĞİLDİR (eskiden bir daha asla yeniden
+// denenmezdi; BMS boot anında sessizse veya bus gerçekte 125/250 kbps ise AKS
+// kalıcı sağır kalıyordu, bkz. Documents/BRING_UP_CHECKLIST.md bölüm 4).
+// Auto-detect burada başarılı olursa (veya sonradan bir retry bitrate
+// bulursa) CAN_bitrateVerified=true olur. Başarısız olup fallback'e
+// düşülürse CAN_bitrateVerified=false kalır ve CAN task döngüsü
+// (retryAutobaudIfNeeded, bkz. AutobaudPolicy.h) bitrate doğrulanana veya
+// pasif olarak ilk geçerli frame alınana kadar CAN_AUTOBAUD_RETRY_INTERVAL_MS
+// aralıklarla yeniden dener.
 bool CanManager::begin() {
     if (isInitialized)
         return true;
@@ -65,6 +76,8 @@ bool CanManager::begin() {
                     ESP_LOGI(TAG, "CAN bitrate BASARIYLA bulundu: %s", t_names[i]);
                     t_config = t_configs[i];
                     baudFound = true;
+                    CAN_bitrateVerified = true;
+                    CAN_hasReceivedAnyFrame = true;
                     break;
                 }
                 twai_stop();
@@ -91,10 +104,109 @@ bool CanManager::begin() {
             s_mutex = nullptr;
             return false;
         }
+
+        // CAN_bitrateVerified=false (varsayılan) — retryAutobaudIfNeeded bu
+        // andan CAN_AUTOBAUD_RETRY_INTERVAL_MS sonra ilk yeniden denemeyi
+        // tetikleyecek.
+        CAN_lastAutobaudAttemptTick = xTaskGetTickCount();
     }
 
     isInitialized = true;
     return true;
+}
+
+// Bitrate henüz doğrulanmamışken (CAN_bitrateVerified=false) VE hiçbir
+// geçerli frame alınmamışken (CAN_hasReceivedAnyFrame=false) — yani yalnızca
+// pre-reception durumda — CAN_AUTOBAUD_RETRY_INTERVAL_MS'te bir TEK hız
+// (rotasyonla) yeniden denenir. 3 hızın tümü tek tikte denenmez (task
+// döngüsünü 3×1 sn kilitlemesin diye durum makinesine bölünmüştür — her
+// çağrıda yalnızca bir sonraki hız denenir).
+//
+// Re-detect penceresi boyunca isInitialized=false tutulur: processRxMessages
+// (bu fonksiyondan hemen sonra erken döner) ve sendTorqueCommand (VCU
+// task'ten) bu sürede güvenle no-op kalır — yarım kurulu driver'a twai_*
+// çağrısı GİTMEZ. Post-reception bayatlama (BmsFreshness/TEL_bmsTimeoutActive)
+// bu mekanizmadan TAMAMEN bağımsızdır, buraya DOKUNULMAZ.
+void CanManager::retryAutobaudIfNeeded() {
+    if (s_mutex == nullptr)
+        return;
+
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+
+    if (!autobaud_should_retry(CAN_bitrateVerified, CAN_hasReceivedAnyFrame,
+                               (uint32_t)CAN_nowTick,
+                               (uint32_t)CAN_lastAutobaudAttemptTick,
+                               pdMS_TO_TICKS(CAN_AUTOBAUD_RETRY_INTERVAL_MS))) {
+        if (!CAN_bitrateVerified && !CAN_hasReceivedAnyFrame &&
+            (TickType_t)(CAN_nowTick - CAN_lastAutobaudWarnLogTick) >=
+                pdMS_TO_TICKS(CAN_AUTOBAUD_WARN_LOG_INTERVAL_MS)) {
+            ESP_LOGW(TAG, "CAN bitrate hala dogrulanamadi (fallback 500kbps) "
+                          "— retry devam ediyor");
+            CAN_lastAutobaudWarnLogTick = CAN_nowTick;
+        }
+        return;
+    }
+
+    CAN_lastAutobaudAttemptTick = CAN_nowTick;
+
+    const twai_timing_config_t t_configs[] = {
+        TWAI_TIMING_CONFIG_500KBITS(),
+        TWAI_TIMING_CONFIG_125KBITS(),
+        TWAI_TIMING_CONFIG_250KBITS()
+    };
+    const char* t_names[] = {"500kbps", "125kbps", "250kbps"};
+
+    const uint8_t CAN_candidateIdx = CAN_autobaudRetryBaudIndex;
+    CAN_autobaudRetryBaudIndex =
+        (uint8_t)((CAN_autobaudRetryBaudIndex + 1) % 3);
+
+    // G2 benzeri güvenlik: yarım kurulu driver'a twai_* çağrısı gitmesin diye
+    // isInitialized'ı re-detect penceresi boyunca false tut.
+    isInitialized = false;
+
+    twai_stop();
+    twai_driver_uninstall();
+
+    bool CAN_found = false;
+    if (twai_driver_install(&g_config, &t_configs[CAN_candidateIdx],
+                            &f_config) == ESP_OK) {
+        if (twai_start() == ESP_OK) {
+            twai_message_t msg;
+            if (twai_receive(&msg, pdMS_TO_TICKS(1000)) == ESP_OK) {
+                CAN_found = true;
+            } else {
+                twai_stop();
+            }
+        }
+        if (!CAN_found)
+            twai_driver_uninstall();
+    }
+
+    if (CAN_found) {
+        t_config = t_configs[CAN_candidateIdx];
+        CAN_bitrateVerified = true;
+        CAN_hasReceivedAnyFrame = true;
+        ESP_LOGI(TAG, "CAN bitrate GEC de olsa bulundu: %s",
+                 t_names[CAN_candidateIdx]);
+        isInitialized = true;
+        return;
+    }
+
+    // Bulunamadı — çalışmaya devam edebilmek için fallback'e (mevcut
+    // t_config, her zaman 500kbps) geri dön; bir sonraki retry'de rotasyon
+    // devam eder.
+    esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
+    if (err == ESP_OK)
+        err = twai_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Autobaud retry: fallback surucusu yeniden kurulamadi: %s",
+                 esp_err_to_name(err));
+        // isInitialized false kalir; s_mutex hala gecerli oldugundan bir
+        // sonraki interval'da tekrar denenecek (kalici sagirlik yok).
+        return;
+    }
+    isInitialized = true;
 }
 
 // Motor sürücüsü torque komutu. Motor sürücüsü henüz araca entegre DEĞİL
@@ -159,6 +271,11 @@ void CanManager::drainTorqueQueue() {
 // CanManager orkestrasyon testi KAPSAMINDADIR (bu değişiklikte bilinçli olarak
 // yapılmadı). Değişiklik esp32dev derlemesi ile doğrulanır.
 void CanManager::processRxMessages() {
+    // Bitrate henüz doğrulanmamışken (pre-reception) periyodik yeniden-deneme
+    // — isInitialized'ı kısa süreliğine false'a çekebilir (bkz. yorum
+    // bloğu). Bu yüzden isInitialized kontrolünden ÖNCE, her tikte çağrılır.
+    retryAutobaudIfNeeded();
+
     if (!isInitialized)
         return;
 
@@ -208,6 +325,15 @@ void CanManager::processRxMessages() {
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "RX error: %s", esp_err_to_name(err));
             break;
+        }
+
+        // İlk geçerli frame (RTR/bilinmeyen ID dahil, ID'den BAĞIMSIZ —
+        // twai_receive'in ESP_OK dönmesi bitrate'in doğru olduğunun kanıtıdır)
+        // fallback hızında bile bitrate'i doğrular ve autobaud retry'yi
+        // KALICI OLARAK durdurur (bkz. AutobaudPolicy.h).
+        if (!CAN_bitrateVerified) {
+            CAN_bitrateVerified = true;
+            CAN_hasReceivedAnyFrame = true;
         }
 
         // G6: Remote frame (RTR) — data alanı TANIMSIZ; DLC≥4 olsa bile parse

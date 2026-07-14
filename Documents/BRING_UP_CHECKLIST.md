@@ -42,3 +42,20 @@ Eğer `CAN bitrate auto-detect basarisiz oldu! Fallback: 500kbps` görüyorsanı
 3. **Pin Tersliği:** `CAN_TX (5)` ve `CAN_RX (4)` fiziksel olarak transceiver'ın yanlış pinlerine gidiyor olabilir mi?
 4. **BMS Uykuda:** BMS güç tuşu/anahtarı açık mı? Şarj/Deşarj hattında bir işlem yapılmadığı için BMS uyku modunda olabilir.
 5. **Nextion Ekranında Değerler Yok:** CAN'den log geliyor ama ekranda `--` veya `0` varsa; J8 soketindeki TX/RX (32/33) kablolarını çaprazlayın (Rx-Tx yer değiştirin).
+
+> **Fallback artık KALICI değildir.** Eskiden `Fallback: 500kbps` logundan sonra
+> auto-baud bir daha asla yeniden denenmezdi — BMS boot anında sessizse
+> (uykuda/geç açılıyor, madde 4) veya bus gerçekte 125/250 kbps ise AKS kalıcı
+> olarak sağır kalıyordu. Artık bitrate doğrulanana (veya ilk geçerli frame
+> alınana) kadar CAN task döngüsü her `CAN_AUTOBAUD_RETRY_INTERVAL_MS`
+> (varsayılan 5 sn, `SystemConfig.h`) bir yeniden dener — tek tikte tüm 3 hız
+> denenmez, rotasyonla tek hız denenir (`CanManager::retryAutobaudIfNeeded`,
+> saf karar mantığı: `lib/CanManager/AutobaudPolicy.h`). Beklenen davranış:
+> - Fallback'te kaldığı sürece en fazla 1 dakikada bir `CAN bitrate hala
+>   dogrulanamadi (fallback 500kbps) — retry devam ediyor` WARN'ı görülür.
+> - BMS sonradan uyanır/bus hızı yakalanırsa `CAN bitrate GEC de olsa
+>   bulundu: <hız>` INFO logu ve ardından `LB-E000` akışı beklenir — kart
+>   sıfırlanmadan kendi kendine düzelir.
+> - Bir kez geçerli frame alındıktan (fallback hızında bile) SONRA kesilirse bu
+>   artık bitrate sorunu değildir; BMS/E000-E001 timeout logları (mevcut
+>   `TEL_bmsTimeoutActive` yolu) geçerlidir, autobaud retry devreye GİRMEZ.
