@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "AutobaudPolicy.h"  // Saf autobaud retry karar mantığı (autobaud_should_retry)
 #include "CanParse.h"
 #include "TorqueRequestQueue.h"  // G2: VCU task -> CAN task tork isteği kuyruğu
 #include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
@@ -77,6 +78,15 @@ class CanManager {
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
 
+    // Bitrate henüz doğrulanmamışken (CAN_bitrateVerified=false) VE hiçbir
+    // geçerli frame alınmamışken (CAN_hasReceivedAnyFrame=false), CAN task
+    // döngüsünden her tik çağrılır — karar (retry zamanı geldi mi?) saf
+    // autobaud_should_retry (AutobaudPolicy.h) ile verilir. Retry-eligible
+    // olduğunda TEK bir hız (rotasyonla) yeniden denenir; processRxMessages()
+    // ve sendTorqueCommand() bu pencerede isInitialized=false ile no-op
+    // kalır (yarım kurulu driver'a twai_* çağrısı gitmez).
+    void retryAutobaudIfNeeded();
+
     // G2: processRxMessages() (CAN task döngüsü) tarafından her tik çağrılır;
     // s_torqueQueue'da bekleyen bir istek varsa gerçek twai_transmit'i BURADAN
     // (CAN task'inden) yapar. MOTOR_DRIVER_PRESENT=0 iken hiçbir şey yapmaz
@@ -103,6 +113,18 @@ class CanManager {
 
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
+
+    // Autobaud yeniden-deneme durumu (bkz. AutobaudPolicy.h / BRING_UP_
+    // CHECKLIST.md bölüm 4). CAN_bitrateVerified: begin()'de auto-detect
+    // başarılıysa VEYA bir retry döngüsü bitrate bulduysa true. CAN_
+    // hasReceivedAnyFrame: fallback hızında bile PASİF olarak ilk geçerli
+    // frame alındığında true (processRxMessages ana drain döngüsünde set
+    // edilir) — ikisinden biri true olduğu an retry KALICI OLARAK durur.
+    bool CAN_bitrateVerified = false;
+    bool CAN_hasReceivedAnyFrame = false;
+    uint8_t CAN_autobaudRetryBaudIndex = 0;  // 0=500k,1=125k,2=250k rotasyonu
+    TickType_t CAN_lastAutobaudAttemptTick = 0;
+    TickType_t CAN_lastAutobaudWarnLogTick = 0;
 
     // G6: RX yolu sertleştirme sayaçları (sibling counter'larla aynı CAN_
     // önek konvansiyonu). RX_QUEUE_FULL alarmı ve atılan remote (RTR) frame'ler.

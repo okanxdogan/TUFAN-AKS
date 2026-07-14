@@ -70,6 +70,21 @@
 // her olayda değil, en fazla bu sürede bir WARN.
 #define CAN_RX_STATS_LOG_INTERVAL_MS 1000U
 
+// --- CAN Autobaud Yeniden-Deneme (Kalıcı Sağırlık Düzeltmesi) ---
+// CanManager::begin() üçü de başarısız olursa 500 kbps'e fallback yapardı ve
+// BİR DAHA ASLA yeniden denemezdi — BMS boot anında sessizse (uykuda/geç
+// açılıyor) veya bus gerçekte 125/250 kbps ise AKS kalıcı olarak sağır
+// kalıyordu (saha olayı, bkz. Documents/BRING_UP_CHECKLIST.md bölüm 4).
+// Bitrate doğrulanmamışken VE henüz hiçbir geçerli frame alınmamışken (saf
+// karar mantığı: lib/CanManager/AutobaudPolicy.h::autobaud_should_retry) CAN
+// task döngüsünden bu aralıkta bir yeniden algılama denenir. Tek tikte 3
+// hızın TÜMÜ denenmez (task döngüsünü 3×1 sn kilitler) — her retry tikinde
+// rotasyonla TEK hız denenir (bkz. CanManager::retryAutobaudIfNeeded).
+#define CAN_AUTOBAUD_RETRY_INTERVAL_MS 5000U
+// Fallback'te doğrulanamamış kaldığı sürece görünürlük: en fazla 1 WARN / bu
+// süre (spam önleme, RX_QUEUE_FULL loglamasıyla aynı desen).
+#define CAN_AUTOBAUD_WARN_LOG_INTERVAL_MS 60000U
+
 // --- Nextion HMI (UART) ---
 #define HMI_UART_NUM UART_NUM_1
 // Not: J8 konnektöründe screen_TX'in ekranın mı yoksa ESP'nin mi TX'i olduğuna
