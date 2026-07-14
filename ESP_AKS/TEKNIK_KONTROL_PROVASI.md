@@ -195,10 +195,13 @@ suan icin **V2 VARSAYIMIDIR** ve bench'te dogrulanmadi (bkz. `e22_regs.h`
 basindaki "DOGRULAMA NOTU"). Bench'te gercek modulden okunan register
 dump'i (`E22REG,0x%02X,0x%02X` formati, `Core/Src/lora.c` / `src/main.cpp`
 + `src/e22_diagnostic.cpp`) ile bu dosyalardaki hedef degerlerin
-karsilastirilmasi **P10** kapsaminda ayri bir belgede (**`BENCH_E22_TEYIT.md`**,
-henuz yazilmadi) yapilacaktir. Bu belge yazildiginda, teknik kontrol
-sirasinda E22 config dogrulama adimi icin BENCH_E22_TEYIT.md'ye
-yonlendirme yapilmalidir.
+karsilastirilmasi **P10** kapsaminda `Documents/BENCH_E22_TEYIT.md`'de
+(2026-07-16 yazildi) adim adim belgelenmistir — AKS/UKS dump'ini nasil
+alacaginizi, nasil diff'leyeceginizi ve sonucu nasil kayda gececeginizi
+oradan izleyin. Teknik kontrol sirasinda E22 config dogrulama adimi icin
+o belgeye yonlendirme yapilmalidir. Gecmiste yanlis CRYPT ile flash'a
+yazilmis modullerin kurtarilmasi icin ayrica
+`Documents/E22_ZORLA_YAZMA_CHECKLIST.md`'ye bakin.
 
 ---
 

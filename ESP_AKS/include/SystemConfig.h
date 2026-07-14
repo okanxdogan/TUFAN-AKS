@@ -236,6 +236,16 @@ static_assert(
 // EspLoraHal::begin / vTask_LoRa_UKS + lib/LoraLink/UartInitRetry.h).
 #define LORA_UART_MAX_INIT_ATTEMPTS 5
 
+// --- G11-b: LoRa görev-başı kurulumu KALICI devre dışı kalmasın ---
+// EspLoraHal::begin() (yukarıdaki LORA_UART_MAX_INIT_ATTEMPTS denemesi)
+// başarısız olup "devre dışı" moduna geçtikten SONRA vTask_LoRa_UKS artık
+// SONSUZA DEK boş döngüde kalmaz — bu sabit aralıkla begin()'i (+ E22
+// config'i) yeniden dener; geçici bir UART/donanım aksaklığı reboot
+// beklemeden kendi kendine düzelebilir (araç bu süre boyunca zaten
+// etkilenmiyordu — bkz. Documents/LoRa_Link_Analysis.md "Current
+// Reliability Policy"). Watchdog retry beklemesi sırasında da beslenir.
+#define LORA_INIT_RETRY_INTERVAL_MS 30000U
+
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
 
@@ -256,6 +266,29 @@ static_assert(
 #ifndef MOTOR_DRIVER_PRESENT
 #define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
 #endif
+
+// --- HİPOTEZ: Akımdan türetilmiş sysState (bkz. Documents/CAN_Message_Table.md
+// "0x0000E003" ve lib/Telemetry/SysStateDerive.h) ---
+// UKS `sysState` alanı (TEL alan 12) hiçbir CAN ID'den DOĞRULANMIŞ parse
+// almıyor (bkz. Documents/UKS_LoRa_Protocol.md "DOĞRULANACAK") —
+// TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar, UKS
+// ekranında BMS her zaman FAULT görünür. Bu bayrak (varsayılan KAPALI),
+// DOĞRULANMIŞ akım sinyalinden (0xE000 byte[0:1]) basit bir Discharge/IDLE/
+// Charge tahmini üretmeyi dener — E003 byte[0:1]'in gerçek sysState olup
+// olmadığı henüz TEYİT EDİLMEDİ (⚠️ HİPOTEZ, bkz. CAN_Message_Table.md).
+// EK B GÜVEN KURALI gereği bu türetilmiş değer YALNIZCA UKS telemetri
+// gösterimi içindir — VCU karar mantığına (FAULT/kontaktör) ASLA BAĞLANMAZ
+// (bkz. SysStateDerive.h "applyIfEnabled" çağrı noktası: yalnız LoRa TX
+// paketleme yolunda, VcuLogic'in okuduğu TelemetryData'ya DOKUNMAZ).
+#ifndef SYSSTATE_DERIVE_FROM_CURRENT
+#define SYSSTATE_DERIVE_FROM_CURRENT 0
+#endif
+
+// CONFIG — akımın "IDLE" sayılacağı simetrik bant (centi-Amper, TEL_bmsCurrentCentiA
+// ile aynı birim). Öneri: 50 (=0.5 A) — 0xE000 byte[0:1] çözünürlüğü 0.1 A
+// (bkz. CAN_Message_Table.md) olduğundan birkaç LSB'lik ölçüm gürültüsüne
+// karşı marj bırakır. Saha kalibrasyonu/ekip onayı BEKLİYOR.
+#define SYSSTATE_CURRENT_IDLE_BAND_CENTI_A 50
 
 // --- Motor Error-Flag Debounce (G9) ---
 // Motor errorFlags → FAULT yolu, geçici/tek-seferlik hata bitine (ör. CAN CRC
@@ -280,18 +313,30 @@ static_assert(
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---
-// Warning levels should eventually trigger derating (AÇIK İŞ B12 —
-// bugün yalnız WARN log + READY giriş bloğu; bkz. VcuLogic.cpp run()).
+// Warning levels should eventually trigger derating (AÇIK İŞ B12 — İSKELET
+// KURULDU 2026-07-15: lib/VcuLogic/DeratingPolicy.h WARN sinyallerinden
+// 0..100 bir tork-izin yüzdesi hesaplıyor ve VcuLogic.cpp run() bunu yalnız
+// LOGLUYOR ("derating önerisi %N" — bkz. aşağıdaki DERATING_* sabitleri).
+// KALAN AÇIK İŞ: (1) bu yüzdeleri gerçek bir tork komutuna bağlamak —
+// motor sürücüsü tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye
+// başlayınca tasarlanacak; (2) DERATING_* yüzdelerinin/eşik-yaklaşma
+// oranının saha kalibrasyonu/ekip onayı. Bugün araç davranışı DEĞİŞMEZ.
 // Critical levels should force a transition to FAULT.
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
 // byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), SoC (0xE000 byte[4:5]),
-// en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness (G12: E000 ve
-// E001 ID bazında ayrı ayrı izlenir, bms_evaluate_freshness). AÇIK İŞ: hücre
-// voltajı kaynak sinyalleri (E002–E005 adayı) ve TEL_bmsSystemState kaynağı
-// henüz doğrulanmadığı için ilgili eşikler/kontroller YER TUTUCUDUR ve karar
-// mantığına fiilen BAĞLI DEĞİLDİR.
+// en yüksek hücre sıcaklığı (0xE001 byte[6:7]), 24 hücre voltajı (E015-E020)
+// + BMS freshness (G12: E000/E001 ID bazında, hücre voltajı ise
+// CAN_cellVoltageSeenMask ile ayrı izlenir). Hücre voltajı eşikleri artık
+// karar mantığına BAĞLI: VcuLogic::hasWarningCondition/hasCriticalCondition
+// (bkz. VcuLogic.h) BmsAlgo.h'deki BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_
+// DECI_MV eşiklerini (deci-mV — TEL_bmsCellVoltageMin/MaxDeciMv alanıyla AYNI
+// ölçek; GÜVENLİK-EŞİĞİ DÜZELTMESİ 2026-07-13, önceden mV-ölçekli makrolarla
+// karşılaştırılıyordu, bkz. Documents/Threshold_Ownership.md) TEL_
+// cellVoltageDataValid iken kullanır. AÇIK İŞ: yalnızca TEL_bmsSystemState
+// kaynağı henüz doğrulanmadığı için ilgili kontrol (==4 FAULT) YER
+// TUTUCUDUR ve karar mantığına fiilen BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
 // Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
@@ -340,11 +385,34 @@ static_assert(
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
-// (2.50 V / 3.65 V per hücre).
-// Kaynak sinyal BİLİNMİYOR — TEL_bmsCellVoltageMin/MaxDeciMv hiçbir
-// CAN ID'den parse edilmiyor. BAĞLANMAMALI.
-#define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
-#define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
+// (2.50 V / 3.65 V per hücre). TEL_bmsCellVoltageMin/MaxDeciMv DOĞRULANDI ve
+// parse ediliyor (0xE001 byte[0:1]/byte[2:3], bkz. CanParse::parseLbBmsE001)
+// ve karar mantığına BAĞLI — fiilen kullanılan eşik seti burada DEĞİL,
+// BmsAlgo.h'de: BMS_CELL_UNDERVOLT_CRIT_MV/BMS_CELL_OVERVOLT_CRIT_MV
+// (VcuLogic::hasCriticalCondition tarafından çağrılır). Bu dosyada AYNI
+// değerlerle kullanılmayan bir kopya makro seti (BMS_CRITICAL_MIN/MAX_CELL_
+// VOLTAGE_MV) vardı — 2026-07-13'te grep ile hiçbir referans bulunmadığı
+// doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğini değiştirecekseniz
+// BmsAlgo.h'yi güncelleyin (tek doğruluk kaynağı).
+
+// --- B12: Derating Policy (İSKELET — bkz. lib/VcuLogic/DeratingPolicy.h) ---
+// WARN bandında (hasWarningCondition==true) 0..100 bir tork-izin yüzdesi
+// hesaplanır; ŞU AN yalnızca run() içinde LOGLANIR, gerçek bir tork komutuna
+// BAĞLANMAZ (motor sürücüsü tork yolu hazır olunca, bkz. G2/MOTOR_ENTEGRASYON_
+// NOTU.md). Basit 3 kademeli harita — ekip kalibrasyonu BEKLİYOR (CONFIG):
+//   WARN yok            -> DERATING_TORQUE_PERCENT_NOMINAL
+//   WARN aktif          -> DERATING_TORQUE_PERCENT_WARNING
+//   CRITICAL'e yaklaşma  -> DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL
+// "Yaklaşma" WARN->CRITICAL aralığının DERATING_APPROACHING_CRITICAL_
+// FRACTION_PERCENT kadarının tüketilmesi olarak tanımlanır (bkz.
+// DeratingPolicy.h yorumu — ham eşik değerinin doğrudan yüzdesi DEĞİL: bu,
+// sıfırdan uzak mutlak eşiklerde (ör. pack aşırı gerilim 852/876 deciV)
+// ters sonuç verirdi, WARN->CRITICAL ARALIĞININ yüzdesi fiziksel olarak
+// anlamlıdır).
+#define DERATING_TORQUE_PERCENT_NOMINAL 100
+#define DERATING_TORQUE_PERCENT_WARNING 50
+#define DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL 20
+#define DERATING_APPROACHING_CRITICAL_FRACTION_PERCENT 90
 
 // Task watchdog timing is still using the ESP-IDF default configuration.
 // The shorter LoRa RX timeout below improves scheduling margin, but the global

@@ -1,6 +1,7 @@
 #include <atomic>
 
 #include "VcuLogic.h"
+#include "DeratingPolicy.h"
 #include "IRelayActuator.h"
 #include "SystemConfig.h"
 #include "esp_log.h"
@@ -154,14 +155,28 @@ void run() {
     }
 
     // AÇIK İŞ (B12): Warning bandında derating (tork/güç sınırlama) politikası
-    // henüz UYGULANMADI — şimdilik yalnız kenar-tetikli WARN loglanır, araç
-    // davranışı değişmez. Warning READY girişini isReadyEntryPermitted
-    // üzerinden zaten bloklar; sürüş sırasındaki derating, motor sürücüsü
-    // tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye başlayınca
-    // tasarlanacak. Bkz. SystemConfig.h "Phase 2 Safety Thresholds" notu.
+    // — İSKELET KURULDU (bkz. lib/VcuLogic/DeratingPolicy.h). WARN aktifken
+    // 0..100 bir tork-izin yüzdesi hesaplanıp kenar-tetikli loglanır, ama
+    // ARAÇ DAVRANIŞI HALA DEĞİŞMEZ: bu yüzde hiçbir tork komutuna/CanManager
+    // çağrısına bağlanmıyor (motor sürücüsü elimizde yok — bkz. KAPSAM KİLİDİ,
+    // DeratingPolicy.h başlık yorumu). Warning READY girişini
+    // isReadyEntryPermitted üzerinden zaten bloklar.
+    //
+    // ENTEGRASYON NOKTASI (motor sürücüsü geldiğinde): aşağıdaki
+    // `deratingPercent` değeri, tork komut yolu (setTorqueSink/G2) gerçek
+    // frame üretmeye başladığında torku sınırlamak için BURADA kullanılacak
+    // (ör. VcuLogic'in DRIVE'da hesapladığı hedef torku bu yüzdeyle çarpıp
+    // sink'e onu göndermek) — bugün böyle bir tork komut ÜRETİMİ yok, bu
+    // yüzden bağlanacak bir şey de yok. Bkz. SystemConfig.h "B12: Derating
+    // Policy" notu (kademe değerleri CONFIG, ekip kalibrasyonu bekliyor).
     if (hasWarningCondition()) {
         if (!s_VCU_warningLogged) {
-            ESP_LOGW(TAG, "Warning threshold active, derating policy pending");
+            const uint8_t deratingPercent =
+                DeratingPolicy::computeTorqueAllowPercent(getTelemetrySnapshot());
+            ESP_LOGW(TAG,
+                     "Warning threshold active, derating onerisi %%%u "
+                     "(tork komutuna henuz baglanmadi — motor surucusu yok)",
+                     (unsigned)deratingPercent);
             s_VCU_warningLogged = true;
         }
     } else {

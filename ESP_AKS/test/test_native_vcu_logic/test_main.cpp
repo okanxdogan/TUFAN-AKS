@@ -40,6 +40,13 @@ extern void test_warning_voltage_below_warn_high(void);
 extern void test_warning_voltage_at_warn_high(void);
 extern void test_critical_voltage_at_crit_high(void);
 
+// GÜVENLİK-EŞİĞİ DÜZELTMESİ — hücre voltajı deci-mV/mV birim uyumsuzluğu
+extern void test_cell_voltage_realistic_nominal_no_condition(void);
+extern void test_cell_undervoltage_warn_threshold_deci_mv(void);
+extern void test_cell_undervoltage_critical_realistic(void);
+extern void test_cell_overvoltage_warn_threshold_deci_mv(void);
+extern void test_cell_overvoltage_critical_realistic(void);
+
 // Faz 1 — error flag'ler
 extern void test_critical_motor_error_flag_set(void);
 extern void test_critical_bms_error_flag_set(void);
@@ -110,7 +117,43 @@ extern void test_reset_from_fault_clears_actuator_fault(void);
 extern void test_estop_requests_zero_torque_before_opening_contactors(void);
 extern void test_fault_requests_zero_torque_before_opening_contactors(void);
 extern void test_estop_without_torque_sink_still_opens_contactors(void);
+extern void test_estop_zero_torque_reaches_can_queue_before_contactor_open(void);
 extern void test_flag0_torque_frame_disabled(void);
+
+// G2 — TorqueRequestQueue (VCU task -> CAN task tork isteği kuyruğu)
+extern void test_torque_queue_drain_empty_returns_false(void);
+extern void test_torque_queue_push_then_drain_returns_value_once(void);
+extern void test_torque_queue_zero_value_is_a_valid_pending_request(void);
+extern void test_torque_queue_overwrites_undrained_value_with_latest(void);
+extern void test_torque_queue_push_after_drain_is_pending_again(void);
+
+// B12 — DeratingPolicy (WARN bandı tork-izin yüzdesi iskeleti)
+extern void test_derating_neutral_when_bms_data_invalid(void);
+extern void test_derating_nominal_when_all_signals_clean(void);
+extern void test_derating_temp_just_below_warn_is_nominal(void);
+extern void test_derating_temp_at_warn_threshold_is_warning_tier(void);
+extern void test_derating_temp_just_below_approach_boundary_is_warning_tier(void);
+extern void test_derating_temp_at_approach_boundary_is_approaching_critical_tier(void);
+extern void test_derating_temp_at_critical_threshold_is_still_approaching_tier(void);
+extern void test_derating_charge_current_below_warn_is_nominal(void);
+extern void test_derating_charge_current_at_warn_is_warning_tier(void);
+extern void test_derating_charge_current_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_discharge_current_below_warn_is_nominal(void);
+extern void test_derating_discharge_current_at_warn_is_warning_tier(void);
+extern void test_derating_discharge_current_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_pack_undervoltage_above_warn_is_nominal(void);
+extern void test_derating_pack_undervoltage_at_warn_is_warning_tier(void);
+extern void test_derating_pack_undervoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_pack_overvoltage_at_warn_is_warning_tier(void);
+extern void test_derating_pack_overvoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_ignores_cell_voltage_when_not_fresh(void);
+extern void test_derating_cell_undervoltage_at_warn_is_warning_tier(void);
+extern void test_derating_cell_undervoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_cell_overvoltage_at_warn_is_warning_tier(void);
+extern void test_derating_cell_overvoltage_at_approach_boundary_is_approaching_tier(void);
+extern void test_derating_cell_voltage_realistic_nominal_is_nominal(void);
+extern void test_derating_multiple_warnings_worst_case_wins(void);
+extern void test_derating_two_warning_tier_signals_stay_at_warning_tier(void);
 
 // Faz 0 sanity
 static void test_smoke_arithmetic(void) {
@@ -157,6 +200,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_warning_voltage_below_warn_high);
     RUN_TEST(test_warning_voltage_at_warn_high);
     RUN_TEST(test_critical_voltage_at_crit_high);
+
+    RUN_TEST(test_cell_voltage_realistic_nominal_no_condition);
+    RUN_TEST(test_cell_undervoltage_warn_threshold_deci_mv);
+    RUN_TEST(test_cell_undervoltage_critical_realistic);
+    RUN_TEST(test_cell_overvoltage_warn_threshold_deci_mv);
+    RUN_TEST(test_cell_overvoltage_critical_realistic);
 
     // Faz 1 — error flag'ler
     RUN_TEST(test_critical_motor_error_flag_set);
@@ -225,7 +274,41 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_estop_requests_zero_torque_before_opening_contactors);
     RUN_TEST(test_fault_requests_zero_torque_before_opening_contactors);
     RUN_TEST(test_estop_without_torque_sink_still_opens_contactors);
+    RUN_TEST(test_estop_zero_torque_reaches_can_queue_before_contactor_open);
     RUN_TEST(test_flag0_torque_frame_disabled);
+
+    RUN_TEST(test_torque_queue_drain_empty_returns_false);
+    RUN_TEST(test_torque_queue_push_then_drain_returns_value_once);
+    RUN_TEST(test_torque_queue_zero_value_is_a_valid_pending_request);
+    RUN_TEST(test_torque_queue_overwrites_undrained_value_with_latest);
+    RUN_TEST(test_torque_queue_push_after_drain_is_pending_again);
+
+    RUN_TEST(test_derating_neutral_when_bms_data_invalid);
+    RUN_TEST(test_derating_nominal_when_all_signals_clean);
+    RUN_TEST(test_derating_temp_just_below_warn_is_nominal);
+    RUN_TEST(test_derating_temp_at_warn_threshold_is_warning_tier);
+    RUN_TEST(test_derating_temp_just_below_approach_boundary_is_warning_tier);
+    RUN_TEST(test_derating_temp_at_approach_boundary_is_approaching_critical_tier);
+    RUN_TEST(test_derating_temp_at_critical_threshold_is_still_approaching_tier);
+    RUN_TEST(test_derating_charge_current_below_warn_is_nominal);
+    RUN_TEST(test_derating_charge_current_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_charge_current_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_discharge_current_below_warn_is_nominal);
+    RUN_TEST(test_derating_discharge_current_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_discharge_current_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_pack_undervoltage_above_warn_is_nominal);
+    RUN_TEST(test_derating_pack_undervoltage_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_pack_undervoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_pack_overvoltage_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_pack_overvoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_ignores_cell_voltage_when_not_fresh);
+    RUN_TEST(test_derating_cell_undervoltage_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_cell_undervoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_cell_overvoltage_at_warn_is_warning_tier);
+    RUN_TEST(test_derating_cell_overvoltage_at_approach_boundary_is_approaching_tier);
+    RUN_TEST(test_derating_cell_voltage_realistic_nominal_is_nominal);
+    RUN_TEST(test_derating_multiple_warnings_worst_case_wins);
+    RUN_TEST(test_derating_two_warning_tier_signals_stay_at_warning_tier);
 
     return UNITY_END();
 }

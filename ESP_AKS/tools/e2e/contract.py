@@ -104,6 +104,18 @@ def sanitize_current(raw: int) -> int:
     return INT32_MIN + 1 if raw == INT32_MIN else raw
 
 
+# BILINEN SEMANTIK UYUMSUZLUK (torque alani, bkz. Documents/
+# TORQUE_ALAN_KARAR_NOTU.md): sozlesme 4. alani "torque" (int16,
+# -32768..32767) olarak adlandirir; AKS burada FIILEN TEL_motorVoltageDeciV
+# (uint16_t, motor voltaji) gonderir. Bu deger 32767'yi asabilir; asarsa UKS
+# Parse_Int TUM frame'i reddeder. TelemetrySanitize::
+# sanitizeMotorVoltForTorqueField'in Python eslenigi:
+def sanitize_motor_volt_for_torque_field(raw: int) -> int:
+    """TelemetrySanitize::sanitizeMotorVoltForTorqueField — 32767'ye clamp
+    eder (frame reddini engeller, "dogru tork" uretmez)."""
+    return 32767 if raw > 32767 else raw
+
+
 # AKS lib/Telemetry/Telemetry.h: TEL_SPD_X10_MAX — rpmToSpeedKmhX10Impl
 # icinde spd_x10 bu degere clamp'lenir (sanitizeForUplink'in DISINDA, hiz
 # hesaplama zincirinde).
@@ -159,6 +171,13 @@ OB_CAPACITY = 75                 # offline buffer kapasitesi (60 sn x 1 Hz + %25
 REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
 BOOT_LINK_GRACE_MS = 5000        # boot'tan itibaren ilk heartbeat icin tanina sure
 LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-6 sn'lik fiili heartbeat araligina marj (bkz. SystemConfig.h)
+
+# TERS YON: UKS'in TEL frame timeout'u (UKS Core/Inc/telemetry.h). AKS'in
+# LINK_TIMEOUT_MS'i (yukarida) UKS->AKS heartbeat icindir; bu ise AKS->UKS
+# TEL frame'leri icin UKS tarafinda simetrik bir bekci — bkz. Documents/
+# LoRa_Link_Analysis.md "UKS-side TEL Timeout Margin" (nominal 4x marj,
+# 3 ardisik atlanmis TX tik'i tolere edilir, 4.'sunde false LINK,DOWN).
+TEL_LINK_TIMEOUT_MS = 2000
 
 
 def build_tel_line(f: dict) -> str:

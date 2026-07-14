@@ -24,6 +24,14 @@ void Telemetry::sendStatus(const TelemetryData& TEL_data) {
     //         bmsValid,tsMs,spdX10
     // `current` centi-Amper (0.01 A) birimindedir — UKS /100 ile A'e çevirir
     // (birim sözleşmesi: Telemetry.h::sendStatus yorumu).
+    //
+    // NOT: 4. alan sözleşmede "torque" (int16, -32768..32767) olarak
+    // adlandırılır ama burada TEL_motorVoltageDeciV (motor voltajı, deciV)
+    // yazılır — semantik uyumsuzluk bilerek kayıt altına alındı, bkz.
+    // Telemetry.h::sendStatus yorumu ve Documents/TORQUE_ALAN_KARAR_NOTU.md.
+    // Çağıran taraf bu değeri sendStatus'a geçmeden önce
+    // TelemetrySanitize::sanitizeForUplink() ile 32767'ye kırpar; sendStatus
+    // burada AYRICA kırpma YAPMAZ (tek ortak sanitize kapısına güvenir).
     char TEL_payload[192];
     const int TEL_payloadLength = snprintf(
         TEL_payload, sizeof(TEL_payload),

@@ -139,26 +139,49 @@ fark BMS'in şarj algoritmasına göre akım setpoint'ini dinamik ayarladığın
 
 ---
 
-### `0x0000E002` — BİLİNMİYOR
+### `0x0000E002` — ⚠️ HİPOTEZ (Şarj Limit Aynası)
 
-Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+Direction: `BMS → AKS` | DLC: 8 | Status: **⚠️ HİPOTEZ — bağımsız teyit yok**
 
 Bu CAN ID, Oturum 3 logunda GÖRÜLMEDİ (log'da yalnızca E000, E001, E005, 1806E5F4
-mevcut). Oturum 2'de gözlemlenmişti.
+mevcut). Oturum 2'de gözlemlenmişti. **PCAN trace analizi (2 oturum, ~72k mesaj,
+2026-07-14)** ek gözlem sağladı — ancak her iki PCAN oturumu da BOŞTA geçti
+(akım ~-0.1 A), bu yüzden şarj/yük durumuyla korelasyon KURULAMADI.
 
 Oturum 2 örneği: `03 70 03 E8 01 00 00 00`
 
-| Byte | Alan Adı | Durum | Gözlem |
-| --- | --- | --- | --- |
-| 0–7 | Bilinmiyor | ❌ BİLİNMİYOR | Oturum 2: byte[0:1]=0x0370 (880), byte[2:3]=0x03E8 (1000) — şarj limit/config adayı. E004 ile multiplex paylaşımı gözlemlendi. |
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Charge Voltage Limit (aday) | uint16_t | Big | unsigned | ×0.1 V | ⚠️ HİPOTEZ | Oturum 2: `03 70` = 880 → **88.0 V** — `0x1806E5F4` byte[0:1] (Charge Voltage Setpoint) ile AYNI değer. Kanıt: Oturum 2 sniffer logu, çapraz-ID değer eşleşmesi (bağımsız ikinci kaynak yok). |
+| 2–3 | Charge Current Limit (aday) | uint16_t | Big | unsigned | ×0.1 A | ⚠️ HİPOTEZ | Oturum 2: `03 E8` = 1000 → **100.0 A**. Kanıt: tek oturum gözlemi, tekrar doğrulanmadı. |
+| 4 | Enable/Active bayrağı (aday) | uint8_t | — | unsigned | bitfield | ⚠️ HİPOTEZ | PCAN trace (2026-07-14): b4 değişken, 0/1'e benzer bir aç/kapa bayrağı gibi davranıyor — hangi koşulun 0↔1 yaptığı (şarj cihazı bağlı/bağlı değil?) boşta trace'te belirlenemedi. |
+| 5–7 | Bilinmiyor | — | — | — | — | ❌ BİLİNMİYOR | Gözlem yok. |
+
+E004 ile multiplex paylaşımı gözlemlendi (Oturum 2).
 
 ---
 
-### `0x0000E003` — BİLİNMİYOR
+### `0x0000E003` — ⚠️ HİPOTEZ (BMS Operasyonel State + SOH Adayı)
 
-Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+Direction: `BMS → AKS` | DLC: 8 | Status: **⚠️ HİPOTEZ — bağımsız teyit yok, şarj trace'i ile korelasyon bekliyor**
 
-Tüm byte alanları bilinmiyor. Oturum 3'te görülmedi.
+Oturum 3'te görülmedi. **PCAN trace analizi (2 oturum, ~72k mesaj, 2026-07-14)**
+ile ilk kez ayrıntılı gözlemlendi.
+
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | BMS operasyonel state (aday) — **UKS `sysState` sözleşme enum'u DEĞİL** | uint16_t (?) | Big (?) | unsigned | enum? | ⚠️ HİPOTEZ | PCAN trace: boot'ta `1→2→3` dizisi görülüyor, ardından kararlı `3` (4557/4565 frame, yani neredeyse tüm oturum boyunca sabit). Boşta (akım ~-0.1 A) da `3` göstermesi, bunun UKS `sysState` (1=Discharge/2=IDLE/3=Charge/4=FAULT) sözleşme enum'u OLMADIĞINI düşündürüyor — muhtemelen BMS'in kendi iç durumu (init → self-check → çalışıyor). **Teyit bekliyor:** şarj trace'i (b0/b1'in şarj sırasında değişip değişmediği). |
+| 2 | İnit bayrak alanı (aday) | uint8_t | — | unsigned | bitfield | ⚠️ HİPOTEZ | PCAN trace: boot sırasında `0x01→0x81→0x91` dizisi gözlendi — üst bitlerin art arda set edilmesi, bir "init/hazır" bayrak biriktirme deseni gibi görünüyor. Tek oturum gözlemi, tekrar doğrulanmadı. |
+| 4–5 | SOH (State of Health) adayı | uint16_t | Big (?) | unsigned | ×0.01 %? | ⚠️ HİPOTEZ | PCAN trace: sabit `10000` → ×0.01 yorumuyla **%100.00** — SoC alanlarıyla (0xE000 byte[4:7]) aynı ölçek kalıbı, SOH için makul bir "yeni/sağlıklı pil" değeri. Bağımsız teyit (SOH'un gerçekten düştüğü bir gözlem) yok. |
+| 3, 6–7 | Bilinmiyor | — | — | — | — | ❌ BİLİNMİYOR | Gözlem yok / anlam çıkarılamadı. |
+
+**Firmware kuralı hatırlatması:** ⚠️ HİPOTEZ seviyesindeki hiçbir alan
+TelemetryData'ya YAZILMAZ, karar mantığına BAĞLANMAZ (bkz. "Doğrulama
+Seviyeleri" tablosu). `SYSSTATE_DERIVE_FROM_CURRENT` (bkz. `SystemConfig.h`,
+`lib/Telemetry/SysStateDerive.h`) BU alandan TÜRETİLMEZ — akımdan (0xE000
+byte[0:1], DOĞRULANDI) türetilen AYRI ve daha düşük iddialı bir hipotezdir
+(yalnızca Discharge/IDLE/Charge ayrımı, FAULT girdisi yok); E003 b0/b1
+teyit edilirse gerçek parse onun yerini alabilir.
 
 ---
 
@@ -174,34 +197,52 @@ Oturum 3'te görülmedi. Oturum 2 örneği: `01 89 03 E8 03 E8 00 00`
 
 ---
 
-### `0x0000E005` — BİLİNMİYOR
+### `0x0000E005` — ⚠️ HİPOTEZ (Charger Aynası + Kalan Kapasite Adayı)
 
-Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+Direction: `BMS → AKS` | DLC: 8 | Status: **⚠️ HİPOTEZ — bağımsız teyit yok**
 
-Oturum 3'te gözlemlendi, TÜM frame'lerde SABİT: `01 C5 05 DC 00 0B 71 B0`
+Oturum 3'te gözlemlendi, TÜM frame'lerde SABİT: `01 C5 05 DC 00 0B 71 B0`.
+**PCAN trace analizi (2026-07-14)** aynı sabitliği doğruladı, ek bir alan
+hipotezi (byte[4:7]) sağladı.
+
+| Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0–1 | Charger current setpoint aynası (aday) | uint16_t | Big | unsigned | ×0.1 A | ⚠️ HİPOTEZ | `01 C5` = 453 → 45.3 A — `0x1806E5F4` byte[2:3] (Charge Current Setpoint) ile AYNI değer. Tesadüf mü, ayna mı belirsiz — tek oturumda sabit kaldığından ayırt edilemiyor. |
+| 2–3 | Bilinmiyor (olası limit) | — | — | — | — | ❌ BİLİNMİYOR | `05 DC` = 1500 — yuvarlak değer, olası limit parametresi. Gözlem tek oturumla sınırlı. |
+| 4–7 | Kalan kapasite adayı (Ah?) | uint32_t (?) | Big (?) | unsigned | ? | ⚠️ HİPOTEZ | PCAN trace: `00 0B 71 B0` = **750000** — ×0.001 Ah yorumuyla 750.0 Ah gibi büyük görünüyor (24S pack için makul olmayabilir) ya da farklı bir ölçek/birim gerekiyor. Ölçek/birim BELİRSİZ, tek oturum gözlemi. |
+
+---
+
+### `0x0000E032` — ⚠️ HİPOTEZ (Alarm/Uyarı Bitfield Adayı)
+
+Direction: `BMS → AKS` | DLC: 8 | Status: **⚠️ HİPOTEZ — alarmsız oturumda tümü sıfır, alarm senaryosu teyidi yok**
+
+Oturum 3'te görülmedi. Oturum 2'de tüm payload sıfır (`00 00 00 00 00 00 00 00`).
+**PCAN trace analizi (2026-07-14):** ~1 Hz periyotla geliyor, alarmsız/boşta
+oturumda gözlemlenen ~1000 frame'in TAMAMI `00 00 00 00 00 00 00 00`. Sıfır
+payload + düşük/sabit frekans, bunun bir alarm/uyarı bitfield'i (yalnızca bir
+koşul tetiklendiğinde bit set edilir) olabileceğini düşündürüyor —
+**gelecekte FAULT kaynağı adayı**, ancak hiçbir bit'in 1 olduğu bir durum
+GÖZLEMLENMEDİ, bu yüzden bit-anlam haritası ÇIKARILAMADI.
 
 | Byte | Alan Adı | Durum | Gözlem |
 | --- | --- | --- | --- |
-| 0–1 | Bilinmiyor | ❌ BİLİNMİYOR | `01 C5` = 453 — charger current setpoint ile AYNI değer (0x1806E5F4 byte[2:3]). Tesadüf mü, ayna mı, bilinmiyor. |
-| 2–3 | Bilinmiyor | ❌ BİLİNMİYOR | `05 DC` = 1500 — yuvarlak değer, olası limit parametresi. |
-| 4–5 | Bilinmiyor | ❌ BİLİNMİYOR | `00 0B` = 11 |
-| 6–7 | Bilinmiyor | ❌ BİLİNMİYOR | `71 B0` = 29104 |
+| 0–7 | Alarm/uyarı bitfield adayı | ⚠️ HİPOTEZ | Alarmsız oturumlarda (~1000 frame, iki PCAN oturumu) tamamı `0x00`. Hangi bitin hangi alarma karşılık geldiği BİLİNMİYOR — bir alarm koşulu tetiklenmiş bir trace gerekiyor. |
 
 ---
 
-### `0x0000E032` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
+### `0x0000E033` — ⚠️ HİPOTEZ (Alarm/Uyarı Bitfield Adayı)
 
-Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
-
-Oturum 3'te görülmedi. Oturum 2'de tüm payload sıfır (`00 00 00 00 00 00 00 00`).
-
----
-
-### `0x0000E033` — BİLİNMİYOR (Reserved/Heartbeat Adayı)
-
-Direction: `BMS → AKS` | DLC: 8 | Status: **❌ BİLİNMİYOR**
+Direction: `BMS → AKS` | DLC: 8 | Status: **⚠️ HİPOTEZ — alarmsız oturumda tümü sıfır, alarm senaryosu teyidi yok**
 
 Oturum 3'te görülmedi. Oturum 2'de tüm payload sıfır (`00 00 00 00 00 00 00 00`).
+**PCAN trace analizi (2026-07-14):** E032 ile aynı gözlem — ~1 Hz, alarmsız
+oturumda tüm frame'ler sıfır. Aynı gerekçeyle alarm/uyarı bitfield adayı,
+gelecekte FAULT kaynağı adayı; bit-anlam haritası çıkarılamadı.
+
+| Byte | Alan Adı | Durum | Gözlem |
+| --- | --- | --- | --- |
+| 0–7 | Alarm/uyarı bitfield adayı | ⚠️ HİPOTEZ | Alarmsız oturumlarda tamamı `0x00`. Bit-anlam haritası BİLİNMİYOR. |
 
 ---
 
@@ -227,7 +268,13 @@ Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tara
 | 0xE015-E020 Bireysel Hücre Voltajları | ✅ DOĞRULANDI | ✅ parseLbBmsE015-E020 | ✅ TEL_bmsCellVoltages[24] | ❌ (HMI gösterimi için, kararlar Min/Max üstünden) |
 | 0x1806E5F4 byte[0:1] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
 | 0x1806E5F4 byte[2:3] | ✅ DOĞRULANDI | ✅ parseCharger | ✅ ChargerCommand | ❌ (gözlem amaçlı) |
-| 0xE002–E005, E032, E033, 0x000 | ❌ BİLİNMİYOR | ❌ (stub) | ❌ | ❌ |
+| 0xE002 byte[0:1]/[2:3]/4 | ⚠️ HİPOTEZ (şarj limit/enable adayı) | ❌ (stub) | ❌ | ❌ |
+| 0xE003 byte[0:1] (BMS state) | ⚠️ HİPOTEZ (UKS sysState enum'u DEĞİL) | ❌ (stub) | ❌ | ❌ |
+| 0xE003 byte[2] (init bayrağı) / byte[4:5] (SOH adayı) | ⚠️ HİPOTEZ | ❌ (stub) | ❌ | ❌ |
+| 0xE005 byte[0:1] (charger aynası) / byte[4:7] (kapasite adayı) | ⚠️ HİPOTEZ | ❌ (stub) | ❌ | ❌ |
+| 0xE032, 0xE033 (alarm bitfield adayı) | ⚠️ HİPOTEZ | ❌ (stub) | ❌ | ❌ |
+| 0xE004, 0x000 | ❌ BİLİNMİYOR | ❌ (stub) | ❌ | ❌ |
+| — Türetilmiş `sysState` (`SYSSTATE_DERIVE_FROM_CURRENT`) | N/A — CAN alanı DEĞİL, akımdan (0xE000, DOĞRULANDI) hesaplanır | ✅ `SysStateDerive::deriveFromCurrent` | ⚠️ yalnız flag=1 VE `TEL_bmsSystemState==0` iken, yalnız LoRa TX yolunda | ❌ (yalnız telemetri/UKS gösterimi — VCU karar mantığına BAĞLANMAZ, feature flag arkasında, varsayılan KAPALI) |
 
 ---
 
@@ -238,3 +285,22 @@ Oturum 3'te görülmedi. Önceki oturumlarda tüm payload sıfır. Firmware tara
    diyor ama bu farklı bir yapılandırma olabilir.
 4. **SoC 2 kullanımı:** SoC 1 vs SoC 2 arasındaki 0.37% farkın anlamı araştırılacak (farklı
    algoritma? farklı hücre grubu?).
+5. **E003 b0/b1 teyit checklist'i (PCAN, 2026-07-14 analizinden):**
+   - [ ] Şarjda 30-60 sn PCAN trace al; E003 byte[0:1] değerini zamanla ve
+     0xE000 byte[0:1] (Pack Current, DOĞRULANDI) ile korele et.
+   - [ ] Yükte (deşarj) 30-60 sn PCAN trace al; aynı korelasyonu tekrarla.
+   - [ ] **Sonuca göre:**
+     - E003 b0/b1 gerçekten şarj/IDLE/deşarj ile 1/2/3 şeklinde değişiyorsa:
+       `CanParse::parseLbBmsE003`'e gerçek parse ekle, `TEL_bmsSystemState`'i
+       doğrudan bu alandan doldur; `SYSSTATE_DERIVE_FROM_CURRENT` hipotezini
+       (bkz. `SystemConfig.h`, `lib/Telemetry/SysStateDerive.h`) KALDIR veya
+       yalnızca gerçek parse `TEL_bmsSystemState`'i doldurmadığı ara durumlar
+       için fallback'e indir.
+     - E003 b0/b1 şarj/yükle KORELE OLMUYORSA (BMS'in kendi iç durumu
+       teyit edilirse): bu alanı ❌ BİLİNMİYOR'a geri düşür,
+       `SYSSTATE_DERIVE_FROM_CURRENT` hipotezini (akım tabanlı) kalıcı
+       çözüm olarak değerlendirmeye devam et.
+   - [ ] Hangi yol seçilirse seçilsin: `tools/e2e/test_contract_drift.py`
+     `test_lb_bms_field_coverage_is_tracked` xfail izleyicisini VE
+     `TEKNIK_KONTROL_PROVASI.md`/boot-log uyarısını (`main.cpp` app_main
+     içindeki `ESP_LOGW` — "BMS: sysState henuz parse edilmiyor") güncelle.

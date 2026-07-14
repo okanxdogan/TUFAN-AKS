@@ -9,13 +9,24 @@
 Motor sürücüsü **henüz hazır değil ve araca bağlı değil**. Bu yüzden:
 
 - Hiçbir gerçek torque komutu gönderilmiyor (`CanManager::sendTorqueCommand`
-  bayrak 0 iken frame üretmez, yalnız bir kez uyarı loglar).
+  bayrak 0 iken frame üretmez, yalnız bir kez uyarı loglar; bayrak 1 olsa
+  bile frame içeriği henüz DOĞRULANMADIĞI için gönderim yine gerçekleşmez —
+  aşağıya bkz.).
 - E-STOP / FAULT durumunda `VcuLogic::handleEmergencyStop` /`handleFault`
   güvenli kapanış sırasını (sıfır-tork → bekle → kontaktör aç) **çağrı olarak
   kurar**, ama sıfır-tork adımı bayrak 0'da gerçek frame üretmediğinden
   kontaktörler **yük altında açılabilir**.
 - `VCU_CONTACTOR_OPEN_DELAY_MS = 20 ms` **semboliktir** — gerçek tork sönüm
   süresine göre kalibre edilmemiştir.
+- **2026-07-13 GÜNCELLEME (thread-safety hazırlığı, madde 4 çözüldü):**
+  `CanManager::sendTorqueCommand` artık VCU task'inden çağrıldığında
+  `twai_transmit`'i ASLA doğrudan çağırmaz — istek bir
+  `TorqueRequestQueue`'ya (`lib/CanManager/TorqueRequestQueue.h`, saf/atomic,
+  FreeRTOS/twai bağımsız) yazılır; gerçek gönderim CAN task döngüsünde
+  (`processRxMessages()` içinden, her tik) `drainTorqueQueue()` ile çekilip
+  yapılacak. Bu, tasarımı ŞİMDİDEN doğru task'e bağlıyor; frame İÇERİĞİ hâlâ
+  TODO (aşağıya bkz.) — motor sürücü spec'i gelmeden `drainTorqueQueue()`
+  içindeki gövde derlenmez bile (bkz. madde 3'teki `#error` guard'ı).
 
 **Saha riski:** Motor tork üretirken kontaktör açılırsa **ark, kontak kaynaması
 ve regen aşırı gerilimi** oluşabilir. Bu risk yalnızca motor sürücüsü entegre
@@ -30,27 +41,44 @@ yapıldığında etkilenen tüm noktalar:
 |-----|-------------------|------------------------|
 | `VcuLogic.h::isReadyEntryPermitted` (P1 READY interlock) | motor verisi READY girişini bloklamaz | ek şart: `TEL_motorDataValid == true` |
 | `VcuLogic.cpp::readyRejectReason` | `motorDataValid` reddedilme nedeni değil | `motorDataValid=0` READY reddi nedeni olur |
-| `CanManager.cpp::sendTorqueCommand` | frame YOK, bir kez uyarı loglar, `false` döner | **TODO** gerçek frame + `twai_transmit` |
+| `CanManager.cpp::sendTorqueCommand` | frame YOK, bir kez uyarı loglar, `false` döner, kuyruğa yazmaz | İsteği `TorqueRequestQueue`'ya yazar (`true` döner) — gerçek `twai_transmit` CAN task'inde `drainTorqueQueue()` ile yapılır; frame içeriği **TODO** (`#error` guard `MOTOR_TORQUE_FRAME_DEFINED` tanımlanana kadar derlemeyi engeller) |
 | `lib/CanManager/MotorTorque.h::frameEnabled()` | `false` | `true` |
 | `test/test_native_ready_motor/` | — | flag=1 derlemesiyle predicate + gate testleri |
 
 ## 3. Entegrasyon günü yapılacaklar (checklist)
 
-1. **`sendTorqueCommand` frame formatı** (`CanManager.cpp`, `#if
-   MOTOR_DRIVER_PRESENT` bloğu): motor sürücü spec'inden CAN ID, DLC ve byte
-   düzenini **doğrula ve UYDURMADAN** doldur; `twai_transmit` çağrısını aç.
-   `CAN_ID_TORQUE_CMD` şu an `SystemConfig.h`'de yorumda — doğrulanınca aç.
+1. **`sendTorqueCommand`/`drainTorqueQueue` frame formatı** (`CanManager.cpp`,
+   `drainTorqueQueue()` içindeki `#if MOTOR_DRIVER_PRESENT` bloğu): motor
+   sürücü spec'inden CAN ID, DLC ve byte düzenini **doğrula ve UYDURMADAN**
+   doldur; `twai_transmit` çağrısını aç. `CAN_ID_TORQUE_CMD` şu an
+   `SystemConfig.h`'de yorumda — doğrulanınca aç. Format tamamlanınca
+   `SystemConfig.h`'ye `#define MOTOR_TORQUE_FRAME_DEFINED 1` ekle (aksi
+   halde `MOTOR_DRIVER_PRESENT=1` yapıldığında derleme `#error` ile
+   BİLEREK kırılır — bkz. madde 3 altındaki not, thread-safety kalemi ÇÖZÜLDÜ).
 2. **Delay kalibrasyonu:** `VCU_CONTACTOR_OPEN_DELAY_MS`'i (SystemConfig.h)
    gerçek tork sönüm süresine göre ayarla. Motor RPM/akımının sıfır-tork
-   komutundan sonra ne kadar sürede düştüğünü ölç; delay bu süreden büyük olsun.
+   komutundan sonra ne kadar sürede düştüğünü ölç; delay bu süreden büyük
+   olsun. **EK (kuyruklama sonrası):** ölçülecek süre artık yalnızca
+   "sıfır-tork komutundan motor tepkisine" değil, "VCU'nun `requestZeroTorque`
+   çağrısından (t=0) motorun GERÇEKTEN sıfır tork uygulamasına" kadar geçen
+   süre olmalı — bu, CAN task'inin `drainTorqueQueue()`'yu bir sonraki tik'te
+   çekme gecikmesini de (CAN task döngü periyodu kadar, en kötü durum) İÇERİR.
+   Delay'i yalnızca motor tork sönüm süresine göre değil, bu ek gecikmeyi de
+   ekleyerek kalibre et.
 3. **E-STOP altında düşüş doğrulaması:** E-STOP tetikle, sıfır-tork komutu
    sonrası **motor RPM ve akımının kontaktör açılmadan ÖNCE düştüğünü**
    osiloskop/CAN log ile doğrula. Bu doğrulama yapılmadan sahaya/piste çıkma.
-4. **Torque'un CAN task'i dışından gönderimi (thread-safety):** Sıfır-tork
-   isteği VcuLogic (VCU task) → sink → `CanManager::sendTorqueCommand` (CAN
-   task'ine ait örnek) yolundan gelir. Bayrak 1'de gerçek `twai_transmit`
-   çalışırken bu **task'ler arası erişimin** güvenli olduğundan emin ol
-   (ör. torque isteğini CAN task'ine kuyrukla, ya da uygun kilit).
+4. ~~**Torque'un CAN task'i dışından gönderimi (thread-safety):**~~ **ÇÖZÜLDÜ
+   (2026-07-13).** Sıfır-tork isteği VcuLogic (VCU task) → sink →
+   `CanManager::sendTorqueCommand` (CAN task'ine ait örnek) yolundan gelir;
+   artık `sendTorqueCommand` isteği yalnızca bir `TorqueRequestQueue`'ya
+   (atomic, kilitsiz) yazar — gerçek `twai_transmit` HER ZAMAN CAN task
+   döngüsünden (`processRxMessages()` → `drainTorqueQueue()`) çağrılır.
+   Native test: `test/test_native_vcu_logic/test_state_machine.cpp`
+   `test_estop_zero_torque_reaches_can_queue_before_contactor_open` — E-STOP
+   sırasında isteğin kuyruğa kontaktör açılmadan ÖNCE ulaştığını VE
+   kuyruklamanın bu sırayı bozmadığını doğrular. Kalan iş: yalnızca madde 1
+   (frame İÇERİĞİ) ve madde 2'deki ek gecikme kalibrasyonu.
 5. **DC-link kapasitesi / precharge kararı:** Motor sürücüsünün DC-link
    kondansatör kapasitesini kontrol et. **Bataryada precharge devresi YOK**;
    risk yük tarafındaki (motor sürücü) kondansatörden gelir ve motor sürücü
@@ -61,10 +89,19 @@ yapıldığında etkilenen tüm noktalar:
 
 ## 4. İlgili dosyalar
 
-- `include/SystemConfig.h` — `MOTOR_DRIVER_PRESENT`, `VCU_CONTACTOR_OPEN_DELAY_MS`
-- `lib/CanManager/CanManager.cpp` / `.h` — `sendTorqueCommand`
+- `include/SystemConfig.h` — `MOTOR_DRIVER_PRESENT`, `VCU_CONTACTOR_OPEN_DELAY_MS`,
+  (entegrasyon günü eklenecek) `MOTOR_TORQUE_FRAME_DEFINED`
+- `lib/CanManager/CanManager.cpp` / `.h` — `sendTorqueCommand`,
+  `drainTorqueQueue` (CAN task döngüsü, `processRxMessages()` içinden
+  çağrılır), dosya başındaki `#error` guard'ı
+- `lib/CanManager/TorqueRequestQueue.h` — SAF (atomic, FreeRTOS/twai
+  bağımsız) VCU task → CAN task tork isteği kuyruğu; native testlerde
+  bağımsız test edilir
 - `lib/CanManager/MotorTorque.h` — saf frame-gate (`frameEnabled()`)
 - `src/VcuLogic.cpp` — `handleEmergencyStop` / `handleFault` kapanış sırası,
   `requestZeroTorque`, torque sink hook
 - `src/main.cpp` — `CAN_torqueSink` köprüsü, `VcuLogic::setTorqueSink`
-- `test/test_native_vcu_logic/` — E-STOP/FAULT çağrı sırası testleri
+- `test/test_native_vcu_logic/` — E-STOP/FAULT çağrı sırası testleri +
+  `test_torque_request_queue.cpp` (kuyruk unit testleri) +
+  `test_estop_zero_torque_reaches_can_queue_before_contactor_open`
+  (kuyruklamanın E-STOP sırasını bozmadığının entegrasyon testi)

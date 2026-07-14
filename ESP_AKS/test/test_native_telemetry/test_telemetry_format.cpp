@@ -358,3 +358,38 @@ void test_impl_applies_clamp(void) {
     uint16_t result = rpmToSpeedKmhX10Impl(65535u, 0.5f, 1.0f, false);
     TEST_ASSERT_EQUAL_UINT16(TEL_SPD_X10_MAX, result);
 }
+
+// ---------------------------------------------------------------------------
+// "Gerçekçi aralık" taraması (Documents/VEHICLE_PARAMS_TEYIT.md madde 3):
+// D=0.4..0.7 m × GR=1..10 × geniş bir rpm kümesi (0'dan uint16_t tavanına
+// kadar) — hiçbir kombinasyonda sonuç [0, TEL_SPD_X10_MAX] aralığının
+// DIŞINA taşmamalı. uint16_t dönüş tipi negatif değeri zaten tip düzeyinde
+// imkânsız kılar; buradaki asıl amaç, TEL_SPD_X10_MAX clamp kontrolünün
+// (cast'ten ÖNCE yapılan float karşılaştırması) ELE ALINAN her D/GR/rpm
+// kombinasyonunda geç kalmadan/atlanmadan devreye girdiğini kanıtlamaktır
+// (bugünkü D=0.56/GR=1'e ÖZEL değil — gelecekte teker/dişli değişse bile
+// clamp'in genel olarak güvenli kaldığını doğrular).
+void test_impl_realistic_range_sweep_stays_within_bounds(void) {
+    static const float diameters[] = {0.4f, 0.5f, 0.6f, 0.7f};
+    static const float gearRatios[] = {1.0f, 2.0f,  3.0f,  4.0f, 5.0f,
+                                       6.0f, 7.0f,  8.0f,  9.0f, 10.0f};
+    static const uint16_t rpms[] = {0,    1,     100,   1000, 1500,
+                                    2842, 2843,  5000,  10000, 20000, 65535u};
+
+    for (size_t di = 0; di < sizeof(diameters) / sizeof(diameters[0]); di++) {
+        for (size_t gi = 0; gi < sizeof(gearRatios) / sizeof(gearRatios[0]); gi++) {
+            for (size_t ri = 0; ri < sizeof(rpms) / sizeof(rpms[0]); ri++) {
+                const float d = diameters[di];
+                const float gr = gearRatios[gi];
+                const uint16_t rpm = rpms[ri];
+
+                const uint16_t withGear = rpmToSpeedKmhX10Impl(rpm, d, gr, false);
+                TEST_ASSERT_TRUE(withGear <= TEL_SPD_X10_MAX);
+
+                const uint16_t wheelRpmDirect =
+                    rpmToSpeedKmhX10Impl(rpm, d, gr, true);
+                TEST_ASSERT_TRUE(wheelRpmDirect <= TEL_SPD_X10_MAX);
+            }
+        }
+    }
+}

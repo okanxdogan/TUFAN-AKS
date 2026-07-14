@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "CanParse.h"
+#include "TorqueRequestQueue.h"  // G2: VCU task -> CAN task tork isteği kuyruğu
 #include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
 #include "TelemetrySanitize.h"
 #include "driver/gpio.h"
@@ -26,9 +27,14 @@ class CanManager {
     bool begin();
     void setEventCallback(CAN_EventCallback CAN_callback, void* CAN_context);
 
-    // Motor sürücüsü torque komutu. MOTOR_DRIVER_PRESENT=0 iken GERÇEK FRAME
-    // GÖNDERMEZ (bir kez uyarı loglar, false döner); =1 iken frame gönderimi
-    // TODO. E-STOP/FAULT güvenli kapanış sırasında torque(0) ile çağrılır.
+    // Motor sürücüsü torque komutu. Çağıran taraf (VcuLogic, VCU task) hangi
+    // task'ten çağırırsa çağırsın GÜVENLİDİR — gerçek twai_transmit BURADAN
+    // asla DOĞRUDAN yapılmaz (G2 thread-safety). MOTOR_DRIVER_PRESENT=0 iken
+    // GERÇEK FRAME GÖNDERMEZ (bir kez uyarı loglar, false döner, kuyruğa da
+    // yazmaz); =1 iken isteği TorqueRequestQueue'ya yazar (true döner) —
+    // gerçek gönderim processRxMessages() içinden (CAN task döngüsü)
+    // drainTorqueQueue() ile yapılır. E-STOP/FAULT güvenli kapanış sırasında
+    // torque(0) ile çağrılır. Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md madde 4.
     bool sendTorqueCommand(uint16_t torqueValue);
 
     // Dispatch one received message — call this in the CAN task loop
@@ -71,6 +77,12 @@ class CanManager {
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
 
+    // G2: processRxMessages() (CAN task döngüsü) tarafından her tik çağrılır;
+    // s_torqueQueue'da bekleyen bir istek varsa gerçek twai_transmit'i BURADAN
+    // (CAN task'inden) yapar. MOTOR_DRIVER_PRESENT=0 iken hiçbir şey yapmaz
+    // (kuyruğa zaten yazılmaz — sendTorqueCommand bkz.).
+    void drainTorqueQueue();
+
     twai_general_config_t g_config;
     twai_timing_config_t t_config;
     twai_filter_config_t f_config;
@@ -100,6 +112,11 @@ class CanManager {
 
     // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
     bool CAN_torqueSkipLogged = false;
+
+    // G2: VCU task'ten gelen tork isteğinin CAN task'e ulaştığı kuyruk —
+    // yalnızca sendTorqueCommand() yazar (push), yalnızca drainTorqueQueue()
+    // okur (drainPending). Bkz. TorqueRequestQueue.h.
+    TorqueRequestQueue s_torqueQueue;
 
     // BMS freshness tracking — G12: packV (E000) ve sıcaklık (E001) AYRI
     // mesaj-ID'leri; freshness ID bazına izlenir. TEL_bmsDataValid /

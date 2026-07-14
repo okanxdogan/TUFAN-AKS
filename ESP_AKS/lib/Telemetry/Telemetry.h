@@ -52,10 +52,22 @@ class Telemetry {
     bool begin();
 
     // Formats TelemetryData into the AKS->UKS ASCII CSV frame and writes it
-    // to UART. Format: TEL,ver,seq,rpm,torque,motorErr,motorValid,
+    // to UART. Format: TEL,ver,seq,rpm,motorVoltDeciV,motorErr,motorValid,
     // motorTimeout,cellVMax,cellVMin,tempH,tempL,sysState,packV,current,soc,
     // bmsValid,tsMs,spdX10\r\n (19 alan; UKS Core/Src/telemetry.c
     // Decode_Line ile sozlesmeli, bkz. tools/e2e/contract.py).
+    //
+    // BILINEN SEMANTIK UYUMSUZLUK (4. alan): UKS sozlesmesi (UKS-Telemetry/
+    // README.md, tools/e2e/contract.py FIELD_RANGES) bu alani "torque"
+    // (int16, -32768..32767) olarak adlandirir; AKS burada FIILEN
+    // TEL_motorVoltageDeciV (motor voltaji, deciV, uint16_t) gonderir —
+    // gercek tork degil. TEL_motorVoltageDeciV, sozlesmenin int16 ustsinirini
+    // (32767) asabilir; asarsa UKS Parse_Int TUM frame'i reddeder.
+    // TelemetrySanitize::sanitizeMotorVoltForTorqueField() bu degeri
+    // 32767'ye kirpar (sanitizeForUplink icinde cagrilir) — frame reddini
+    // engeller ama alan adiyla icerigi arasindaki uyumsuzlugu COZMEZ. Kalici
+    // cozum (protokol v3 / alan yeniden adlandirma vb.) icin bkz.
+    // Documents/TORQUE_ALAN_KARAR_NOTU.md.
     //
     // BIRIM SOZLESMESI — `current` (14. alan, 0-indeksli token; "TEL" = 0):
     // centi-Amper (0.01 A), isaretli — kaynak TEL_bmsCurrentCentiA, isaret
@@ -67,10 +79,11 @@ class Telemetry {
     //
     // ALAN DURUMU: `tempH`/`tempL` DOGRULANMIS gercek veridir
     // (0xE001 byte[6:7] -> TEL_bmsTempHighestC/LowestC, dogrudan derece C);
-    // `packV`, `current`, `soc` da DOGRULANDI (0xE000). ACIK IS:
-    // `cellVMax`/`cellVMin` hicbir CAN ID'den parse edilmiyor (hep 0 gider);
-    // `sysState` de parse edilmiyor — sanitizeSystemState(0) onu 4'e (FAULT)
-    // cevirdigi icin UKS ekraninda BMS surekli FAULT gorunur.
+    // `packV`, `current`, `soc` da DOGRULANDI (0xE000). `cellVMax`/`cellVMin`
+    // de DOGRULANDI: CanParse::parseLbBmsE001 byte[0:1]=min, byte[2:3]=max,
+    // byte[4:5]=avg olarak parse ediyor (raw/10 = mV). ACIK IS: `sysState`
+    // hicbir CAN ID'den parse edilmiyor — sanitizeSystemState(0) onu 4'e
+    // (FAULT) cevirdigi icin UKS ekraninda BMS surekli FAULT gorunur.
     void sendStatus(const TelemetryData& TEL_data);
 
    private:

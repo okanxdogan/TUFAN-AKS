@@ -146,7 +146,37 @@ BROKEN_CASES = {
         "TEL,2,0,1500,-250,5,1,0,37734,37422,32,31,2,780,-2147483648,6283,1,123456,425",
         "parse_fail",
     ),
+    # Torque alani semantik uyumsuzlugu (bkz. Documents/TORQUE_ALAN_KARAR_NOTU.md):
+    # AKS bu alana ham (sanitize edilmemis) TEL_motorVoltageDeciV=40000
+    # yazarsa, sozlesmenin int16 sinirini (32767) asar ve UKS TUM frame'i
+    # reddeder.
+    "torque_field_unsanitized_motor_volt_overflow": (
+        "TEL,2,0,1500,40000,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,123456,425",
+        "parse_fail",
+    ),
 }
+
+
+def test_sanitized_motor_volt_torque_field_is_accepted_by_uks_rules():
+    """AKS TelemetrySanitize::sanitizeMotorVoltForTorqueField (Python
+    eslenigi: contract.sanitize_motor_volt_for_torque_field) 40000 deciV'yi
+    32767'ye kirpar; kirpilmis deger UKS Parse_Int(-32768..32767) tarafindan
+    KABUL edilmelidir — boylece frame reddi imkansiz hale gelir. Kirpilmamis
+    ham deger (40000) ise BROKEN_CASES'teki
+    torque_field_unsanitized_motor_volt_overflow ile REDDEDILDIGI dogrulanir."""
+    raw_motor_volt = 40000
+    sanitized = contract.sanitize_motor_volt_for_torque_field(raw_motor_volt)
+    assert sanitized == 32767
+
+    line = (
+        "TEL,2,0,1500,%d,5,1,0,37734,37422,32,31,2,780,-181610,6283,1,123456,425"
+        % sanitized
+    )
+    result = contract.parse_uks_frame(line)
+    assert not isinstance(result, contract.UksRejection), (
+        f"sanitize edilmis torque alani UKS kurallarinca reddedildi: {result}"
+    )
+    assert result["torque"] == 32767
 
 
 def test_broken_frames_are_rejected():

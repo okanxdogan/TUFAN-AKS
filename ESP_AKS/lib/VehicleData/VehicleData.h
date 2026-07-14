@@ -21,10 +21,25 @@ struct TelemetryData {
     bool TEL_motorTimeoutActive;
 
     // Lithium Balance c-BMS — per-hücre alanlar (kaynak DOĞRULANDI)
-    uint16_t TEL_bmsCellVoltages[24];      // DOĞRULANDI — kaynak: E015(hücre 0-3) E016(4-7) E017(8-11) E018(12-15) E019(16-19) E020(20-23), raw/10 = mV
-    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANDI — 0xE001 byte[2:3], raw/10 = mV
-    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANDI — 0xE001 byte[0:1], raw/10 = mV
-    uint16_t TEL_bmsCellVoltageAvgDeciMv = 0; // DOĞRULANDI — 0xE001 byte[4:5], raw/10 = mV (ortalama hücre voltajı)
+    //
+    // DİKKAT — İKİ FARKLI BİRİM AYNI ANDA YAŞIYOR (2026-07-13 güvenlik-eşiği
+    // düzeltmesinde teyit edildi):
+    //   * TEL_bmsCellVoltages[24]  → GERÇEK mV (CanParse::parseLbBmsE015..E020
+    //     ham CAN byte'ını /10'a böler, sonucu doğrudan mV olarak yazar).
+    //   * TEL_bmsCellVoltageMax/Min/AvgDeciMv → DECİ-mV (CanParse::
+    //     parseLbBmsE001 ham CAN byte'ını HİÇBİR BÖLME OLMADAN doğrudan yazar;
+    //     mV'ye çevirmek için ayrıca /10 gerekir — gerçek bir hücre için
+    //     ~28000-40000 aralığı, bkz. test_cell_voltage_parse.cpp). Wire
+    //     formatı da bu ölçekte (UKS_LoRa_Protocol.md cellVMax/cellVMin ×0.1
+    //     mV) — bu alan wire'a doğrudan kopyalanır (Telemetry.cpp), DEĞİŞMEZ.
+    // Bu iki alan grubunu KARIŞTIRMAYIN: aynı eşikle (BMS_CELL_*_MV vs
+    // BMS_CELL_*_DECI_MV, bkz. BmsAlgo.h) karşılaştırılmamalıdır — BmsAlgo.cpp
+    // ilkini (mV, main.cpp'te TEL_bmsCellVoltages[]'ten kopyalanır), VcuLogic.h/
+    // DeratingPolicy.h ikincisini (deci-mV) kullanır.
+    uint16_t TEL_bmsCellVoltages[24];      // DOĞRULANDI — kaynak: E015(hücre 0-3) E016(4-7) E017(8-11) E018(12-15) E019(16-19) E020(20-23), raw/10 = mV (GERÇEK mV)
+    uint16_t TEL_bmsCellVoltageMaxDeciMv;  // DOĞRULANDI — 0xE001 byte[2:3], HAM (deci-mV, /10 YAPILMAZ)
+    uint16_t TEL_bmsCellVoltageMinDeciMv;  // DOĞRULANDI — 0xE001 byte[0:1], HAM (deci-mV, /10 YAPILMAZ)
+    uint16_t TEL_bmsCellVoltageAvgDeciMv = 0; // DOĞRULANDI — 0xE001 byte[4:5], HAM (deci-mV, /10 YAPILMAZ, ortalama hücre voltajı)
     uint8_t TEL_bmsSystemState;            // BİLİNMİYOR — kaynak ID çözülmedi
 
     bool TEL_cellVoltageDataValid = false;
