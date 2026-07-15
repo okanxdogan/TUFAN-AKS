@@ -29,11 +29,12 @@
 #define E22_CMD_WRITE_TEMP 0xC2U  // G7-FIX-2: kalici OLMAYAN (RAM) yazma
 
 // --- Register adresleri (E22-400T30D-V2 register haritası) ---
-// DOĞRULAMA: NETID (0x02) ve sonrasındaki REG0..REG3 kaydırması, EBYTE'ın
-// SX126x tabanlı E22 ailesi için yaygın register haritasına dayanır. Bench
-// testinde ilk C1 okuma dump'ı bu adreslerin gerçek donanımla eştiğini
-// (E22_DIAGNOSTIC_MODE / bkz. e22_diagnostic.cpp) teyit etmeden sahaya
-// çıkma.
+// DOĞRULANDI (2026-07-15, bench dump — bkz. Documents/BENCH_E22_TEYIT.md
+// "Sonuç Kaydı"): NETID (0x02) ve sonrasındaki REG0..REG3 kaydırması,
+// EBYTE'ın SX126x tabanlı E22 ailesi için yaygın register haritasına
+// dayanıyordu; bench testinde AKS ve UKS C1 okuma dump'ları
+// (E22_DIAGNOSTIC_MODE / bkz. e22_diagnostic.cpp) bu adreslerin gerçek
+// donanımla ve birbiriyle birebir eştiğini doğruladı.
 #define E22_REG_ADDR_ADDH    0x00U
 #define E22_REG_ADDR_ADDL    0x01U
 #define E22_REG_ADDR_NETID   0x02U

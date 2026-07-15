@@ -1,14 +1,14 @@
 # E22 Bench Doğrulama Prosedürü (P10) — "V2 varsayımı" teyidi
 
-> **Durum:** UKS README §11 "Bilinen Açık Konular" ve §3 "DOĞRULAMA NOTU"
-> — E22-400T30D-V2 register haritası (`Core/Inc/e22_regs.h` / AKS
-> `include/E22Regs.h`) şu an **V2 VARSAYIMIDIR** (E22'nin V1/V2 firmware'leri
-> arasında register haritası farklı — V2'de `NETID` eklendi, sonraki
-> adresler kaydı). Bu belge, `TEKNIK_KONTROL_PROVASI.md` §4'ün referans
-> verdiği, henüz yazılmamış olan **`BENCH_E22_TEYIT.md`**'dir — bu görevle
-> yazıldı. Kod değişikliği İÇERMEZ; yalnızca mevcut kodun ZATEN ürettiği
-> boot-log dump'larını nasıl yakalayıp karşılaştıracağınızı adım adım
-> tarif eder.
+> **Durum (2026-07-15 itibarıyla ÇÖZÜLDÜ):** UKS README §11 "Bilinen Açık
+> Konular" ve §3 "DOĞRULAMA NOTU" — E22-400T30D-V2 register haritası
+> (`Core/Inc/e22_regs.h` / AKS `include/E22Regs.h`) bench dump ile
+> **DOĞRULANDI** (bkz. aşağıdaki "Sonuç Kaydı" bölümü). Bu belge,
+> `TEKNIK_KONTROL_PROVASI.md` §4'ün referans verdiği **`BENCH_E22_TEYIT.md`**'dir.
+> Kod değişikliği İÇERMEZ; yalnızca mevcut kodun ZATEN ürettiği boot-log
+> dump'larını nasıl yakalayıp karşılaştıracağınızı adım adım tarif eder —
+> prosedür, ileride yeni modül provizyonunda tekrar kullanılmak üzere
+> korunmuştur.
 
 ## Neden gerekli
 
@@ -181,3 +181,13 @@ güncellenmesini gerektiren bir protokol değişikliğidir).
   (register HEDEF değerlerinin iki repo arasında senkron kaldığını statik
   olarak doğrular — bu belgedeki bench dump'ı ise hedefin GERÇEK donanımla
   eşleştiğini doğrular; ikisi TAMAMLAYICIDIR, biri diğerinin yerine geçmez)
+
+---
+
+## Sonuç Kaydı
+
+- **Tarih:** 2026-07-15
+- **Modül bilgisi:** Etiketsiz, AKS+UKS çifti (bench setinde kullanılan tek çift; ayrıca bir seri no/etiket kaydı yok).
+- **Dump karşılaştırması:** AKS ve UKS'ten alınan `E22REG,...` dump'ları hem birbiriyle hem de `e22_regs.h` / `E22Regs.h` hedef değerleriyle (ADDH..REG3, 7 byte) birebir eşti — `Compare-Object`/diff boş çıktı verdi, sapma yok.
+- **CRYPT (0x07/0x08):** Bu iki adres tanım gereği geri okunamadığı için dump'tan doğrulanamaz (bkz. yukarıdaki "CRYPT notu"). Provizyon durumu için `Documents/E22_CRYPT_SENKRON.md` "Dağıtım" bölümüne bakın — kalıcı (`C0`/flash) yazma YAPILMADI ve GEREKMEDİ; anahtar yalnızca G7-FIX-2'nin her-boot `C2`/RAM yazımıyla hizalandı, bu da ~10 dakikalık bench oturumunda linkin fiilen çalışmasıyla (2 Hz, bad=0, LINK: OK) dolaylı olarak teyitlidir.
+- **Sonuç:** Register haritası (V2 varsayımı) bench'te doğrulandı. Yukarıdaki "Sonuç ve dokümantasyon güncellemesi" bölümündeki 1-4 numaralı güncellemeler bu tarihte uygulandı (`e22_regs.h`/`E22Regs.h` doğrulama notları, UKS `README.md` §3/§11, `TEKNIK_KONTROL_PROVASI.md` §4).
