@@ -186,7 +186,7 @@ above.
 
 Before locking Phase 3 complete, validate:
 
-1. Actual E22 air data rate and module configuration in hardware (bench dump vs `E22Regs.h`, see `TEKNIK_KONTROL_PROVASI.md` §4 / `BENCH_E22_TEYIT.md`, P10).
+1. ~~Actual E22 air data rate and module configuration in hardware (bench dump vs `E22Regs.h`)~~ — **DONE 2026-07-15**: bench dump matched `E22Regs.h`/`e22_regs.h` targets exactly, see `TEKNIK_KONTROL_PROVASI.md` §4 / `BENCH_E22_TEYIT.md` "Sonuç Kaydı" (P10).
 2. Whether `2 Hz` remains loss-free in practice.
 3. Whether AUX busy events appear frequently under worst-case telemetry load.
 4. Whether UKS parser cleanly handles skipped sequence numbers.

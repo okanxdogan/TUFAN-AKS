@@ -122,6 +122,15 @@ EBYTE config aracıyla doğrudan provizyonlamak. **DÜZELTME:**
 salt-okunurdur (hiçbir yazma komutu göndermez), config yazımını
 TETİKLEYEMEZ; ayrıntı ve gerekçe checklist belgesinde.
 
+**2026-07-15 bench notu:** Bench teyidinde kullanılan AKS+UKS modül
+çiftinde kalıcı (`C0`/flash) CRYPT yazımı **YAPILMADI ve GEREKMEDİ** — boot
+logunda "kalici (C0) YAZMA ATLANDI (flash omru)" satırı görüldü. Provizyon
+yöntemi yalnızca G7-FIX-2'nin her-boot `C2`/RAM yazımıydı (aşağıda); anahtar
+hizalaması, ~10 dakikalık bench oturumunda linkin fiilen çalışmasıyla (2 Hz,
+bad=0, LINK: OK) dolaylı olarak doğrulandı. `E22_ZORLA_YAZMA_CHECKLIST.md`
+prosedürü bu oturumda **gerekmedi** — yalnızca RAM-yazım yolu devre dışı
+kalır veya başarısız olursa gerekli olacak bir kurtarma adımıdır.
+
 Bu bilinçli olarak koda gömülü bir "her boot yeniden yaz" davranışı DEĞİLDİR
 (flash aşınması + kapsam sürünmesi). Anahtar rotasyonunda da aynı zorla-yazma
 adımı gerekir.
