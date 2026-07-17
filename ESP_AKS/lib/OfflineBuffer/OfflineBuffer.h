@@ -5,10 +5,9 @@
 // Dairesel FIFO tampon — bağlantı kesikliğinde telemetri paketlerini saklar.
 // Statik bellek, dinamik tahsis YOK. Thread-safe DEĞİL; çağıran senkronize eder.
 
-// 9.2.e / 9.4.b.vi: 60 sn kesinti × OFFLINE_SAMPLE_PERIOD_MS (1 Hz) = 60
-// paket + %25 marj = 75. Eskiden 300 (60 sn × 5 Hz) idi; örnekleme
-// seyreltilince (S2) kapasite de aynı oranda küçüldü, replay yükü 5'e bölündü.
-#define OB_CAPACITY 75
+// 600 kayıt @ 1 Hz = 10 dk — 5 km parkurda tam tur link kaybını marjla
+// kapsar (tur ~6-8.5 dk varsayımı).
+#define OB_CAPACITY 600
 
 void ob_reset();
 bool ob_push(const TelemetryData& data);  // dolu ise en eskiyi düşür, true döner

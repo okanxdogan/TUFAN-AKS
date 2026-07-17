@@ -197,12 +197,13 @@ void test_reset_clears_peek(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Kapasite 75'te en-eskiyi-düşürme: OB_CAPACITY dolduktan sonra bir eleman
+// Kapasite 600'de en-eskiyi-düşürme: OB_CAPACITY dolduktan sonra bir eleman
 // daha push edilirse en eski (index 0) düşer, count OB_CAPACITY'de sabit
-// kalır. (S2: kapasite 300'den 75'e indi — 60 sn × 1 Hz + %25 marj.)
+// kalır. (600 kayıt @ 1 Hz = 10 dk — 5 km parkurda tam tur link kaybını
+// marjla kapsar.)
 // ---------------------------------------------------------------------------
-void test_capacity_is_75(void) {
-    TEST_ASSERT_EQUAL_INT(75, OB_CAPACITY);
+void test_capacity_is_600(void) {
+    TEST_ASSERT_EQUAL_INT(600, OB_CAPACITY);
 }
 
 // ---------------------------------------------------------------------------
@@ -270,9 +271,9 @@ void test_1hz_sampling_over_10s_outage_yields_about_10_packets(void) {
 
 // ---------------------------------------------------------------------------
 // 60 sn kesinti simülasyonu (kabul kriteri): 120 tik × 500 ms
-// (LORA_TX_PERIOD_MS, 2 Hz) = 60000 ms. 1 Hz örnekleme + kapasite 75 ile:
-// buffer <= 75 paket, en eski paketin ts'i kesinti başlangıcına (0) ait
-// olmalı (kapasite hiç aşılmıyor: 60 paket <= 75).
+// (LORA_TX_PERIOD_MS, 2 Hz) = 60000 ms. 1 Hz örnekleme + kapasite 600 ile:
+// buffer <= 600 paket, en eski paketin ts'i kesinti başlangıcına (0) ait
+// olmalı (kapasite hiç aşılmıyor: 60 paket <= 600).
 // ---------------------------------------------------------------------------
 void test_60s_outage_simulation_stays_within_capacity(void) {
     ob_reset();
@@ -291,7 +292,7 @@ void test_60s_outage_simulation_stays_within_capacity(void) {
     }
 
     TEST_ASSERT_TRUE(ob_count() <= OB_CAPACITY);
-    // 60 sn × 1 Hz = 60 paket, kapasiteyi (75) aşmadığından hiçbiri düşmemeli.
+    // 60 sn × 1 Hz = 60 paket, kapasiteyi (600) aşmadığından hiçbiri düşmemeli.
     TEST_ASSERT_EQUAL_INT(60, ob_count());
 
     TelemetryData oldest = {};

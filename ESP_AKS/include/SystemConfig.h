@@ -193,13 +193,12 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
 #define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
-// 2 Hz telemetry uplink (5 Hz'den düşürüldü — saha loglarında tespit edilen
-// link flapping düzeltmesinin parçası). Tek frekanslı yarım-dubleks E22
-// kanalında 5 Hz sürekli AKS TX'i, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
-// girebileceği boşluğu neredeyse hiç bırakmıyordu; heartbeat AKS'e ancak
-// ~5-6 sn'de bir ulaşıyor, LINK_TIMEOUT_MS bu araliktan kisa oldugundan link
-// surekli DOWN->UP flapping yapiyordu. 2 Hz, kanalda heartbeat'in gecebilecegi
-// duzenli bosluklar yaratir.
+// 2 Hz telemetry uplink (1 Hz'den geri döndürüldü — parkur keşfinde
+// maksimum mesafe 500 m ölçüldü, 2.4 kbps hava hızı bu mesafe için aşırı
+// tedbirdi; hava hızı 4.8 kbps'e çıkarıldı, ekip onaylı kalibrasyon).
+// Gerekçe: ~90 byte'lık bir TEL paketi 4.8 kbps'te ~190 ms havada kalır;
+// 500 ms'lik periyotta canlı doluluk ~%38 — UKS'in 1 Hz 0xB0 heartbeat'inin
+// kanala girebileceği pencere yeterli kalır.
 #define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
 
@@ -316,7 +315,10 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 // LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
 // (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
 // (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
-//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir.)
+//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir. Bu
+//  bütçe, MCU<->E22 yerel UART hattının (LORA_UART_BAUD, 9600, DEĞİŞMEDİ)
+//  kapasitesini denetler — 4.8 kbps hava hızı ayrı bir darboğazdır ve bu
+//  static_assert'in kapsamında DEĞİLDİR.)
 #ifdef __cplusplus
 static_assert(
     (1u + (unsigned)REPLAY_BURST_PER_TICK) * (unsigned)LORA_TEL_FRAME_MAX_BYTES *
