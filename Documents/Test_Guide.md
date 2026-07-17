@@ -106,6 +106,11 @@ pio test -e native -f test_native_hmi_helpers
 # ─── Verbose çıktı ile çalıştır ───
 pio test -e native -v
 
+# ─── RELAY_ROLES_ASSIGNED=1 varyantı (S1/S2 + flaşör mantığı) ───
+# test_roles_* suite'leri yalnız bu ortamda derlenir/çalışır; varsayılan
+# `native` ortamı bayrak=0 (tek-bank) regresyonlarını korur.
+pio test -e native_roles
+
 # ─── Embedded smoke test (board bağlıyken) ───
 pio test -e esp32dev -f test_embedded_smoke
 ```

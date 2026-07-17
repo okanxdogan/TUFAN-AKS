@@ -74,7 +74,14 @@ Integration notes:
 
 ## Relay Mapping Status
 
-All ten relay channels are currently treated as positive contactor outputs. The software channel numbers are fixed, but the final harness-level physical assignments still need to be validated against the wiring package. Until that validation is complete, `allOn()` and `allOff()` should be treated as bank-wide operations on the positive contactor group, not as independently named vehicle loads.
+Röle katmanı artık şartname Bölüm 3'e (6.e.ii/6.e.iii sıcaklık uyarı flaşörü, 8.2.a S1/S2 kontaktör rolleri) göre rol makrolarıyla tanımlıdır — `RELAY_CH_S2_DRIVE=0` (sürüş hattı), `RELAY_CH_S1_CHARGE=8` (şarj hattı), `RELAY_CH_FLASHER=9` (uyarı flaşörü); kanal 1-7 sürüş bankının parçasıdır. Ayrıntılı tablo ve mod özeti: [RELAY_CHANNEL_TABLE.md](Documents/RELAY_CHANNEL_TABLE.md).
+
+Fiziksel kanal-yük eşlemesi donanım ekibince HENÜZ teyit edilmediğinden rol mantığı `RELAY_ROLES_ASSIGNED` derleme bayrağının (varsayılan **0**, `#warning` basar) arkasındadır:
+
+- **Bayrak=0 (varsayılan):** 10 kanalın tamamı tek pozitif kontaktör bankıdır (`RELAY_CONTACTOR_BANK_MASK=0x3FF`); `allOn()`/`allOff()` davranışı önceki sürümle bayt-bayt aynıdır. Flaşör ve S1/S2 mantığı derlenmez.
+- **Bayrak=1:** `RELAY_CONTACTOR_BANK_MASK=0x1FF` (flaşör hariç) olur; `allOff()` güvenlik açması S1+S2+bank'ı açar ama flaşörü söndürmez (şartname 6.e.ii). Flaşör, doğrulanmış BMS sıcaklığından 55 °C'de yanar, 53 °C altında söner (`FLASHER_HYSTERESIS_C=2`); FAULT/E-STOP'ta da yanık kalır. S1/S2 mod anahtarlaması: şarjda (charger CAN akışı tazeyken, `TEL_chargerActive`) S1 kapalı + S2 açık ve READY reddedilir (8.2.a.iii); READY/DRIVE'da S1 açık + sürüş bankı (`RELAY_DRIVE_BANK_MASK=0x0FF`) kapalı (8.2.a.vii); güvenlik probleminde hepsi açık (8.2.a.vi).
+
+Sıcaklık eşikleri 55/70 °C (uyarı/kapanma, 15 °C sabit aralık — şartname 6.e.iii) `SystemConfig.h` ve `VcuLogic.h` içindeki `static_assert`'lerle derleme zamanında kilitlidir. Bayrak=1 varyantının testleri `pio test -e native_roles` ile çalışır (`test_roles_*` suite'leri).
 
 **Bench'te yapılacaklar (HIL — kapsam dışı, native testlerle kanıtlanamaz):** G3 actuator geri-okuma doğrulaması (`RelayManager::verifyOutputs`, OLAT/IODIR readback + re-init/re-assert + actuator-fault) gerçek MCP23S17 ile bench'te doğrulanmalı: (1) çalışırken MCP23S17 gücünü kısa süre keserek brown-out reset tetikle, IODIR'in 0xFF'e döndüğünü ve VcuLogic'in FAULT'a geçtiğini osiloskopla/röle sesiyle teyit et; (2) MISO hattını fiziksel olarak ayırarak readback hatasında güvenli tarafa (kontaktör açık) düşüldüğünü doğrula.
 

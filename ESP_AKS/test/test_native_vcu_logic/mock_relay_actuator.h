@@ -1,5 +1,6 @@
 #pragma once
 #include "IRelayActuator.h"
+#include "SystemConfig.h"  // RELAY_TOTAL_CHANNELS, RELAY_CONTACTOR_BANK_MASK
 
 // ---------------------------------------------------------------------------
 // M2: VcuLogic'e enjekte edilen GERÇEK arayüz mock'u (IRelayActuator).
@@ -20,6 +21,13 @@ extern unsigned g_fake_relay_setRelay_count;
 extern bool     g_fake_relay_actuatorFault;
 extern unsigned g_fake_relay_clearFault_count;
 extern unsigned g_fake_relay_verifyIfDue_count;
+
+// Kanal-bazlı mantıksal durum izi (true = röle çekili/kontaktör kapalı).
+// allOn/allOff, gerçek RelayManager ile AYNI bank-maskesi semantiğini taklit
+// eder (RELAY_CONTACTOR_BANK_MASK dışındaki kanal — roller atandığında flaşör
+// — allOn/allOff'tan ETKİLENMEZ); setRelay tekil kanalı yazar. S1/S2 ve
+// flaşör testleri bu diziden doğrular; eski testler yalnız sayaçları okur.
+extern bool g_fake_relay_channelState[RELAY_TOTAL_CHANNELS];
 
 // G2: çağrı SIRASI kaydı — E-STOP/FAULT'ta sıfır-tork'un kontaktör açmadan
 // ÖNCE çağrıldığını doğrulamak için paylaşılan monoton sayaç. Torque spy ve

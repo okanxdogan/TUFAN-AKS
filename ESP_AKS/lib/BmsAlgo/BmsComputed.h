@@ -49,6 +49,6 @@ struct BmsComputed {
 
     uint8_t warningLevel;  // BMS_WARN_OK / WARNING / CRITICAL
 
-    int16_t tempMaxC;  // En yüksek hücre sıcaklığı, °C
-    int16_t tempMinC;  // En düşük hücre sıcaklığı, °C
+    int16_t tempMaxC;  // En yüksek paket sıcaklığı, °C (BmsPackData::packTempMaxC'den — per-hücre sıcaklık kaynağı yok)
+    int16_t tempMinC;  // En düşük paket sıcaklığı, °C (BmsPackData::packTempMinC'den)
 };

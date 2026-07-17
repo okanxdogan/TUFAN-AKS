@@ -61,24 +61,24 @@ BmsComputed computePack(const BmsPackData& in) {
 
     BmsComputed c{};  // balanceFlag[] dahil her şey 0/false başlar
 
-    // --- Min/Max/toplam gerilim ve min/max sıcaklık tek geçişte ---
+    // --- Min/Max/toplam gerilim tek geçişte ---
+    // Sıcaklık ARTIK hücre dizisinden TARANMAZ: BMS per-hücre sıcaklık
+    // yayınlamıyor (cellTempC[] fiilen hep 0'dı ve sıcaklık uyarısı HİÇ
+    // tetiklenmiyordu). Gerçek paket sıcaklığı packTempMaxC/MinC alanlarından
+    // gelir (0xE001 → TEL_bmsTempHighestC/LowestC, main.cpp doldurur).
     uint32_t sumMv = 0;
     uint16_t maxMv = in.cellVoltageMv[0];
     uint16_t minMv = in.cellVoltageMv[0];
     uint8_t maxIdx = 0;
     uint8_t minIdx = 0;
-    int16_t tMax = in.cellTempC[0];
-    int16_t tMin = in.cellTempC[0];
+    const int16_t tMax = in.packTempMaxC;
+    const int16_t tMin = in.packTempMinC;
 
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         const uint16_t v = in.cellVoltageMv[i];
         sumMv += v;
         if (v > maxMv) { maxMv = v; maxIdx = i; }
         if (v < minMv) { minMv = v; minIdx = i; }
-
-        const int16_t t = in.cellTempC[i];
-        if (t > tMax) tMax = t;
-        if (t < tMin) tMin = t;
     }
 
     // packVoltageMv uint32 olduğundan tüm aralık (24*4200=100800 mV) sığar;

@@ -94,9 +94,17 @@ static void BMS_emitNextionCommand(const char* BMS_cmd, size_t BMS_len,
   HMI_sendEndBytes();
 }
 
+// "Kapalı" göstergesi = BANK MASKESİNDEKİ kanalların tamamı kapalı
+// (RELAY_CONTACTOR_BANK_MASK, SystemConfig.h). Flaşör kanalı roller
+// atandığında maskenin dışındadır — uyarı flaşörünün durumu kontaktör
+// göstergesini etkilemez. RELAY_ROLES_ASSIGNED=0 iken maske 10 kanalın
+// tamamı olduğundan davranış eskisiyle birebir aynıdır.
 static bool HMI_areAllContactorsClosed() {
   for (uint8_t REL_channel = 0; REL_channel < RELAY_TOTAL_CHANNELS;
        ++REL_channel) {
+    if (!(RELAY_CONTACTOR_BANK_MASK & (1u << REL_channel))) {
+      continue;  // maske dışı kanal (flaşör) gösterge kapsamına girmez
+    }
     if (!RelayManager::instance().getRelayState(REL_channel)) {
       return false;
     }
@@ -372,14 +380,20 @@ void vTask_HMI_Display(void *pvParameters) {
             if (BMS_raw.cellDataValid) {
                 for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
                     BMS_raw.cellVoltageMv[i] = TEL_data.TEL_bmsCellVoltages[i];
-                    BMS_raw.cellTempC[i] = 0;
                 }
             } else {
                 for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
                     BMS_raw.cellVoltageMv[i] = HMI_CELL_VOLTAGE_NO_DATA;
-                    BMS_raw.cellTempC[i] = 0;
                 }
             }
+            // Paket sıcaklığı (0xE001, DOĞRULANDI): computePack warningLevel'i
+            // sıcaklıktan artık BU alanlarla tetikleyebilir. Eskiden
+            // cellTempC[i]=0 yazıldığından ekran sıcaklık uyarısı HİÇ
+            // tetiklenmiyordu; per-hücre sahte kopyalama yerine paket-seviyesi
+            // gerçek değer kullanılır (cellTempC[] = {} sıfır kalır, computePack
+            // onu artık okumaz — bkz. BmsModel.h).
+            BMS_raw.packTempMaxC = TEL_data.TEL_bmsTempHighestC;
+            BMS_raw.packTempMinC = TEL_data.TEL_bmsTempLowestC;
 
             BMS_comp = computePack(BMS_raw);
         } else {

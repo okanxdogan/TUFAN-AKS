@@ -89,6 +89,7 @@ extern void test_idle_to_ready_on_start_request(void);
 extern void test_idle_start_rejected_when_bms_never_valid(void);
 extern void test_idle_start_permitted_when_bms_valid_and_clean(void);
 extern void test_idle_start_rejected_when_warning_active(void);
+extern void test_idle_to_ready_with_charger_active_when_roles_unassigned(void);
 extern void test_ready_to_drive_on_drive_enable(void);
 extern void test_idle_to_emergency_stop(void);
 extern void test_drive_to_emergency_stop(void);
@@ -248,6 +249,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_idle_start_rejected_when_bms_never_valid);
     RUN_TEST(test_idle_start_permitted_when_bms_valid_and_clean);
     RUN_TEST(test_idle_start_rejected_when_warning_active);
+    RUN_TEST(test_idle_to_ready_with_charger_active_when_roles_unassigned);
     RUN_TEST(test_ready_to_drive_on_drive_enable);
     RUN_TEST(test_idle_to_emergency_stop);
     RUN_TEST(test_drive_to_emergency_stop);

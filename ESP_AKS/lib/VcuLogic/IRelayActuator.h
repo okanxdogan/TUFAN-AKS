@@ -27,10 +27,14 @@ class IRelayActuator {
    public:
     virtual ~IRelayActuator() = default;
 
-    // Tüm 10 pozitif kontaktörü kapatır (READY girişi — HV bus enerjilenir).
+    // Kontaktör BANK maskesini (RELAY_CONTACTOR_BANK_MASK) kapatır.
+    // RELAY_ROLES_ASSIGNED=0 iken maske 10 kanalın tamamı (eski "tüm pozitif
+    // kontaktörler" davranışı); roller atandığında flaşör kanalı maskenin
+    // dışındadır (durumu korunur).
     virtual void allOn() = 0;
 
-    // Tüm kontaktörleri açar (GÜVENLİK). silent=true yalnız LOG açısından
+    // Kontaktör bank maskesini açar (GÜVENLİK — şartname 8.2.a.vi; maske
+    // dışı flaşör kanalına dokunmaz). silent=true yalnız LOG açısından
     // sessizdir; G3 geri-okuma/doğrulaması yine yapılır.
     virtual void allOff(bool silent = false) = 0;
 

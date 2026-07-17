@@ -113,6 +113,27 @@ void test_idle_start_rejected_when_warning_active(void) {
 }
 
 // ---------------------------------------------------------------------------
+// RELAY_ROLES_ASSIGNED=0 (varsayılan) regresyonu: TEL_chargerActive alanı SET
+// olsa bile S1/S2 mantığı derleme dışı olduğundan READY girişi ETKİLENMEZ ve
+// eski tek-bank davranışı (allOn) birebir korunur. Bayrak=1 davranışı
+// test_roles_vcu_logic suite'inde ([env:native_roles]) doğrulanır.
+// ---------------------------------------------------------------------------
+void test_idle_to_ready_with_charger_active_when_roles_unassigned(void) {
+    primeIdle();
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_chargerActive = true;  // bayrak=0'da hiçbir karar yolu okumaz
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(1, g_fake_relay_allOn_count);
+}
+
+// ---------------------------------------------------------------------------
 // READY → DRIVE on DRIVE_ENABLE.
 // ---------------------------------------------------------------------------
 void test_ready_to_drive_on_drive_enable(void) {

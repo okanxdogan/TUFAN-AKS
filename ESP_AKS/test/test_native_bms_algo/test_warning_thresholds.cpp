@@ -11,30 +11,32 @@
 namespace {
 // Hücre[0]'ı hedef değere, diğer 23 hücreyi güvenli nominal (3200 mV) bandına
 // sabitler; böylece hücre[0] açıkça min VEYA max olur ve diğer taraftan
-// (undervolt/overvolt) yanlışlıkla tetiklenme riski olmaz. Sıcaklık nominal
-// (25°C), WARN(55)/CRIT(70) eşiklerinin altında.
+// (undervolt/overvolt) yanlışlıkla tetiklenme riski olmaz. Paket sıcaklığı
+// nominal (25°C), WARN(55)/CRIT(70) eşiklerinin altında.
 BmsPackData makePackWithCell0At(uint16_t cell0Mv) {
     BmsPackData d{};
     d.isValid = true;
     d.cellVoltageMv[0] = cell0Mv;
     for (uint8_t i = 1; i < BMS_CELL_COUNT; ++i) {
         d.cellVoltageMv[i] = 3200;
-        d.cellTempC[i] = 25;
     }
-    d.cellTempC[0] = 25;
+    d.packTempMaxC = 25;
+    d.packTempMinC = 25;
     return d;
 }
 
-// Tüm hücreler güvenli nominal gerilimde (3200 mV), hücre[0] hedef sıcaklıkta,
-// diğerleri nominal (25 °C) — sıcaklık sınırı izole test edilir.
+// Tüm hücreler güvenli nominal gerilimde (3200 mV), PAKET sıcaklığı hedef
+// değerde — sıcaklık sınırı izole test edilir. Sıcaklık kaynağı artık
+// per-hücre dizi DEĞİL, packTempMaxC/MinC (0xE001 paket sıcaklığı — bkz.
+// BmsModel.h); computePack sıcaklık kararını yalnız buradan alır.
 BmsPackData makePackWithTemp0At(int16_t temp0C) {
     BmsPackData d{};
     d.isValid = true;
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         d.cellVoltageMv[i] = 3200;
-        d.cellTempC[i] = 25;
     }
-    d.cellTempC[0] = temp0C;
+    d.packTempMaxC = temp0C;
+    d.packTempMinC = 25 < temp0C ? 25 : temp0C;
     return d;
 }
 }  // namespace
