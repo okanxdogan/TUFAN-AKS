@@ -22,6 +22,18 @@ This note captures the current AKS-side telemetry bandwidth estimate and the pra
 > heartbeat interval). The bandwidth figures below are updated for the new
 > 2 Hz rate.
 
+> **Air rate revision (2026-07-17):** field range testing found the link
+> unreliable at `1.5 km`, well beyond the actual required range (max `500 m`
+> for this course). Air rate was first dropped `9.6 -> 2.4 kbps` (with TX
+> rate temporarily at `1 Hz`); that intermediate 2.4 kbps/1 Hz configuration
+> was never deployed to the field — the same day it was revised again to
+> `2.4 -> 4.8 kbps` (`REG0 = 0x63`, bit[2:0] = `011`) with TX rate restored
+> to `2 Hz` (`LORA_TX_PERIOD_MS = 500`), trading some of the extra range
+> margin back for sensitivity/precision headroom since 500 m does not need
+> the full range 2.4 kbps would have bought. UKS's `TEL_LINK_TIMEOUT_MS`
+> stayed at `2000 ms` throughout. AKS commits: `9230936` (9.6->2.4 kbps),
+> `c083139` (2.4->4.8 kbps); synchronized with UKS the same day.
+
 ## Current AKS Telemetry Payload
 
 Current uplink format (AKS→UKS, v2):
@@ -43,12 +55,18 @@ A conservative planning budget of `90 bytes` per packet gives:
 - `90 bytes * 2 Hz = 180 bytes/s`
 - `180 bytes/s * 10 bits/byte ~= 1800 bit/s` on the UART side including start/stop overhead
 
+On the air side, at the `4.8 kbps` E22 air data rate (`REG0 = 0x63`, bit[2:0] = `011`):
+
+- `90 bytes * 10 bits/byte / 4800 bit/s ~= 190 ms` airtime per packet
+- Live-only occupancy: `190 ms / 500 ms tick ~= 38%`
+- During offline-buffer drain (live + 1 replay frame back-to-back): `~380 ms / 500 ms tick ~= 76%` peak occupancy
+
 ## Interpretation
 
 Important distinction:
 
 - The ESP32 <-> E22-400T30D-V2 UART link is configured for `9600 baud`.
-- The radio air data rate of the E22 module (currently `9.6 kbps`, see `E22Regs.h` REG0) may be lower than the UART baud.
+- The radio air data rate of the E22 module (currently `4.8 kbps`, `REG0 = 0x63` bit[2:0] = `011`, see `E22Regs.h`) is lower than the UART baud.
 - Therefore, final field testing must confirm that the selected E22 radio configuration can drain the UART input fast enough at the chosen packet rate.
 
 ## Current Reliability Policy
@@ -57,7 +75,7 @@ Implemented now:
 
 - RF link is content-wise one-way: AKS→UKS carries telemetry, UKS→AKS carries only the `0xB0` heartbeat byte (no commands — see `LoraRxHandler.h`, 9.2.a).
 - Link-down detection via heartbeat timeout (`LINK_TIMEOUT_MS = 9000`) with a boot-grace window (`BOOT_LINK_GRACE_MS = 5000`) so a UKS that's silent from power-on doesn't look falsely "up".
-- OfflineBuffer ring buffer (`OB_CAPACITY = 75`) retains telemetry during link loss, sampled at 1 Hz (`OFFLINE_SAMPLE_PERIOD_MS = 1000`) while offline.
+- OfflineBuffer ring buffer (`OB_CAPACITY = 600`) retains telemetry during link loss, sampled at 1 Hz (`OFFLINE_SAMPLE_PERIOD_MS = 1000`) while offline — 600 records @ 1 Hz gives ~10 minutes of coverage (record size 88 bytes, ~52,800 bytes static buffer).
 - On reconnect: up to `REPLAY_BURST_PER_TICK = 1` buffered packets are replayed per TX tick, plus 1 live packet, until the buffer drains.
 - **G11-b (2026-07-13) — LoRa UART init self-healing:** if `EspLoraHal::begin()`
   fails after its bounded `LORA_UART_MAX_INIT_ATTEMPTS` (G11), `vTask_LoRa_UKS`
@@ -145,12 +163,12 @@ the link down; a 4th consecutive miss is required to trip it.
 ### Why 3-in-a-row is considered low-probability today (not field-proven)
 
 - **AUX-busy duration is air-time-bounded, not tick-period-bounded.** At the
-  configured `9.6 kbps` air rate, one `LORA_TEL_FRAME_MAX_BYTES=120` frame
-  takes ≈100 ms on air; the busiest tick (live+replay during a replay drain)
-  sends at most 2 frames ≈200 ms. That leaves ≈300 ms of slack inside every
-  500 ms tick even in the busiest realistic case — a single tick's own AUX
-  activity should clear well before the *next* tick fires, let alone the
-  third.
+  configured `4.8 kbps` air rate, one `LORA_TEL_FRAME_MAX_BYTES=120` frame
+  takes ≈200 ms on air; the busiest tick (live+replay during a replay drain)
+  sends at most 2 frames ≈400 ms. That leaves ≈100 ms of slack inside every
+  500 ms tick in the busiest realistic case — tighter than under the retired
+  `9.6 kbps` setting (which left ≈300 ms), but a single tick's own AUX
+  activity should still clear before the *next* tick fires.
 - **Replay mode does not change the TX cadence.** It adds a second frame to
   the *same* 500 ms tick (still one grid, see "Replay-Mode Budget" above),
   it does not insert extra ticks. The combined peak throughput
