@@ -193,14 +193,13 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
 #define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
-// 1 Hz telemetry uplink (2 Hz'den düşürüldü — hava hızı 9.6 kbps'ten 2.4
-// kbps'e indirildikten sonraki kalibrasyon, menzil artışı için ekip onaylı).
-// Gerekçe: ~90 byte'lık bir TEL paketi 2.4 kbps'te ~375 ms havada kalır; 500
-// ms'lik eski periyotta bu, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
-// girebileceği boşluğu boğardı (bkz. 2026-07-07 5 Hz->2 Hz link flapping
-// düzeltmesiyle AYNI mekanizma, sadece bu kez hava hızı düşüşü tetikliyor).
-// 1 Hz, paket havada kalma süresine göre yeniden düzenli boşluklar bırakır.
-#define LORA_TX_PERIOD_MS 1000
+// 2 Hz telemetry uplink (1 Hz'den geri döndürüldü — parkur keşfinde
+// maksimum mesafe 500 m ölçüldü, 2.4 kbps hava hızı bu mesafe için aşırı
+// tedbirdi; hava hızı 4.8 kbps'e çıkarıldı, ekip onaylı kalibrasyon).
+// Gerekçe: ~90 byte'lık bir TEL paketi 4.8 kbps'te ~190 ms havada kalır;
+// 500 ms'lik periyotta canlı doluluk ~%38 — UKS'in 1 Hz 0xB0 heartbeat'inin
+// kanala girebileceği pencere yeterli kalır.
+#define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
 
 // G10: Serileşmiş telemetri frame'inin (CSV "TEL,...\r\n", bkz. Telemetry.cpp
@@ -314,11 +313,11 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 //     KURAL:  tepe ≤ (LORA_UART_BAUD / 10) × 0.8
 // Frame boyutu ve baud UKS sözleşmesidir — DEĞİŞTİRİLEMEZ; bütçe yalnız
 // LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
-// (1 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/1000 = 240 B/s ≤ 768 B/s.
+// (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
 // (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
 //  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir. Bu
 //  bütçe, MCU<->E22 yerel UART hattının (LORA_UART_BAUD, 9600, DEĞİŞMEDİ)
-//  kapasitesini denetler — 2.4 kbps hava hızı ayrı bir darboğazdır ve bu
+//  kapasitesini denetler — 4.8 kbps hava hızı ayrı bir darboğazdır ve bu
 //  static_assert'in kapsamında DEĞİLDİR.)
 #ifdef __cplusplus
 static_assert(
