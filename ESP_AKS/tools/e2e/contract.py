@@ -130,7 +130,7 @@ def clamp_spd_x10(spd_x10: int) -> int:
 # E22-400T30D-V2 config sozlesmesi (UKS e22_regs.h / AKS E22Regs.h)
 # ===========================================================================
 
-E22_REG0 = 0x64
+E22_REG0 = 0x62
 E22_REG1 = 0x00
 E22_REG2 = 0x17
 E22_REG3 = 0x00
@@ -165,7 +165,7 @@ REMOVED_COMMAND_BYTES = [0xA1, 0xA2, 0xA3, 0xA4]
 # P6 offline buffer / replay sabitleri (AKS include/SystemConfig.h)
 # ===========================================================================
 
-LORA_TX_PERIOD_MS = 500          # 2 Hz telemetry uplink tick periyodu (link flapping duzeltmesi — bkz. SystemConfig.h)
+LORA_TX_PERIOD_MS = 1000         # 1 Hz telemetry uplink tick periyodu (2.4 kbps hava hizi kalibrasyonu — bkz. SystemConfig.h)
 OFFLINE_SAMPLE_PERIOD_MS = 1000  # kesinti sirasi buffer ornekleme periyodu (1 Hz)
 OB_CAPACITY = 75                 # offline buffer kapasitesi (60 sn x 1 Hz + %25 marj)
 REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
@@ -177,7 +177,7 @@ LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-
 # TEL frame'leri icin UKS tarafinda simetrik bir bekci — bkz. Documents/
 # LoRa_Link_Analysis.md "UKS-side TEL Timeout Margin" (nominal 4x marj,
 # 3 ardisik atlanmis TX tik'i tolere edilir, 4.'sunde false LINK,DOWN).
-TEL_LINK_TIMEOUT_MS = 2000
+TEL_LINK_TIMEOUT_MS = 4000
 
 
 def build_tel_line(f: dict) -> str:

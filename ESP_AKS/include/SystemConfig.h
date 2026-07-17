@@ -193,14 +193,14 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
 #define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
-// 2 Hz telemetry uplink (5 Hz'den düşürüldü — saha loglarında tespit edilen
-// link flapping düzeltmesinin parçası). Tek frekanslı yarım-dubleks E22
-// kanalında 5 Hz sürekli AKS TX'i, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
-// girebileceği boşluğu neredeyse hiç bırakmıyordu; heartbeat AKS'e ancak
-// ~5-6 sn'de bir ulaşıyor, LINK_TIMEOUT_MS bu araliktan kisa oldugundan link
-// surekli DOWN->UP flapping yapiyordu. 2 Hz, kanalda heartbeat'in gecebilecegi
-// duzenli bosluklar yaratir.
-#define LORA_TX_PERIOD_MS 500
+// 1 Hz telemetry uplink (2 Hz'den düşürüldü — hava hızı 9.6 kbps'ten 2.4
+// kbps'e indirildikten sonraki kalibrasyon, menzil artışı için ekip onaylı).
+// Gerekçe: ~90 byte'lık bir TEL paketi 2.4 kbps'te ~375 ms havada kalır; 500
+// ms'lik eski periyotta bu, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
+// girebileceği boşluğu boğardı (bkz. 2026-07-07 5 Hz->2 Hz link flapping
+// düzeltmesiyle AYNI mekanizma, sadece bu kez hava hızı düşüşü tetikliyor).
+// 1 Hz, paket havada kalma süresine göre yeniden düzenli boşluklar bırakır.
+#define LORA_TX_PERIOD_MS 1000
 #define LORA_RX_TIMEOUT_MS 20
 
 // G10: Serileşmiş telemetri frame'inin (CSV "TEL,...\r\n", bkz. Telemetry.cpp
@@ -314,9 +314,12 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 //     KURAL:  tepe ≤ (LORA_UART_BAUD / 10) × 0.8
 // Frame boyutu ve baud UKS sözleşmesidir — DEĞİŞTİRİLEMEZ; bütçe yalnız
 // LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
-// (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
+// (1 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/1000 = 240 B/s ≤ 768 B/s.
 // (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
-//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir.)
+//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir. Bu
+//  bütçe, MCU<->E22 yerel UART hattının (LORA_UART_BAUD, 9600, DEĞİŞMEDİ)
+//  kapasitesini denetler — 2.4 kbps hava hızı ayrı bir darboğazdır ve bu
+//  static_assert'in kapsamında DEĞİLDİR.)
 #ifdef __cplusplus
 static_assert(
     (1u + (unsigned)REPLAY_BURST_PER_TICK) * (unsigned)LORA_TEL_FRAME_MAX_BYTES *

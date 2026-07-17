@@ -53,8 +53,10 @@
 #define E22_CFG_ADDH    0x00U  // adres 0x0000: hedefli değil, genel yayın
 #define E22_CFG_ADDL    0x00U
 #define E22_CFG_NETID   0x00U
-// REG0 = 0110 0100: bit[7:5]=011 UART 9600 | bit[4:3]=00 8N1 | bit[2:0]=100 hava hızı 9.6 kbps
-#define E22_CFG_REG0    0x64U
+// REG0 = 0110 0010: bit[7:5]=011 UART 9600 | bit[4:3]=00 8N1 | bit[2:0]=010 hava hızı 2.4 kbps
+// (menzil artışı için 9.6 kbps'ten düşürüldü, ekip onaylı kalibrasyon — bkz.
+// LORA_TX_PERIOD_MS SystemConfig.h'de aynı commit'te 500->1000 ms'e ayarlandı)
+#define E22_CFG_REG0    0x62U
 // REG1 = bit[7:6]=00 alt-paket 240B | bit5=0 RSSI ortam gürültüsü kapalı | bit[1:0]=00 TX gücü EN YÜKSEK (T30D: 30 dBm)
 // DİKKAT: E22'de de 00=maks, 11=min — E32'deki OPTION karışıklığı tekrarlanmasın.
 #define E22_CFG_REG1    0x00U
