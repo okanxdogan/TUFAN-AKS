@@ -92,6 +92,89 @@
 // 33'tür.
 #define HMI_TX_PIN GPIO_NUM_33  // Şemadaki screen_RX (ESP TX -> Ekran RX)
 #define HMI_RX_PIN GPIO_NUM_32  // Şemadaki screen_TX (Ekran TX -> ESP RX)
+// Nextion seri hızı (8N1 → ham ~960 B/s) — aşağıdaki resync bütçe
+// static_assert'ı bunu kullanır. DİKKAT: DisplayHMI::begin() UART config'i
+// baud'u ayrıca literal (9600) yazar; orası değişirse bu sabit de AYNI
+// commit'te güncellenmeli, yoksa bütçe kanıtı eski hıza göre doğrular.
+#define HMI_UART_BAUD 9600
+
+// --- Nextion Reset (brown-out) Algılama ---
+// readTouchCommand RX yoluna paralel bağlı dedektör (lib/DisplayHMI/
+// NextionResetDetect.h) Nextion Startup event'ini (00 00 00 FF FF FF)
+// yakalayınca bkcmd=0 yeniden gönderilir ve ekran cache'leri geçersiz kılınır
+// (bkz. DisplayHMI::HMI_handleNextionReset). WARN logu oran-sınırlıdır
+// (CAN_RX_STATS_LOG_INTERVAL_MS deseni): en fazla 1 WARN / bu süre — ekran
+// güç hattı sürekli brown-out yapıyorsa log spam'i önlenir, toplam sayaç
+// logda görünür kalır.
+#define HMI_RESET_WARN_LOG_INTERVAL_MS 5000U
+
+// --- HMI Round-Robin Resync (reset dedektörünün emniyet katmanı) ---
+// Startup event'i brown-out sırasında RX hattında bozulup KAYBOLABİLİR —
+// o durumda yukarıdaki dedektör hiç tetiklenmez ve ekran kalıcı yarı-dolu
+// kalırdı. Bu katman olaydan bağımsızdır: her bu aralıkta bir, 11 skalar
+// alandan yalnızca SIRADAKİ TEKİ cache'e bakılmaksızın zorla gönderilir
+// (saf karar mantığı: lib/DisplayHMI/ResyncPolicy.h::hmi_resync_due_field).
+//
+// TOPARLANMA SÜRESİ: tam tur = HMI_RESYNC_FIELD_COUNT × bu aralık
+// = 11 × 500 ms ≈ 5.5 sn — ekran, tespit edilemeyen bir reset sonrası en
+// geç bu süre içinde kendini onarır (insan/gösterge zaman ölçeğinde kabul
+// edilebilir; daha agresif değerler UART bütçesinden yer).
+#define HMI_RESYNC_INTERVAL_MS 500U
+
+// Tek resync komutunun KÖTÜ-DURUM bayt boyutu (0xFF×3 end-byte DAHİL).
+// En uzun komut: 'contactor.txt="CLOSED"' = 22 + 3 = 25 B → marjla 26.
+#define HMI_RESYNC_CMD_MAX_BYTES 26U
+
+// BÜTÇE KANITI: 9600 baud 8N1 → ham 960 B/s; HMI_Task 10 Hz → döngü başına
+// ~96 B (buildBmsNextionCommands maxBytes=90 bu bütçeden). Resync tetik
+// başına TEK alan gönderir → tepe ek yük = 26 B / 500 ms = 52 B/s, ham
+// kapasitenin ≤ %10'u (96 B/s) olmalı ki BMS panelinin 90 B/döngü tavanıyla
+// birlikte TX ring (256 B) baskı altında kalmasın. Aralık görev periyodunun
+// (100 ms) altına indirilse bile hmi_resync_due_field çağrı başına tek alan
+// döndürdüğünden fiili tavan 26 B × 10 Hz = 260 B/s'de kendiliğinden doyar;
+// aşağıdaki assert normal yapılandırmayı %10 payın içinde tutar.
+#ifdef __cplusplus
+static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
+                      (unsigned)HMI_RESYNC_INTERVAL_MS
+                  <= ((unsigned)HMI_UART_BAUD / 10u) / 10u,
+              "HMI resync yuku UART butcesinin %10 payini asiyor — "
+              "HMI_RESYNC_INTERVAL_MS'i artirin (bkz. ustteki butce kaniti).");
+#endif
+
+// --- BMS Panel Round-Robin Resync (24 hücre + özet alanlar) ---
+// Skalar resync katmanının 24 hücrelik panele uzantısı: her bu aralıkta bir
+// SIRADAKİ TEK slot'un (27 slot: 24 hücre üçlüsü cell/j/bal + cellmax +
+// cellmin + warn) BmsNextionCache girdileri geçersiz kılınır (saf yardımcı:
+// lib/BmsAlgo/BmsNextionPacket.h::bmsNextionCacheInvalidateSlot); mevcut
+// change-compare + maxBytes=90 yolu slot'u yeniden yayar. Invalidasyon
+// yapışkan olduğundan bütçe tükenmesinde resync kaybolmaz.
+//
+// TOPARLANMA SÜRESİ: tam tur = 27 slot × 1000 ms = 27 sn; hücre slotları
+// updateCells tikini (1 Hz) beklediğinden en kötü ~+1-2 sn kuyruk → ekranın
+// hücre paneli tespit edilemeyen reset sonrası ~29 sn içinde kendini onarır.
+// Kritik bilgiler (state/contactor/pack) zaten skalar katmanda ~5.5 sn'de
+// toparlanır; detay paneli için daha yavaş tur bilinçli tercihtir (bütçe).
+#define BMS_RESYNC_INTERVAL_MS 1000U
+
+// Tek slot'un KÖTÜ-DURUM bayt boyutu (end-byte'lar DAHİL): hücre üçlüsü
+// "cell23.val=65535"(19) + "j23.val=100"(14) + "bal23.val=1"(14) = 47 → 48.
+#define BMS_RESYNC_SLOT_MAX_BYTES 48U
+
+// BİRLEŞİK BÜTÇE KANITI: iki resync katmanının toplam tepe yükü
+//   skalar: 26 B / 500 ms = 52 B/s   +   BMS: 48 B / 1000 ms = 48 B/s
+//   = 100 B/s ≤ ham kapasitenin %15'i (960 × 0.15 = 144 B/s).
+// BMS tarafı ayrıca buildBmsNextionCommands'ın 90 B/döngü sert tavanından
+// geçtiğinden tek döngüde bütçe aşımı zaten mümkün değildir; bu assert
+// ortalama yükün de sınırlı kaldığını derleme zamanında kanıtlar.
+#ifdef __cplusplus
+static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
+                      (unsigned)HMI_RESYNC_INTERVAL_MS
+                      + (unsigned)BMS_RESYNC_SLOT_MAX_BYTES * 1000u /
+                            (unsigned)BMS_RESYNC_INTERVAL_MS
+                  <= ((unsigned)HMI_UART_BAUD / 10u) * 15u / 100u,
+              "Toplam resync yuku (skalar + BMS panel) UART butcesinin %15 "
+              "payini asiyor — resync araliklarindan birini artirin.");
+#endif
 
 // --- HMI Command IDs ---
 #define HMI_CMD_START 1

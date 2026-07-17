@@ -32,6 +32,7 @@
 #include "BmsAlgo.h"
 #include "BmsNextionPacket.h"
 #include "HMIHelpers.h"
+#include "ResyncPolicy.h"  // hmi_resync_due_field — BMS panel resync de aynı saf politikayı kullanır
 
 static constexpr const char *TAG = "APP_MAIN";
 
@@ -396,7 +397,18 @@ void vTask_HMI_Display(void *pvParameters) {
         static BmsNextionCache BMS_hmiCache = {};
         static uint32_t BMS_lastCellUpdateMs = 0;
         static bool BMS_firstRun = true;
-        
+
+        // Nextion reset kurtarması (SADECE BmsNextionCache tarafı — skalar
+        // alanların cache'i DisplayHMI::forceFullRefresh ile dahili sıfırlandı):
+        // cache sentinel değerlere döner (isWarm=false) → tek tikte maxBytes=90
+        // bütçesine sığmayan hücre/bar/bal komutları, boot'taki gibi sonraki
+        // döngülere yayılarak tamamlanır (bkz. buildBmsNextionCommands).
+        // BMS_firstRun=true boot semantiğini birebir tekrarlar.
+        if (HMI_display.consumeResetFlag()) {
+            BMS_hmiCache = BmsNextionCache{};
+            BMS_firstRun = true;
+        }
+
         uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
         bool updateCells = false;
         bool forceRefresh = false;
@@ -409,6 +421,22 @@ void vTask_HMI_Display(void *pvParameters) {
         } else if (nowMs - BMS_lastCellUpdateMs >= 1000) {
             updateCells = true;
             BMS_lastCellUpdateMs = nowMs;
+        }
+
+        // BMS panel round-robin resync (skalar katmanın 24 hücreye uzantısı,
+        // bkz. BmsNextionPacket.h "slot invalidasyonu" + SystemConfig.h bütçe
+        // kanıtı): her BMS_RESYNC_INTERVAL_MS'te bir sıradaki TEK slot'un
+        // cache girdileri geçersiz kılınır; aşağıdaki build çağrısı slot'u
+        // mevcut change-compare + maxBytes yoluyla yeniden yayar (hücre
+        // slotları updateCells tikini bekler, ≤ 1 sn ek gecikme).
+        static uint32_t BMS_lastResyncMs = 0;
+        static uint8_t BMS_nextResyncSlot = 0;
+        const int BMS_resyncSlot = hmi_resync_due_field(
+            nowMs, BMS_lastResyncMs, BMS_nextResyncSlot,
+            BMS_RESYNC_SLOT_COUNT, BMS_RESYNC_INTERVAL_MS);
+        if (BMS_resyncSlot >= 0) {
+            bmsNextionCacheInvalidateSlot(BMS_hmiCache,
+                                          (uint8_t)BMS_resyncSlot);
         }
 
         buildBmsNextionCommands(BMS_comp, BMS_raw, BMS_emitNextionCommand, nullptr,

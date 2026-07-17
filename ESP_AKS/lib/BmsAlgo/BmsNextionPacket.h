@@ -76,3 +76,48 @@ void buildBmsNextionCommands(const BmsComputed& comp, const BmsPackData& raw,
                              BmsNextionEmit emit, void* ctx,
                              BmsNextionCache& cache, bool forceFullRefresh, bool updateCells,
                              size_t maxBytes = 90);
+
+// ---------------------------------------------------------------------------
+// BMS panel round-robin resync — slot invalidasyonu (SAF).
+// ---------------------------------------------------------------------------
+// Skalar alanların resync katmanı gibi (bkz. lib/DisplayHMI/ResyncPolicy.h
+// "SORUN/ÇÖZÜM"), 24 hücrelik panel de tespit EDİLEMEYEN bir Nextion reset'i
+// (Startup event'i brown-out'ta RX hattında kaybolursa) sonrasında kalıcı
+// yarı-dolu kalabilir. Emniyet katmanı: her BMS_RESYNC_INTERVAL_MS'te bir
+// SIRADAKİ TEK slot'un cache girdileri, üretimde OLUŞAMAYACAK değerlerle
+// geçersiz kılınır; mevcut change-compare yolu o slot'u bir sonraki uygun
+// tikte (hücre slotları için updateCells ≤ 1 sn gecikmeyle) yeniden yayar.
+//
+// Zorla-gönder bayrağı YERİNE invalidasyon seçildi: invalidasyon YAPIŞKANDIR
+// — maxBytes bütçesi o tikte tükenirse cache uyuşmazlığı (ve isWarm=false
+// mekanizması) sonraki tiklere taşınır, resync KAYBOLMAZ.
+//
+// Slot haritası:
+//   0..BMS_CELL_COUNT-1 → hücre i üçlüsü (cellN.val + jN.val + balN.val)
+//   BMS_RESYNC_SLOT_CELLMAX / _CELLMIN / _WARN → özet alanlar
+constexpr uint8_t BMS_RESYNC_SLOT_CELLMAX = BMS_CELL_COUNT;      // 24
+constexpr uint8_t BMS_RESYNC_SLOT_CELLMIN = BMS_CELL_COUNT + 1;  // 25
+constexpr uint8_t BMS_RESYNC_SLOT_WARN    = BMS_CELL_COUNT + 2;  // 26
+constexpr uint8_t BMS_RESYNC_SLOT_COUNT   = BMS_CELL_COUNT + 3;  // 27
+
+// Hücre mV invalidasyon sentineli: parser çıktısı raw16/10 ≤ 6553 mV, "veri
+// yok" sentineli 65535 (HMI_CELL_VOLTAGE_NO_DATA) — 65534 üretimde OLUŞAMAZ,
+// her gerçek değerle uyuşmazlık garantidir. (Savunma derinliği: hücre slotu
+// ayrıca bar=255 ve bal=255 ile de invalidalanır; ikisi de geçerli aralık
+// dışıdır, mV sentineli bir gün çakışsa bile bar/bal yine yeniden yayılır.)
+constexpr uint16_t BMS_RESYNC_MV_INVALID = 65534;
+
+inline void bmsNextionCacheInvalidateSlot(BmsNextionCache& cache,
+                                          uint8_t slot) {
+    if (slot < BMS_CELL_COUNT) {
+        cache.cellVoltageMv[slot] = BMS_RESYNC_MV_INVALID;
+        cache.cellBarFill[slot] = 255;   // geçerli aralık 0..100
+        cache.balanceFlag[slot] = 255;   // geçerli değerler 0/1
+    } else if (slot == BMS_RESYNC_SLOT_CELLMAX) {
+        cache.cellMaxMv = BMS_RESYNC_MV_INVALID;
+    } else if (slot == BMS_RESYNC_SLOT_CELLMIN) {
+        cache.cellMinMv = BMS_RESYNC_MV_INVALID;
+    } else if (slot == BMS_RESYNC_SLOT_WARN) {
+        cache.warningLevel = 255;        // geçerli seviyeler 0/1/2
+    }
+}
