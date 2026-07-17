@@ -66,7 +66,74 @@ Scaling lives in `HMI_packVoltageToXfloat` / `HMI_packCurrentToXfloat`
 
 - HMI refresh task runs at `10 Hz`.
 - The display driver caches the last transmitted snapshot.
-- A Nextion field is only updated if its value changed or the screen is being populated for the first time.
+- A Nextion field is only updated if its value changed, the screen is being populated for the first time, or its round-robin resync slot is due (see below).
+
+### Nextion reset (brown-out) recovery
+
+A Nextion brown-out/reset reverts every component to its Editor defaults while
+the ESP-side caches (`HMI_lastScreenData`, `BmsNextionCache`) still hold the
+last transmitted values — without recovery, unchanged fields would never be
+re-sent and the screen would stay at defaults (observed in the field).
+
+The firmware detects the reset and repopulates the screen:
+
+- **Detection** — the Nextion *Startup* event (`0x00 0x00 0x00 0xFF 0xFF 0xFF`)
+  it emits on power-up is caught by a pure byte-stream state machine
+  (`lib/DisplayHMI/NextionResetDetect.h`) wired in parallel to the
+  `readTouchCommand()` RX path. It tolerates fragmented arrival and does not
+  interfere with the `0x5A CMD ~CMD` touch-frame parser.
+- **Recovery** — on detection the driver (`DisplayHMI::HMI_handleNextionReset`):
+  1. re-sends `bkcmd=0` (it is not persistent across a Nextion reset),
+  2. invalidates its scalar-field cache (`forceFullRefresh()`), so the next
+     `updateScreen()` re-sends all fields exactly like the first call after boot,
+  3. raises a one-shot flag consumed by the HMI task via
+     `DisplayHMI::consumeResetFlag()`, which resets `BmsNextionCache` and
+     re-arms `BMS_firstRun` — this flag affects **only** the 24-cell BMS panel.
+- **TX budget** — the cell/bar/balance repopulation is spread across multiple
+  10 Hz cycles by the existing `buildBmsNextionCommands` `maxBytes=90` budget
+  (cache sentinels + `isWarm=false`, same mechanism as boot), keeping each
+  cycle within the 9600-baud UART budget (~96 bytes per 100 ms).
+- **Logging** — a rate-limited WARN (`Nextion reset algilandi ...`, at most one
+  per `HMI_RESET_WARN_LOG_INTERVAL_MS`, total counter included) is emitted.
+
+This recovery is fully local to the HMI path; LoRa telemetry
+(`lib/Telemetry`, `UplinkScheduler`) is unaffected.
+
+### Round-robin resync (safety net for undetected resets)
+
+The Startup event itself can be corrupted or lost while the supply is
+collapsing (the RX line is unreliable during a brown-out), in which case the
+reset detector never fires. A periodic, event-independent resync layer covers
+this blind spot (`lib/DisplayHMI/ResyncPolicy.h`):
+
+- Every `HMI_RESYNC_INTERVAL_MS` (default 500 ms, `SystemConfig.h`) exactly
+  **one** scalar field is force-sent regardless of the change cache, then the
+  rotation advances: `speed → bat → rpm → torque → temp → packv → packa →
+  state → motorErr → valid → contactor → back to start`.
+- No bursts: one command (≤ `HMI_RESYNC_CMD_MAX_BYTES` = 26 B) per trigger,
+  ~52 B/s at the default interval — enforced against the 9600-baud budget by a
+  `static_assert` in `SystemConfig.h`.
+- Worst-case self-heal time after an undetected reset:
+  `11 fields × 500 ms ≈ 5.5 s`.
+
+The 24-cell BMS panel has its own rotation
+(`lib/BmsAlgo/BmsNextionPacket.h::bmsNextionCacheInvalidateSlot`):
+
+- Every `BMS_RESYNC_INTERVAL_MS` (default 1000 ms) one of 27 slots (24 cell
+  triples `cellN/jN/balN` + `cellmax` + `cellmin` + `warn`) has its
+  `BmsNextionCache` entries invalidated with values that cannot occur in
+  production (65534 mV / 255); the existing change-compare + `maxBytes=90`
+  path then re-emits that slot.
+- Invalidation is *sticky*: if the byte budget runs out in a cycle, the cache
+  mismatch persists and the slot is re-emitted on a later cycle — a resync is
+  never lost.
+- Cell slots wait for the next 1 Hz `updateCells` tick (≤ 1 s extra latency);
+  summary slots re-emit on the next cycle.
+- Worst-case self-heal time for the full panel:
+  `27 slots × 1000 ms + ~2 s tail ≈ 29 s` (the safety-critical scalar fields
+  above heal in ~5.5 s; the slower detail-panel tour is a deliberate budget
+  trade-off, proven by a combined `static_assert` in `SystemConfig.h`:
+  52 B/s + 48 B/s ≤ 15% of the 960 B/s raw UART capacity).
 
 ## Command Inputs
 

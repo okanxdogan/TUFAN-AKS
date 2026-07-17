@@ -52,6 +52,22 @@ extern void test_temp_verified_valid_passes_through(void);
 extern void test_packv_decivolt_scaled_to_xfloat(void);
 extern void test_packa_centiamp_passes_through_as_xfloat(void);
 
+// Nextion reset (brown-out) dedektörü — NextionResetDetect.h
+extern void test_reset_detect_full_sequence(void);
+extern void test_reset_detect_fires_again_after_detection(void);
+extern void test_reset_detect_broken_sequences_do_not_fire(void);
+extern void test_reset_detect_fragmented_arrival(void);
+extern void test_reset_detect_prefix_backtracking(void);
+extern void test_reset_detect_mixed_with_touch_frame(void);
+extern void test_reset_detect_manual_reset_clears_progress(void);
+
+// Round-robin resync politikası — ResyncPolicy.h
+extern void test_resync_not_due_returns_no_field(void);
+extern void test_resync_single_field_per_trigger(void);
+extern void test_resync_round_robin_order_and_wrap(void);
+extern void test_resync_covers_all_fields_within_full_cycle(void);
+extern void test_resync_tick_wraparound_safe(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -101,6 +117,20 @@ int main(int /*argc*/, char ** /*argv*/) {
 
     RUN_TEST(test_packv_decivolt_scaled_to_xfloat);
     RUN_TEST(test_packa_centiamp_passes_through_as_xfloat);
+
+    RUN_TEST(test_reset_detect_full_sequence);
+    RUN_TEST(test_reset_detect_fires_again_after_detection);
+    RUN_TEST(test_reset_detect_broken_sequences_do_not_fire);
+    RUN_TEST(test_reset_detect_fragmented_arrival);
+    RUN_TEST(test_reset_detect_prefix_backtracking);
+    RUN_TEST(test_reset_detect_mixed_with_touch_frame);
+    RUN_TEST(test_reset_detect_manual_reset_clears_progress);
+
+    RUN_TEST(test_resync_not_due_returns_no_field);
+    RUN_TEST(test_resync_single_field_per_trigger);
+    RUN_TEST(test_resync_round_robin_order_and_wrap);
+    RUN_TEST(test_resync_covers_all_fields_within_full_cycle);
+    RUN_TEST(test_resync_tick_wraparound_safe);
 
     return UNITY_END();
 }

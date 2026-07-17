@@ -12,6 +12,12 @@ static constexpr const char *TAG = "DisplayHMI";
 DisplayHMI::DisplayHMI()
     : HMI_isInitialized(false),
       HMI_hasCachedScreen(false),
+      HMI_resetPending(false),
+      HMI_resetWarnLoggedOnce(false),
+      HMI_lastResetWarnTick(0),
+      HMI_resetCount(0),
+      HMI_lastResyncTick(0),
+      HMI_nextResyncField(0),
       HMI_lastScreenData({}) {}
 
 bool DisplayHMI::begin() {
@@ -50,9 +56,7 @@ bool DisplayHMI::begin() {
     // Nextion acknowledge yanıtlarını kapat (bkcmd=0)
     // Aksi halde her komut sonrası gelen 0x01/0x02/0x03 yanıtları
     // readTouchCommand tarafından sahte komut olarak yorumlanır
-    const char *HMI_bkcmd = "bkcmd=0";
-    uart_write_bytes(HMI_UART_NUM, HMI_bkcmd, 7);
-    HMI_sendEndBytes();
+    HMI_sendBkcmd0();
     vTaskDelay(pdMS_TO_TICKS(50));  // Nextion'ın işlemesi için bekle
     HMI_drainRxBuffer();            // bkcmd komutunun kendi acknowledge'ını temizle
 
@@ -67,10 +71,68 @@ void DisplayHMI::HMI_drainRxBuffer() {
     }
 }
 
+// bkcmd=0 Nextion'da KALICI DEĞİLDİR — ekran reset'inde Editor varsayılanına
+// döner; hem begin()'de hem reset kurtarmasında gönderilir.
+void DisplayHMI::HMI_sendBkcmd0() {
+    const char *HMI_bkcmd = "bkcmd=0";
+    uart_write_bytes(HMI_UART_NUM, HMI_bkcmd, 7);
+    HMI_sendEndBytes();
+}
+
+void DisplayHMI::forceFullRefresh() { HMI_hasCachedScreen = false; }
+
+bool DisplayHMI::consumeResetFlag() {
+    const bool HMI_was = HMI_resetPending;
+    HMI_resetPending = false;
+    return HMI_was;
+}
+
+// Startup event (00 00 00 FF FF FF) yakalandı: Nextion brown-out/reset attı,
+// tüm component'ler Editor varsayılanına döndü. Kurtarma:
+//   (a) bkcmd=0'ı yeniden gönder (reset ile kaybolur),
+//   (b) DisplayHMI cache'ini geçersiz kıl → bir sonraki updateScreen tüm
+//       skalar alanları yeniden basar (boot'taki ilk çağrıyla birebir aynı yol),
+//   (c) HMI_resetPending → HMI_Task consumeResetFlag() ile BmsNextionCache'i
+//       sıfırlar; hücre barları maxBytes bütçesiyle döngülere yayılarak dolar.
+// Burada drain/delay YAPILMAZ — readTouchCommand'ın byte akışı bozulmamalı.
+void DisplayHMI::HMI_handleNextionReset() {
+    ++HMI_resetCount;
+    HMI_sendBkcmd0();
+    forceFullRefresh();
+    HMI_resetPending = true;
+
+    // Oran-sınırlı WARN (CAN_RX_STATS_LOG_INTERVAL_MS deseni): ekran güç
+    // hattında sürekli brown-out varsa log spam yapılmaz, toplam sayaçla
+    // en fazla 1 WARN / HMI_RESET_WARN_LOG_INTERVAL_MS basılır.
+    const uint32_t HMI_now = xTaskGetTickCount();
+    if (!HMI_resetWarnLoggedOnce ||
+        (HMI_now - HMI_lastResetWarnTick) >=
+            pdMS_TO_TICKS(HMI_RESET_WARN_LOG_INTERVAL_MS)) {
+        ESP_LOGW(TAG,
+                 "Nextion reset algilandi (toplam %lu), ekran yeniden "
+                 "dolduruluyor",
+                 (unsigned long)HMI_resetCount);
+        HMI_lastResetWarnTick = HMI_now;
+        HMI_resetWarnLoggedOnce = true;
+    }
+}
+
 void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
     if (!HMI_isInitialized) return;
 
     const bool HMI_forceRefresh = !HMI_hasCachedScreen;
+
+    // Round-robin resync emniyet katmanı (bkz. ResyncPolicy.h): Startup
+    // event'i brown-out sırasında RX hattında kaybolursa reset dedektörü kör
+    // kalır — bu yüzden her HMI_RESYNC_INTERVAL_MS'te bir SIRADAKİ TEK alan
+    // cache'e bakılmaksızın zorla gönderilir (burst yok, bütçe aşımı yok).
+    const int HMI_resyncField = hmi_resync_due_field(
+        xTaskGetTickCount(), HMI_lastResyncTick, HMI_nextResyncField,
+        HMI_RESYNC_FIELD_COUNT, pdMS_TO_TICKS(HMI_RESYNC_INTERVAL_MS));
+    const auto HMI_force = [&](HMI_ResyncField HMI_field) {
+        return HMI_forceRefresh || HMI_resyncField == (int)HMI_field;
+    };
+
     char HMI_currentErrorText[16];
     char HMI_lastErrorText[16];
 
@@ -81,48 +143,48 @@ void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
 
     HMI_sendNumericIfChanged("speed", HMI_data.HMI_currentSpeed,
                              HMI_lastScreenData.HMI_currentSpeed,
-                             HMI_forceRefresh);
+                             HMI_force(HMI_RESYNC_SPEED));
     HMI_sendNumericIfChanged("bat", HMI_data.HMI_currentBattery,
                              HMI_lastScreenData.HMI_currentBattery,
-                             HMI_forceRefresh);
+                             HMI_force(HMI_RESYNC_BAT));
     HMI_sendNumericIfChanged("rpm", HMI_data.HMI_motorRpm,
                              HMI_lastScreenData.HMI_motorRpm,
-                             HMI_forceRefresh);
+                             HMI_force(HMI_RESYNC_RPM));
     HMI_sendNumericIfChanged("torque", HMI_data.HMI_motorTorqueFeedback,
                              HMI_lastScreenData.HMI_motorTorqueFeedback,
-                             HMI_forceRefresh);
+                             HMI_force(HMI_RESYNC_TORQUE));
     HMI_sendNumericIfChanged("temp", HMI_data.HMI_bmsTemperatureC,
                              HMI_lastScreenData.HMI_bmsTemperatureC,
-                             HMI_forceRefresh);
+                             HMI_force(HMI_RESYNC_TEMP));
     // packv Nextion'da 1 ondalıklı, packa 2 ondalıklı float (xfloat) —
     // ".val" packv için gerçek_değer×10, packa için gerçek_değer×100
     // olacak şekilde ölçeklenir (bkz. HMIHelpers.h).
     HMI_sendNumericIfChanged(
         "packv", HMI_packVoltageToXfloat(HMI_data.HMI_bmsPackVoltageDeciV),
         HMI_packVoltageToXfloat(HMI_lastScreenData.HMI_bmsPackVoltageDeciV),
-        HMI_forceRefresh);
+        HMI_force(HMI_RESYNC_PACKV));
     HMI_sendNumericIfChanged(
         "packa", HMI_packCurrentToXfloat(HMI_data.HMI_bmsPackCurrentCentiA),
         HMI_packCurrentToXfloat(HMI_lastScreenData.HMI_bmsPackCurrentCentiA),
-        HMI_forceRefresh);
+        HMI_force(HMI_RESYNC_PACKA));
 
     HMI_sendTextIfChanged("state", HMI_getStateText(HMI_data.HMI_vcuState),
                           HMI_getStateText(HMI_lastScreenData.HMI_vcuState),
-                          HMI_forceRefresh);
+                          HMI_force(HMI_RESYNC_STATE));
     HMI_sendTextIfChanged("motorErr", HMI_currentErrorText, HMI_lastErrorText,
-                          HMI_forceRefresh);
+                          HMI_force(HMI_RESYNC_MOTOR_ERR));
     HMI_sendTextIfChanged("valid",
                           HMI_getValidityText(HMI_data.HMI_motorDataValid,
                                               HMI_data.HMI_motorTimeoutActive),
                           HMI_getValidityText(
                               HMI_lastScreenData.HMI_motorDataValid,
                               HMI_lastScreenData.HMI_motorTimeoutActive),
-                          HMI_forceRefresh);
+                          HMI_force(HMI_RESYNC_VALID));
     HMI_sendTextIfChanged("contactor",
                           HMI_getContactorText(HMI_data.HMI_contactorClosed),
                           HMI_getContactorText(
                               HMI_lastScreenData.HMI_contactorClosed),
-                          HMI_forceRefresh);
+                          HMI_force(HMI_RESYNC_CONTACTOR));
 
     HMI_lastScreenData = HMI_data;
     HMI_hasCachedScreen = true;
@@ -150,6 +212,13 @@ bool DisplayHMI::readTouchCommand(uint8_t& HMI_command) {
     if (rxBytes <= 0) return false;
 
     do {
+        // Nextion reset dedektörü ham byte akışını PARALEL gözler — aşağıdaki
+        // 0x5A çerçeve mantığından tamamen bağımsızdır (Startup event'inin
+        // 0x00/0xFF byte'ları zaten çerçeve parser'ında atlanıyor).
+        if (HMI_resetDetect.HMI_feedByte(rxByte)) {
+            HMI_handleNextionReset();
+        }
+
         if (rxByte == 0xFF || rxByte == 0x00) {
             // Nextion invalid/ack artiklari - guvenle atla ve state resetle
             rxState = 0;
