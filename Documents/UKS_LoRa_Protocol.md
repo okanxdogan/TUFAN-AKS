@@ -12,7 +12,7 @@ This document defines the current command and telemetry contract between the UKS
 - UART mode: transparent mode
 - Selected startup mode: `M0 = 0`, `M1 = 0`
 - UART baud: `9600`
-- Air data rate: `9.6 kbps` (`REG0` bit[2:0] = `100`)
+- Air data rate: `4.8 kbps` (`REG0` bit[2:0] = `011`)
 - Frequency: `433.125 MHz` (channel `23`, `REG2 = 0x17`, base offset `410.125 MHz`)
 - Telemetry transmit period: `500 ms` (`2 Hz`) — lowered from `200 ms` (`5 Hz`) to fix link flapping: on a single-frequency half-duplex E22 channel, continuous 5 Hz AKS TX left little room for UKS's 1 Hz `0xB0` heartbeat to get through (field logs showed ~5-6 s effective heartbeat interval, shorter than the previous `LINK_TIMEOUT_MS`, causing constant DOWN→UP flapping)
 - No application-layer ACK or retransmission is implemented in AKS at this stage.

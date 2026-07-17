@@ -1,5 +1,5 @@
 > **DİKKAT: BU DOKÜMAN E32 DÖNEMİNE AİTTİR, E22 GEÇİŞİ SONRASI GÜNCELLİĞİNİ YİTİRMİŞTİR.**
-> Proje artık E22-400T30D-V2 (SX1268) modülünü kullanmaktadır. Güncel register tabanlı konfigürasyon detayları için `include/E22Regs.h` ve `Documents/README.md` dosyalarına başvurunuz.
+> Proje artık E22-400T30D-V2 (SX1268) modülünü kullanmaktadır. Güncel register tabanlı konfigürasyon detayları için `include/E22Regs.h` ve `Documents/README.md` dosyalarına başvurunuz. Güncel hava hızı/periyot değerleri için `Documents/LoRa_Link_Analysis.md`'ye bakınız.
 
 # AKS–UKS LoRa Uyum Notları
 
