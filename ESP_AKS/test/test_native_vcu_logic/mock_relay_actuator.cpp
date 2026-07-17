@@ -14,6 +14,8 @@ unsigned g_fake_relay_verifyIfDue_count = 0;
 unsigned g_fake_call_seq = 0;
 unsigned g_fake_relay_allOff_firstSeq = 0;
 
+bool g_fake_relay_channelState[RELAY_TOTAL_CHANNELS] = {};
+
 MockRelayActuator g_mockRelay;
 
 void fake_relay_reset(void) {
@@ -26,10 +28,19 @@ void fake_relay_reset(void) {
     g_fake_relay_verifyIfDue_count = 0;
     g_fake_call_seq = 0;
     g_fake_relay_allOff_firstSeq = 0;
+    for (uint8_t ch = 0; ch < RELAY_TOTAL_CHANNELS; ++ch)
+        g_fake_relay_channelState[ch] = false;
 }
 
+// allOn/allOff gerçek RelayManager ile aynı BANK-MASKESİ semantiğini taklit
+// eder: yalnız RELAY_CONTACTOR_BANK_MASK içindeki kanallar yazılır; maske
+// dışındaki kanalın (roller atandığında flaşör) durumu KORUNUR.
 void MockRelayActuator::allOn() {
     ++g_fake_relay_allOn_count;
+    for (uint8_t ch = 0; ch < RELAY_TOTAL_CHANNELS; ++ch) {
+        if (RELAY_CONTACTOR_BANK_MASK & (1u << ch))
+            g_fake_relay_channelState[ch] = true;
+    }
 }
 
 void MockRelayActuator::allOff(bool silent) {
@@ -38,10 +49,16 @@ void MockRelayActuator::allOff(bool silent) {
         g_fake_relay_allOff_firstSeq = ++g_fake_call_seq;  // G2: sıra kaydı
     if (silent)
         ++g_fake_relay_allOff_silent_count;
+    for (uint8_t ch = 0; ch < RELAY_TOTAL_CHANNELS; ++ch) {
+        if (RELAY_CONTACTOR_BANK_MASK & (1u << ch))
+            g_fake_relay_channelState[ch] = false;
+    }
 }
 
-void MockRelayActuator::setRelay(uint8_t /*channel*/, bool /*state*/) {
+void MockRelayActuator::setRelay(uint8_t channel, bool state) {
     ++g_fake_relay_setRelay_count;
+    if (channel < RELAY_TOTAL_CHANNELS)
+        g_fake_relay_channelState[channel] = state;
 }
 
 // --- G3: geri-okuma / actuator fault yolu (mock) ---

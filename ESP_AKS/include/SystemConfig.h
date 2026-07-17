@@ -260,6 +260,65 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 
 #define RELAY_TOTAL_CHANNELS 10
 
+// --- Şartname Bölüm 3, 8.2.a — S1/S2 kontaktör rolleri + uyarı flaşörü ---
+// S1 = şarj hattı kontaktörü, S2 = sürüş hattı kontaktörü (şartname 8.2.a):
+//   (iii) şarjda  S1 KAPALI + S2 AÇIK
+//   (vii) sürüşte S1 AÇIK   + S2 KAPALI
+//   (vi)  güvenlik probleminde İKİSİ DE AÇIK
+// Flaşör (şartname 6.e.ii): sıcaklık uyarısına bağlı sesli+ışıklı ikaz —
+// kontaktör DEĞİLDİR, bank maskesinin DIŞINDA tutulur ki allOff (güvenlik
+// açması) uyarı flaşörünü SÖNDÜRMESİN.
+//
+// Kanal atamaları (yazılım tarafı sabit; fiziksel yük eşlemesi donanım
+// ekibi teyidi BEKLİYOR — bkz. RELAY_ROLES_ASSIGNED):
+#define RELAY_CH_S2_DRIVE 0   // S2 — sürüş hattı kontaktörü (kanal 1-7 sürüş bankının parçası)
+#define RELAY_CH_S1_CHARGE 8  // S1 — şarj hattı kontaktörü
+#define RELAY_CH_FLASHER 9    // Uyarı flaşörü (sesli+ışıklı, şartname 6.e.ii)
+
+// Kanal-yük eşlemesi (yukarıdaki S1/S2/flaşör rolleri) donanım ekibiyle
+// HENÜZ teyit edilmedi. 0 (varsayılan) iken rol mantığının TAMAMI (flaşör,
+// S1/S2 mod anahtarlaması) derleme dışıdır ve araç davranışı eski "tek bank"
+// haliyle BAYT-BAYT aynı kalır. Teyit gelince build flag'i ile 1 yapılır
+// (ör. platformio.ini -D RELAY_ROLES_ASSIGNED=1).
+#ifndef RELAY_ROLES_ASSIGNED
+#define RELAY_ROLES_ASSIGNED 0
+#endif
+
+#if !RELAY_ROLES_ASSIGNED
+#warning "kanal-yük eşlemesi donanım ekibiyle teyit edilmedi — bank davranışı eski haliyle sürüyor"
+// Roller atanmamışken maske 10 kanalın TAMAMI: allOn/allOff bugünkü davranışla
+// birebir aynı kalır (flaşör kanalı diye bir ayrım henüz YOK).
+#define RELAY_CONTACTOR_BANK_MASK ((1u << RELAY_TOTAL_CHANNELS) - 1u)  // 0x3FF
+#else
+// Roller atandı: kontaktör bankı = flaşör HARİÇ tüm kanallar (S1 + S2 +
+// sürüş bankı 1-7). allOff bu maskeyi açar → şartname 8.2.a.vi (güvenlik
+// probleminde S1 ve S2 dahil hepsi açılır) sağlanır, flaşör kanalının son
+// yazılan durumu shadow'da KORUNUR (uyarı sönmez).
+#define RELAY_CONTACTOR_BANK_MASK \
+    (((1u << RELAY_TOTAL_CHANNELS) - 1u) & ~(1u << RELAY_CH_FLASHER))  // 0x1FF
+// Sürüş hattı bankı = S2 (kanal 0) + kanal 1-7. S1 bu maskenin BİLİNÇLİ
+// olarak DIŞINDADIR: READY girişi yalnız bu maskeyi kapatır, S1 açık kalır
+// (şartname 8.2.a.vii). S1, RELAY_CONTACTOR_BANK_MASK'ın İÇİNDEDİR ki
+// allOff güvenlik açması S1'i de açsın (8.2.a.vi).
+#define RELAY_DRIVE_BANK_MASK \
+    (RELAY_CONTACTOR_BANK_MASK & ~(1u << RELAY_CH_S1_CHARGE))  // 0x0FF
+#ifdef __cplusplus
+static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_FLASHER)) == 0,
+              "Flasor kanali kontaktor bank maskesinin DISINDA olmali — "
+              "allOff uyari flasorunu sondurmemeli (sartname 6.e.ii).");
+static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S1_CHARGE)) != 0 &&
+                  (RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S2_DRIVE)) != 0,
+              "S1 ve S2 kontaktor bank maskesinin ICINDE olmali — guvenlik "
+              "acmasi (allOff) ikisini de acmali (sartname 8.2.a.vi).");
+#endif
+#endif  // RELAY_ROLES_ASSIGNED
+
+// Flaşör histerezisi (şartname 6.e.ii/6.e.iii): flaşör 55 °C'de (BMS_WARN_
+// MAX_TEMP_C, >= semantiği) yanar; sıcaklık (55 − bu değer) = 53 °C'nin
+// ALTINA inince söner. Eşik sınırında titremeyi (ON/OFF çırpınması) önler.
+// Yalnız RELAY_ROLES_ASSIGNED=1 iken derlenen flaşör mantığı kullanır.
+#define FLASHER_HYSTERESIS_C 2
+
 // --- MCP23S17 Çıkış Doğrulama (Actuator Verify) Periyodu ---
 // VCU task'i 20 ms'de bir (50 Hz) döner; OLAT/IODIR geri-okuma doğrulamasını
 // HER tick yapmak SPI bara yükünü gereksiz artırır (tick başına 4 register
@@ -461,8 +520,20 @@ static_assert(
 // sıcaklık isReadyEntryPermitted üzerinden READY girişini de bloklar.
 // HMI katmanı (BmsAlgo.h BMS_TEMP_OVERTEMP_WARN_C/CRIT_C) aynı 55/70
 // değerlerine hizalıdır.
+//
+// Şartname Bölüm 3, 6.e.iii: 55 uyarı / 70 kapanma, 15°C sabit aralık.
+// Bu iki değer şartname idealinin BİREBİR kendisidir — DEĞİŞTİRİLMEZ;
+// 15 °C'lik uyarı-kapanma aralığı aşağıdaki static_assert ile derleme
+// zamanında kilitlidir (BmsAlgo.h HMI eşikleriyle eşitlik kilidi de
+// VcuLogic.h'dedir — iki başlığı birden gören ilk karar katmanı orasıdır).
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
+#ifdef __cplusplus
+static_assert(BMS_CRITICAL_MAX_TEMP_C - BMS_WARN_MAX_TEMP_C == 15,
+              "Sartname Bolum 3, 6.e.iii: uyari (55) ile kapanma (70) arasinda "
+              "15 C sabit aralik korunmali — esiklerden biri tek tarafli "
+              "degistirilemez.");
+#endif
 // Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
 // TEL_bmsCurrentCentiA ile AYNI birim (raw 0.1A × 10 = centi-A). Böylece
 // eşikler parser ölçeğiyle uçtan uca hizalı; aşırı akım koruması gerçek

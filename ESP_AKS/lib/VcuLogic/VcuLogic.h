@@ -5,6 +5,19 @@
 #include "VehicleData.h"  // TelemetryData (M3)
 #include "BmsAlgo.h"
 
+// --- Görev 1: Sıcaklık eşiği derleme-zamanı kilitleri ---
+// Şartname Bölüm 3, 6.e.iii: 55 uyarı / 70 kapanma, 15°C sabit aralık.
+// Bu başlık hem SystemConfig.h'yi (VCU karar eşikleri) hem BmsAlgo.h'yi
+// (HMI/ekran eşikleri) gördüğünden iki setin birbirinden kopmadığı kilit
+// BURADA doğrulanır (BmsAlgo.h saf kalsın diye SystemConfig.h'yi include
+// etmez; 15 °C aralık kilidi SystemConfig.h'nin kendisindedir).
+static_assert(BMS_TEMP_OVERTEMP_WARN_C == BMS_WARN_MAX_TEMP_C,
+              "HMI uyari sicaklik esigi (BmsAlgo.h) SystemConfig.h "
+              "BMS_WARN_MAX_TEMP_C=55 ile ayni olmali (sartname 6.e.iii).");
+static_assert(BMS_TEMP_OVERTEMP_CRIT_C == BMS_CRITICAL_MAX_TEMP_C,
+              "HMI kritik sicaklik esigi (BmsAlgo.h) SystemConfig.h "
+              "BMS_CRITICAL_MAX_TEMP_C=70 ile ayni olmali (sartname 6.e.iii).");
+
 namespace VcuLogic {
 
 enum class VcuState : uint8_t {
@@ -70,6 +83,26 @@ inline bool isTempCritical(int8_t bmsTempHighestC) {
 inline bool isTempWarning(int8_t bmsTempHighestC) {
     return bmsTempHighestC >= BMS_WARN_MAX_TEMP_C;
 }
+
+#if RELAY_ROLES_ASSIGNED
+// Flaşör (şartname 6.e.ii) durum kararı — SAF: mevcut flaşör durumu + taze
+// telemetriden yeni istenen durumu döndürür. Histerezisli:
+//   * sıcaklık >= 55 (BMS_WARN_MAX_TEMP_C)                → ON
+//   * sıcaklık < 53 (55 − FLASHER_HYSTERESIS_C)           → OFF
+//   * 53..54 bandı                                        → mevcut durum korunur
+// BAYAT VERİ KURALI: bmsDataValid=false veya BMS timeout iken flaşöre
+// DOKUNULMAZ (son durum korunur) — bayat veriyle ne yakma ne söndürme.
+inline bool flasherDesiredState(bool currentOn, bool bmsDataValid,
+                                bool bmsTimeoutActive, int8_t bmsTempHighestC) {
+    if (!bmsDataValid || bmsTimeoutActive)
+        return currentOn;
+    if (isTempWarning(bmsTempHighestC))
+        return true;
+    if (bmsTempHighestC < BMS_WARN_MAX_TEMP_C - FLASHER_HYSTERESIS_C)
+        return false;
+    return currentOn;
+}
+#endif  // RELAY_ROLES_ASSIGNED
 
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
@@ -161,6 +194,15 @@ inline bool isResetInterlockSatisfied(const TelemetryData& VCU_data,
 inline bool isReadyEntryPermitted(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
+
+#if RELAY_ROLES_ASSIGNED
+    // Şartname 8.2.a.iii: şarj modunda (charger CAN akışı taze) S1 kapalı /
+    // S2 açıktır — charger aktifken READY (sürüş bankını kapatma) YASAK.
+    // TEL_chargerActive, CAN_chargerValid'den türetilir (freshness dahil);
+    // charger bağlı değilken/bayatken false olur ve READY serbest kalır.
+    if (VCU_data.TEL_chargerActive)
+        return false;
+#endif
 
     if (hasCriticalCondition(VCU_data, VcuState::IDLE))
         return false;

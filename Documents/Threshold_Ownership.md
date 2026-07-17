@@ -43,6 +43,16 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 329 | 1300 (13.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` (READY girişini ve reset'i de bloklar) | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 330 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (deşarjda −0.1…−1.5 A gözlendi) | ✅ CANLI |
 | `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 331 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
+> **ŞARTNAME KİLİDİ (sıcaklık, Bölüm 3 6.e.iii):** `BMS_WARN_MAX_TEMP_C=55` /
+> `BMS_CRITICAL_MAX_TEMP_C=70` şartname idealinin birebir kendisidir ve
+> derleme-zamanı kilitlidir: `SystemConfig.h` içindeki `static_assert`
+> (CRIT − WARN == 15 °C sabit aralık) + `VcuLogic.h` içindeki `static_assert`
+> (BmsAlgo.h HMI eşikleri `BMS_TEMP_OVERTEMP_WARN_C/CRIT_C` == SystemConfig
+> değerleri). Ayrıca 55 °C uyarısı, `RELAY_ROLES_ASSIGNED=1` iken uyarı
+> flaşörüne bağlıdır (şartname 6.e.ii — bkz.
+> `Documents/RELAY_CHANNEL_TABLE.md` ve `VcuLogic.h::flasherDesiredState`,
+> `FLASHER_HYSTERESIS_C=2` histerezisli).
+
 > **DÜZELTME (2026-07-13):** Bu tabloda önceden `BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`
 > (`SystemConfig.h`) diye iki satır vardı, "CANLI" ve `VcuLogic::hasCriticalCondition`
 > tüketicisi olarak işaretliydi — bu **yanlıştı**. `VcuLogic::hasCriticalCondition`
@@ -76,7 +86,7 @@ da pack/paket seviyesinde VCU kararını besler:
 | --- | --- | --- | --- | --- | --- |
 | `CAN_MOTOR_STATUS_TIMEOUT_MS` | 208 | 500 ms | `CanManager::updateMotorStatusValidity` → `TEL_motorTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (frame varlığı, ölçeğe bağlı değil) | ✅ CANLI |
 | `CAN_BMS_STATUS_TIMEOUT_MS` | 209 | 500 ms | `CanManager::updateBmsValidity` → `bms_evaluate_freshness` (G12: E000 **ve** E001 ID bazında ayrı izlenir; biri bayatlarsa timeout) → `TEL_bmsTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (E000+E001 frame varlığı) | ✅ CANLI |
-| `CAN_CHARGER_TIMEOUT_MS` | 213 | 2000 ms | Yalnızca charger setpoint'lerini "bayat" işaretler | ✅ DOĞRULANDI | ⚠️ KISMİ — `CAN_Event`/FAULT ÜRETMEZ (bilinçli tasarım, opsiyonel akış) |
+| `CAN_CHARGER_TIMEOUT_MS` | 213 | 2000 ms | Charger setpoint'lerini "bayat" işaretler; freshness sonucu (`CAN_chargerValid`) `getTelemetryData()` üzerinden `TEL_chargerActive` olarak yayınlanır → `VcuLogic` S1/S2 mod anahtarlaması girdisi (`RELAY_ROLES_ASSIGNED=1`, şartname 8.2.a.iii: charger aktifken S1 kapalı + READY reddi) | ✅ DOĞRULANDI | ⚠️ S1/S2 mod girdisi, yine `CAN_Event`/FAULT ÜRETMEZ (bilinçli tasarım, opsiyonel akış) |
 
 ---
 
@@ -140,11 +150,14 @@ CRITICAL uçları (2500/3650 mV) SystemConfig.h pack CRITICAL eşikleriyle
 özgüdür (SystemConfig.h WARN eşikleriyle 1:1 eşleşmesi gerekmez).
 
 Bu eşikler kod yolunda "ölü" değildir — `computePack()` her HMI tick'inde
-çalışır ve `warningLevel`i gerçekten hesaplar. Ancak girdi (`BmsPackData`),
-`src/main.cpp`'de gerçek 24-hücre verisi yerine tek bir doğrulanmış pack
-voltajının 24 hücreye bölünmüş ortalamasıyla ad-hoc dolduruluyor (ayrı bir
-boşluk — bkz. önceki BMS keşif raporu, madde 4). Yani bu eşikler çalışıyor
-ama gerçek hücre verisi üzerinde değil.
+çalışır ve `warningLevel`i gerçekten hesaplar. Girdi (`BmsPackData`) artık
+gerçek veriyle doldurulur: hücre voltajları E015-E020'den (`TEL_bmsCellVoltages`,
+DOĞRULANDI), paket sıcaklığı ise `packTempMaxC/MinC` alanlarından
+(`TEL_bmsTempHighestC/LowestC`, 0xE001, DOĞRULANDI — `src/main.cpp` HMI task
+doldurur). Eskiden `cellTempC[i]=0` yazıldığından ekranın sıcaklık uyarısı
+HİÇ tetiklenmiyordu; `computePack` tMax/tMin'i artık hücre dizisinden DEĞİL
+bu paket-seviyesi alanlardan alır (per-hücre sahte sıcaklık kopyalama yok) —
+55/70 eşikleri ve >= semantiği ekranda da fiilen canlıdır.
 
 ---
 

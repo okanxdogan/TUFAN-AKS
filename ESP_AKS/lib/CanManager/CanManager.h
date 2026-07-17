@@ -51,9 +51,12 @@ class CanManager {
     // `out` her zaman son görülen setpoint'lerle doldurulur; dönüş değeri
     // verinin taze olup olmadığını söyler (CAN_CHARGER_TIMEOUT_MS içinde
     // frame görüldüyse true). Charger akışı OPSİYONEL — false FAULT değildir.
-    // NOT: Gözlem/test amaçlı API — firmware'de şu an BİLİNÇLİ olarak hiçbir
-    // çağıranı yok (setpoint'ler karar mantığına bağlanmaz); bench/diagnostik
-    // kullanım için tutulur, "ölü kod" diye SİLİNMEMELİ.
+    // NOT: Charger FRESHNESS bilgisinin artık gerçek bir tüketicisi var —
+    // getTelemetryData() aynı CAN_chargerValid bayrağını TEL_chargerActive
+    // olarak yayınlar ve VcuLogic S1/S2 mod anahtarlaması
+    // (RELAY_ROLES_ASSIGNED=1, şartname 8.2.a) bunu girdi alır. Bu
+    // fonksiyonun döndürdüğü SETPOINT değerleri ise hâlâ hiçbir karar
+    // mantığına bağlanmaz (bench/diagnostik API); "ölü kod" diye SİLİNMEMELİ.
     bool getChargerCommand(ChargerCommand& out) const;
 
    private:

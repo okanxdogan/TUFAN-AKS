@@ -431,6 +431,9 @@ TelemetryData CanManager::getTelemetryData() const {
     TelemetryData CAN_telemetryCopy = {};
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     CAN_telemetryCopy = s_telemetryData;
+    // Charger freshness (updateChargerValidity) → dahili S1/S2 mod girdisi.
+    // Wire formatına serialize edilmez (bkz. VehicleData.h TEL_chargerActive).
+    CAN_telemetryCopy.TEL_chargerActive = CAN_chargerValid;
     xSemaphoreGive(s_mutex);
 
     return CAN_telemetryCopy;
