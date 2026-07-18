@@ -41,14 +41,21 @@ Direction: `AKS → Motor Driver` | Status: **MOTOR_DRIVER_PRESENT=0 — henüz 
 
 Direction: `Motor Driver → AKS` | DLC: 8 | Status: **MSTest/mock_motor ile doğrulanmış**
 
+> **Not (2026-07-17):** Motor sürücüsü henüz entegre değilken (`MOTOR_DRIVER_PRESENT=0`),
+> bu frame'i hall-effect hız sensörü ünitesi (esp32-canbus-speed-sensor) üretir.
+> Sensör yalnızca `data[0:1]` (RPM) alanını doldurur; `data[2:7]` = 0x00 gönderir
+> (voltaj yok, hata/çalışma bayrakları 0). Motor sürücüsü entegre edildiğinde
+> bu frame'in kaynağı sürücüye geçecek ve tüm alanlar gerçek değerlerle dolacaktır.
+
 | Byte | Alan Adı | Veri Tipi | Endian | İşaret | Ölçek | Durum | Kanıt |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0–1 | RPM | int16_t | Big | signed | raw | ✅ DOĞRULANDI | MSTest/mock_motor |
-| 2–3 | Motor Voltage | uint16_t | Big | unsigned | ×0.1 V | ✅ DOĞRULANDI | MSTest/mock_motor |
+| 0–1 | RPM | int16_t | Big | signed | raw | ✅ DOĞRULANDI | MSTest/mock_motor + hall sensör entegrasyon testi |
+| 2–3 | Motor Voltage | uint16_t | Big | unsigned | ×0.1 V | ✅ DOĞRULANDI | MSTest/mock_motor (sensörde 0x00) |
 | 4–6 | Rezerve | — | — | — | — | ❌ BİLİNMİYOR | Kullanılmıyor |
-| 7 | Error Flags / Running | uint8_t | — | unsigned | bitfield | ✅ DOĞRULANDI | bit0=çalışıyor, bit[7:1]=hata bayrakları |
+| 7 | Error Flags / Running | uint8_t | — | unsigned | bitfield | ✅ DOĞRULANDI | bit0=çalışıyor, bit[7:1]=hata bayrakları (sensörde 0x00) |
 
-Freshness: 500 ms timeout → `TEL_motorTimeoutActive`, IDLE dışında FAULT.
+Freshness: 1500 ms timeout → `TEL_motorTimeoutActive`, IDLE dışında FAULT.
+Sensör yayın periyodu: 100 ms (10 Hz) — tazelik penceresi içinde.
 
 ---
 

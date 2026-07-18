@@ -105,3 +105,33 @@ yapıldığında etkilenen tüm noktalar:
   `test_torque_request_queue.cpp` (kuyruk unit testleri) +
   `test_estop_zero_torque_reaches_can_queue_before_contactor_open`
   (kuyruklamanın E-STOP sırasını bozmadığının entegrasyon testi)
+
+---
+
+## 5. Hız Sensörü CAN Entegrasyonu (2026-07-17)
+
+> Kapsam: Hall-effect hız sensörü ünitesi (esp32-canbus-speed-sensor) artık
+> AKS kartına **doğrudan CAN hattı üzerinden** bağlıdır. Geçici test düzeneğinde
+> kullanılan 2. bilgisayar (motor-surucu-test reposu, ESP32 + MCP2515 alıcı)
+> **devre dışı bırakılmıştır** — artık gerekli değildir.
+
+**Mevcut topoloji:**
+```
+[Hall sensör ünitesi (ESP32+MCP2515+2 mıknatıs)]
+     --- CAN_H / CAN_L (500 kbps, STD 11-bit, ID 0x200) ---
+[AKS kartı (ESP32 + TJA1050 TWAI)]
+     --- UART1 (9600 baud) ---
+[Nextion HMI Ekranı]
+```
+
+**Sensör tarafı:** `CAN_MSG_ID = 0x200` (`CAN_ID_MOTOR_STATUS` ile eşleştirildi).
+Frame formatı: `data[0:1]` = RPM (big-endian uint16), `data[2:7]` = 0x00, DLC=8,
+100 ms periyot (10 Hz). `data[7]` bit0 (isRunning) = 0 bırakıldı — motor sürücüsü
+entegre değil (`MOTOR_DRIVER_PRESENT=0`), bu bit VCU karar mantığını ETKİLEMEZ.
+
+**AKS tarafı:** `CanManager::processRxMessages()` → `handleMotorStatus()` →
+`CanParse::parseMotorStatus()` → `TEL_motorRpm` → `rpmToSpeedKmhX10()`
+(`VehicleParams.h`: D=0.56 m, GR=1.0, direkt tahrik) → `TEL_speedKmhX10` →
+`vTask_HMI_Display` (EMA filtre) → Nextion `speed.val=...`. Zincir doğrulandı,
+native test eklendi (`test_hall_sensor_rpm850_parse_and_speed` vb.).
+

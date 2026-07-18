@@ -18,6 +18,12 @@ extern void test_motor_status_motor_running_flag(void);
 extern void test_motor_status_motor_stopped_flag(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
 
+// Hall-effect hız sensörü entegrasyon testleri (esp32-canbus-speed-sensor)
+extern void test_hall_sensor_rpm850_parse_and_speed(void);
+extern void test_hall_sensor_rpm0_speed_zero(void);
+extern void test_hall_sensor_rpm3000_speed_clamp(void);
+extern void test_hall_sensor_is_running_false_does_not_affect_vcu(void);
+
 // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC1/SoC2)
 // Tanımlar test_bms_config_parse.cpp içindedir.
 extern void test_e000_dlc_too_short(void);
@@ -116,6 +122,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_motor_status_motor_running_flag);
     RUN_TEST(test_motor_status_motor_stopped_flag);
     RUN_TEST(test_motor_status_invalid_does_not_modify_out);
+
+    // Hall-effect hız sensörü entegrasyon testleri
+    RUN_TEST(test_hall_sensor_rpm850_parse_and_speed);
+    RUN_TEST(test_hall_sensor_rpm0_speed_zero);
+    RUN_TEST(test_hall_sensor_rpm3000_speed_clamp);
+    RUN_TEST(test_hall_sensor_is_running_false_does_not_affect_vcu);
 
     // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC)
     RUN_TEST(test_e000_dlc_too_short);

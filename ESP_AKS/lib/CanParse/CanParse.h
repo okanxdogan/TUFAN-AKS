@@ -36,7 +36,11 @@ struct ChargerCommand {
 
 namespace CanParse {
 
-// Motor status frame (CAN ID 0x123, 11-bit STD — MSTest/mock_motor ile doğrulandı).
+// Motor status frame (CAN ID 0x200 = CAN_ID_MOTOR_STATUS, 11-bit STD).
+// Kaynak: motor sürücüsü (MOTOR_DRIVER_PRESENT=1 olduğunda) VEYA
+// hall-effect hız sensörü ünitesi (esp32-canbus-speed-sensor, yalnızca
+// data[0:1]=RPM doldurur, data[2:7]=0x00 — bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md).
 // DLC ≥ 8 olmalı; aksi halde false döner ve `out` değiştirilmez.
 //   data[0:1] = RPM (big-endian uint16)
 //   data[2:3] = Voltaj (big-endian uint16, raw * 0.1 = V)
