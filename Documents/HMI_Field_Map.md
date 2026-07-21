@@ -137,11 +137,23 @@ The 24-cell BMS panel has its own rotation
 
 ## Command Inputs
 
-Touch command IDs currently recognized by firmware:
+Touch commands are 3-byte frames `0x5A <CMD> <~CMD>` (header, command, bitwise-NOT
+checksum) parsed by `DisplayHMI::readTouchCommand`. IDs currently recognized by firmware:
 
-| Command ID | Meaning |
-| --- | --- |
-| `1` | `START` |
-| `2` | `RESET` |
-| `3` | `EMERGENCY_STOP` |
-| `4` | `DRIVE_ENABLE` |
+| Command ID | Meaning | Full frame (header CMD ~CMD) |
+| --- | --- | --- |
+| `1` | `START` | `0x5A 0x01 0xFE` |
+| `2` | `RESET` | `0x5A 0x02 0xFD` |
+| `3` | `EMERGENCY_STOP` | `0x5A 0x03 0xFC` |
+| `4` | `DRIVE_ENABLE` | `0x5A 0x04 0xFB` |
+| `5` | `HEADLIGHT_TOGGLE` (far aç/kapa) — **only when `RELAY_ROLES_ASSIGNED=1`** | `0x5A 0x05 0xFA` |
+
+### `HEADLIGHT_TOGGLE` (command 5) — contract
+
+The screen owner adds a button that sends the frame `0x5A 0x05 0xFA` on each press.
+Firmware toggles the headlight relay (OUT2) on every valid frame: boot OFF,
+BMS-independent, preserved through FAULT/E-STOP/READY (out-of-bank channel). See
+`VcuLogic::toggleHeadlight` and `RELAY_CH_HEADLIGHT` in
+[RELAY_CHANNEL_TABLE.md](RELAY_CHANNEL_TABLE.md). Command 5 is the first free ID
+(1-4 are START/RESET/EMERGENCY_STOP/DRIVE_ENABLE). Headlight-state feedback *back*
+to the screen is a separate, future task and is **not** implemented here.

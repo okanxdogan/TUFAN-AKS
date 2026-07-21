@@ -258,9 +258,149 @@ void test_roles_allOff_does_not_touch_flasher_channel(void) {
             TEST_ASSERT_FALSE(g_fake_relay_channelState[ch]);
         }
     }
-    // Maske sözleşmesi: flaşör dışarıda, S1+S2 içeride (8.2.a.vi / 6.e.ii).
-    TEST_ASSERT_EQUAL_HEX16(0x1FF, RELAY_CONTACTOR_BANK_MASK);
-    TEST_ASSERT_EQUAL_HEX16(0x0FF, RELAY_DRIVE_BANK_MASK);
+    // Maske sözleşmesi: flaşör+fan+far dışarıda, S1+S2+HV- içeride
+    // (8.2.a.vi / 6.e.ii / B3 7.a-b / B2 9.19.c).
+    TEST_ASSERT_EQUAL_HEX16(0x17B, RELAY_CONTACTOR_BANK_MASK);
+    TEST_ASSERT_EQUAL_HEX16(0x07B, RELAY_DRIVE_BANK_MASK);
+}
+
+// ---------------------------------------------------------------------------
+// (e) Soğutma fanı — şartname B3 7.a-b (flaşörün ikizi, FAN_ON=40 / FAN_OFF=35).
+// ---------------------------------------------------------------------------
+// 39 °C: boot OFF durumu korunur (ON eşiği 40'ın altı, OFF eşiği 35'in üstü).
+void test_roles_fan_stays_off_at_39(void) {
+    primeIdle();
+    setTemp(39);
+    VcuLogic::run();
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_FAN]);
+}
+
+// 40 °C: fan ON.
+void test_roles_fan_on_at_40(void) {
+    primeIdle();
+    setTemp(40);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+}
+
+// 40 → ON, 38 → HÂLÂ ON (histerezis bandı 36..39 durumu korur).
+void test_roles_fan_stays_on_at_38(void) {
+    primeIdle();
+    setTemp(40);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+
+    setTemp(38);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+}
+
+// 40 → ON, 35 → OFF (FAN_OFF_TEMP_C, <= semantiği).
+void test_roles_fan_off_at_35(void) {
+    primeIdle();
+    setTemp(40);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+
+    setTemp(35);
+    VcuLogic::run();
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_FAN]);
+}
+
+// bmsDataValid=false iken fan durumuna DOKUNULMAZ (bayat veriyle durdurma yok).
+void test_roles_fan_unchanged_when_bms_invalid(void) {
+    primeIdle();
+    setTemp(40);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsDataValid = false;
+    d.TEL_bmsTempHighestC = 0;  // bayat düşük değer — fanı KAPATMAMALI
+    VcuLogic::setTelemetryData(d);
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+}
+
+// FAULT'ta fan + flaşör birlikte ON kalır: 70 °C → ikisi de yanar → kritik →
+// FAULT → allOff bank maskesini açar ama fan+flaşör (bank dışı) yanık kalır
+// (sıcak batarya soğutması + uyarı kesilmez).
+void test_roles_fan_and_flasher_on_in_fault(void) {
+    primeIdle();
+    setTemp(70);
+    VcuLogic::run();  // fan+flaşör ON + kritik → FAULT'a geçiş
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FLASHER]);
+
+    VcuLogic::run();  // t=20 → allOff (bank açılır)
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_count > 0);
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FAN]);      // yanık
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_FLASHER]);  // yanık
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_S2_DRIVE]); // açık
+}
+
+// ---------------------------------------------------------------------------
+// (f) Far — şartname B2 9.19.c (ekran butonu toggle; BMS'ten bağımsız).
+// ---------------------------------------------------------------------------
+// Boot OFF → toggle ON → toggle OFF.
+void test_roles_headlight_toggle_off_on_off(void) {
+    primeIdle();
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // boot OFF
+
+    VcuLogic::toggleHeadlight();
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+
+    VcuLogic::toggleHeadlight();
+    VcuLogic::run();
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+}
+
+// FAULT'ta far KORUNUR: far ON iken FAULT'a düş, allOff far'ı söndürmez.
+void test_roles_headlight_preserved_in_fault(void) {
+    primeIdle();
+    VcuLogic::toggleHeadlight();
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+
+    setTemp(70);
+    VcuLogic::run();  // → FAULT
+    VcuLogic::run();  // t=20 → allOff
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_count > 0);
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // korunur
+}
+
+// READY girişi far'ı DEĞİŞTİRMEZ: far ON iken START→READY (sürüş bankı
+// kapatılır), far bank dışı olduğundan yanık kalır.
+void test_roles_headlight_unchanged_on_ready_entry(void) {
+    primeIdle();
+    VcuLogic::run();  // ilk IDLE tick
+    VcuLogic::toggleHeadlight();
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // değişmez
+}
+
+// BMS bayatken far toggle YİNE çalışır (BMS verisinden bağımsız).
+void test_roles_headlight_toggle_works_when_bms_stale(void) {
+    primeIdle();
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_bmsDataValid = false;
+    d.TEL_bmsTimeoutActive = true;
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::toggleHeadlight();
+    VcuLogic::run();
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 }
 
 void setUp(void) {}
@@ -285,6 +425,18 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_roles_charger_stale_opens_s1_in_idle);
     RUN_TEST(test_roles_ready_closes_drive_bank_keeps_s1_open);
     RUN_TEST(test_roles_fault_opens_s1_s2_and_bank);
+
+    RUN_TEST(test_roles_fan_stays_off_at_39);
+    RUN_TEST(test_roles_fan_on_at_40);
+    RUN_TEST(test_roles_fan_stays_on_at_38);
+    RUN_TEST(test_roles_fan_off_at_35);
+    RUN_TEST(test_roles_fan_unchanged_when_bms_invalid);
+    RUN_TEST(test_roles_fan_and_flasher_on_in_fault);
+
+    RUN_TEST(test_roles_headlight_toggle_off_on_off);
+    RUN_TEST(test_roles_headlight_preserved_in_fault);
+    RUN_TEST(test_roles_headlight_unchanged_on_ready_entry);
+    RUN_TEST(test_roles_headlight_toggle_works_when_bms_stale);
 
     RUN_TEST(test_roles_allOff_does_not_touch_flasher_channel);
 
