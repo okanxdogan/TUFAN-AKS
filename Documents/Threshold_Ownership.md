@@ -43,6 +43,16 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 329 | 1300 (13.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` (READY girişini ve reset'i de bloklar) | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 330 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (deşarjda −0.1…−1.5 A gözlendi) | ✅ CANLI |
 | `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 331 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
+| `FAN_ON_TEMP_C` | — | 40 — **CONFIG**, hücre datasheet + ekip onayı bekliyor (şartname B3 7.a-b) | °C | `VcuLogic::fanDesiredState` (yalnız `RELAY_ROLES_ASSIGNED=1`; >= semantiği → soğutma fanı OUT7 relay'i) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI (0xE001 byte[6:7]) | ⚙️ AKTÜATÖR (fan) — FAULT/kontaktör DEĞİL |
+| `FAN_OFF_TEMP_C` | — | 35 — **CONFIG**, hücre datasheet + ekip onayı bekliyor (şartname B3 7.a-b) | °C | `VcuLogic::fanDesiredState` (<= semantiği → fanı kapatır; histerezis) | `TEL_bmsTempHighestC` | ✅ DOĞRULANDI | ⚙️ AKTÜATÖR (fan) — FAULT/kontaktör DEĞİL |
+> **FAN EŞİKLERİ (şartname B3 7.a-b):** `FAN_ON_TEMP_C=40` / `FAN_OFF_TEMP_C=35`
+> bir FAULT/kontaktör kararı DEĞİL, yalnız soğutma fanı relay'ini (OUT7, bank
+> DIŞI) histerezisle sürer (flaşörün ikizi — bkz. `VcuLogic.h::fanDesiredState`).
+> Derleme-zamanı kilitleri (`SystemConfig.h` static_assert): `FAN_ON_TEMP_C >
+> FAN_OFF_TEMP_C` (histerezis) ve `FAN_ON_TEMP_C < BMS_WARN_MAX_TEMP_C` (fan,
+> uyarı flaşöründen ÖNCE devreye girer). İkisi de **CONFIG** — hücre datasheet +
+> ekip onayı bekliyor.
+
 > **ŞARTNAME KİLİDİ (sıcaklık, Bölüm 3 6.e.iii):** `BMS_WARN_MAX_TEMP_C=55` /
 > `BMS_CRITICAL_MAX_TEMP_C=70` şartname idealinin birebir kendisidir ve
 > derleme-zamanı kilitlidir: `SystemConfig.h` içindeki `static_assert`

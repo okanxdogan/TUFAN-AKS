@@ -475,6 +475,14 @@ void vTask_HMI_Display(void *pvParameters) {
                 ESP_LOGI(TAG, "HMI command: DRIVE ENABLE request");
                 VcuLogic::postEvent(VcuLogic::VcuEvent::DRIVE_ENABLE);
                 break;
+#if RELAY_ROLES_ASSIGNED
+            case HMI_CMD_HEADLIGHT_TOGGLE:
+                // Far toggle (şartname B2 9.19.c) — yalnız roller atandığında.
+                // BMS'ten bağımsız; VcuLogic run()'da işlenip röle sürülür.
+                ESP_LOGI(TAG, "HMI command: HEADLIGHT toggle");
+                VcuLogic::toggleHeadlight();
+                break;
+#endif
             default:
                 ESP_LOGW(TAG, "Unknown HMI command received: %d", HMI_incomingCommand);
                 break;

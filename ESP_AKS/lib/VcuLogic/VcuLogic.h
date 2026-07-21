@@ -102,6 +102,37 @@ inline bool flasherDesiredState(bool currentOn, bool bmsDataValid,
         return false;
     return currentOn;
 }
+
+// Soğutma fanı (şartname B3 7.a-b) durum kararı — flaşörün İKİZİ, SAF:
+// mevcut fan durumu + taze telemetriden yeni istenen durumu döndürür.
+// Histerezisli (FAN_ON_TEMP_C=40 / FAN_OFF_TEMP_C=35):
+//   * sıcaklık >= FAN_ON_TEMP_C   → ON
+//   * sıcaklık <= FAN_OFF_TEMP_C  → OFF
+//   * arada (36..39)              → mevcut durum korunur
+// BAYAT VERİ KURALI (EK B GÜVEN): bmsDataValid=false veya BMS timeout iken
+// fana DOKUNULMAZ — karar yalnızca doğrulanmış TEL_bmsTempHighestC'den
+// türetilir (bayat veriyle ne çalıştırma ne durdurma). Fan mantığı FAULT/
+// E-STOP dahil her tick çalışır: fan kanalı bank maskesi DIŞINDA olduğundan
+// güvenlik açması (allOff) fanı söndürmez (sıcak bataryanın soğutması kesilmez).
+inline bool fanDesiredState(bool currentOn, bool bmsDataValid,
+                            bool bmsTimeoutActive, int8_t bmsTempHighestC) {
+    if (!bmsDataValid || bmsTimeoutActive)
+        return currentOn;
+    if (bmsTempHighestC >= FAN_ON_TEMP_C)
+        return true;
+    if (bmsTempHighestC <= FAN_OFF_TEMP_C)
+        return false;
+    return currentOn;
+}
+
+// Far (şartname B2 9.19.c) durum kararı — SAF: her geçerli ekran komutunda
+// TOGGLE. BMS verisinden tamamen BAĞIMSIZ (yalnız mevcut duruma bakar); fan/
+// flaşörden farklı olarak sıcaklık/telemetri okumaz. Far kanalı bank maskesi
+// DIŞINDA olduğundan FAULT/E-STOP/READY girişindeki allOff/allOn far durumunu
+// DEĞİŞTİRMEZ; boot'ta OFF (s_headlightOn=false).
+inline bool headlightDesiredState(bool currentOn) {
+    return !currentOn;
+}
 #endif  // RELAY_ROLES_ASSIGNED
 
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
@@ -232,6 +263,15 @@ void run();
 void postEvent(VcuEvent event);
 VcuState getState();
 void setTelemetryData(const TelemetryData& TEL_data);
+
+#if RELAY_ROLES_ASSIGNED
+// Far toggle isteği (şartname B2 9.19.c). Ekran HMI_CMD_HEADLIGHT_TOGGLE
+// komutunu gönderince main.cpp bunu çağırır (HMI task bağlamı). E-STOP/FAULT
+// bypass deseniyle aynı: yalnız atomic "toggle beklemede" bayrağını set eder;
+// gerçek TOGGLE + röle sürüşü run() içinde (VCU task, tek röle yazarı) yapılır.
+// Böylece far durumu FAULT/E-STOP dahil her durumda korunur (bank dışı kanal).
+void toggleHeadlight();
+#endif
 
 // Torque komut yolu (motor sürücüsü entegrasyon iskeleti). E-STOP/FAULT
 // güvenli kapanış sırasında VcuLogic torque(0) ister; bu isteği donanıma

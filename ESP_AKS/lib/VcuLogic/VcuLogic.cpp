@@ -70,6 +70,18 @@ static bool s_flasherOn = false;
 // durumuna göre yazar), 0/1 = son setRelay komutu. Kenar-tetikli: her tick
 // SPI yazmamak için yalnız istenen durum değişince setRelay çağrılır.
 static int8_t s_s1LastCmdInIdle = -1;
+
+// Fan gölge durumu (şartname B3 7.a-b) — flaşörün ikizi. Karar saf
+// fanDesiredState'te (VcuLogic.h); FAULT/E-STOP dahil HER tick çalışır
+// (fan kanalı bank maskesi DIŞINDA → allOff dokunmaz). Kenar-tetikli setRelay.
+static bool s_fanOn = false;
+
+// Far gölge durumu (şartname B2 9.19.c) — boot'ta OFF. Ekran komutuyla toggle
+// edilir; BMS'ten bağımsız. s_headlightTogglePending, toggleHeadlight() (HMI
+// task) tarafından set edilir ve run() (VCU task) tarafından tüketilir —
+// E-STOP/FAULT atomic-bypass deseniyle aynı (kuyruk yok, düşen komut tuzağı yok).
+static bool s_headlightOn = false;
+static std::atomic<bool> s_headlightTogglePending{false};
 #endif
 
 // ---------------------------------------------------------------------------
@@ -138,6 +150,30 @@ void run() {
                      (int)VCU_snap.TEL_bmsTempHighestC);
             s_flasherOn = desired;
         }
+
+        // Soğutma fanı (şartname B3 7.a-b) — flaşörle AYNI desen ve AYNI
+        // snapshot: 40 °C'de ON, 35 °C'ye inince OFF; bayat veri/BMS timeout'ta
+        // dokunma. FAULT/E-STOP dahil her tick çalışır (bank dışı kanal).
+        const bool fanDesired = fanDesiredState(
+            s_fanOn, VCU_snap.TEL_bmsDataValid,
+            VCU_snap.TEL_bmsTimeoutActive, VCU_snap.TEL_bmsTempHighestC);
+        if (fanDesired != s_fanOn) {
+            s_relays->setRelay(RELAY_CH_FAN, fanDesired);
+            ESP_LOGI(TAG, "Sogutma fani %s (temp=%d C)",
+                     fanDesired ? "ACILDI" : "KAPANDI",
+                     (int)VCU_snap.TEL_bmsTempHighestC);
+            s_fanOn = fanDesired;
+        }
+    }
+
+    // Far (şartname B2 9.19.c): ekran butonundan gelen toggle isteğini işle.
+    // BMS'ten bağımsız; her geçerli komutta durum tersine döner. Far kanalı
+    // bank maskesi DIŞINDA → allOff/allOn (FAULT/E-STOP/READY) fari söndürmez.
+    if (s_headlightTogglePending.exchange(false, std::memory_order_acquire)) {
+        const bool hlDesired = headlightDesiredState(s_headlightOn);
+        s_relays->setRelay(RELAY_CH_HEADLIGHT, hlDesired);
+        ESP_LOGI(TAG, "Far %s (ekran butonu)", hlDesired ? "ACILDI" : "KAPANDI");
+        s_headlightOn = hlDesired;
     }
 #endif
 
@@ -354,6 +390,15 @@ void setTelemetryData(const TelemetryData& TEL_data) {
 void setTorqueSink(TorqueSink sink) {
     s_torqueSink = sink;
 }
+
+#if RELAY_ROLES_ASSIGNED
+void toggleHeadlight() {
+    // HMI task bağlamı: yalnız atomic bayrağı set et (E-STOP/FAULT bypass
+    // deseni). Röle sürüşü + gölge-durum güncellemesi run()'da (VCU task,
+    // tek röle yazarı) yapılır — R3 iş parçacığı sözleşmesi korunur.
+    s_headlightTogglePending.store(true, std::memory_order_release);
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // State handlers
@@ -589,6 +634,9 @@ void resetForTest() {
 #if RELAY_ROLES_ASSIGNED
     s_flasherOn = false;
     s_s1LastCmdInIdle = -1;
+    s_fanOn = false;
+    s_headlightOn = false;
+    s_headlightTogglePending.store(false, std::memory_order_relaxed);
 #endif
 
     // Olay kuyruğunu (queue) boşalt

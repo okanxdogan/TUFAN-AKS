@@ -181,6 +181,11 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define HMI_CMD_RESET 2
 #define HMI_CMD_EMERGENCY_STOP 3
 #define HMI_CMD_DRIVE_ENABLE 4
+// Far toggle (şartname B2 9.19.c): 1..4 START/RESET/EMERGENCY_STOP/DRIVE_ENABLE
+// dolu → çakışmayan ilk boş değer 5. Ekran 0x5A CMD ~CMD çerçevesiyle gönderir
+// (headlight: 0x5A 0x05 0xFA). Yalnız RELAY_ROLES_ASSIGNED=1 iken işlenir
+// (bkz. main.cpp HMI switch + VcuLogic::toggleHeadlight, HMI_Field_Map.md).
+#define HMI_CMD_HEADLIGHT_TOGGLE 5
 
 // --- LoRa E22-400T30D-V2 (SX1268, UART & Kontrol) ---
 // Pin-uyumlu E32-433T30D yerine geçti; pin atamaları DEĞİŞMEDİ. Config
@@ -267,13 +272,21 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 //   (vi)  güvenlik probleminde İKİSİ DE AÇIK
 // Flaşör (şartname 6.e.ii): sıcaklık uyarısına bağlı sesli+ışıklı ikaz —
 // kontaktör DEĞİLDİR, bank maskesinin DIŞINDA tutulur ki allOff (güvenlik
-// açması) uyarı flaşörünü SÖNDÜRMESİN.
+// açması) uyarı flaşörünü SÖNDÜRMESİN. Aynı "bank DIŞI" desen fan (soğutma,
+// şartname B3 7.a-b) ve far (şartname B2 9.19.c) için de geçerlidir.
 //
-// Kanal atamaları (yazılım tarafı sabit; fiziksel yük eşlemesi donanım
-// ekibi teyidi BEKLİYOR — bkz. RELAY_ROLES_ASSIGNED):
-#define RELAY_CH_S2_DRIVE 0   // S2 — sürüş hattı kontaktörü (kanal 1-7 sürüş bankının parçası)
-#define RELAY_CH_S1_CHARGE 8  // S1 — şarj hattı kontaktörü
-#define RELAY_CH_FLASHER 9    // Uyarı flaşörü (sesli+ışıklı, şartname 6.e.ii)
+// Kanal atamaları (donanım ekibi onaylı — bkz. RELAY_CHANNEL_TABLE.md;
+// fiziksel yük eşlemesi RELAY_ROLES_ASSIGNED bayrağının arkasında):
+//   OUT0 = S2 sürüş kontaktörü, OUT1 = HV- kontaktörü (S2 ile birlikte sürüş
+//   bankı), OUT2 = Far (bank DIŞI, ekran butonuyla toggle), OUT3-6 = boş/yedek,
+//   OUT7 = Soğutma fanı (bank DIŞI, sıcaklığa göre otomatik), OUT8 = S1 şarj
+//   kontaktörü, OUT9 = Uyarı flaşörü (bank DIŞI).
+#define RELAY_CH_S2_DRIVE 0   // OUT0 — S2 sürüş hattı kontaktörü (sürüş bankı üyesi)
+#define RELAY_CH_HVNEG 1      // OUT1 — HV- kontaktörü (sürüş bankı üyesi; S2 ile açılır/kapanır)
+#define RELAY_CH_HEADLIGHT 2  // OUT2 — Far (bank DIŞI, ekran butonuyla toggle; şartname B2 9.19.c)
+#define RELAY_CH_FAN 7        // OUT7 — Soğutma fanı (bank DIŞI, sıcaklığa göre otomatik; şartname B3 7.a-b)
+#define RELAY_CH_S1_CHARGE 8  // OUT8 — S1 şarj hattı kontaktörü
+#define RELAY_CH_FLASHER 9    // OUT9 — Uyarı flaşörü (sesli+ışıklı, şartname 6.e.ii)
 
 // Kanal-yük eşlemesi (yukarıdaki S1/S2/flaşör rolleri) donanım ekibiyle
 // HENÜZ teyit edilmedi. 0 (varsayılan) iken rol mantığının TAMAMI (flaşör,
@@ -290,26 +303,41 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 // birebir aynı kalır (flaşör kanalı diye bir ayrım henüz YOK).
 #define RELAY_CONTACTOR_BANK_MASK ((1u << RELAY_TOTAL_CHANNELS) - 1u)  // 0x3FF
 #else
-// Roller atandı: kontaktör bankı = flaşör HARİÇ tüm kanallar (S1 + S2 +
-// sürüş bankı 1-7). allOff bu maskeyi açar → şartname 8.2.a.vi (güvenlik
-// probleminde S1 ve S2 dahil hepsi açılır) sağlanır, flaşör kanalının son
-// yazılan durumu shadow'da KORUNUR (uyarı sönmez).
-#define RELAY_CONTACTOR_BANK_MASK \
-    (((1u << RELAY_TOTAL_CHANNELS) - 1u) & ~(1u << RELAY_CH_FLASHER))  // 0x1FF
-// Sürüş hattı bankı = S2 (kanal 0) + kanal 1-7. S1 bu maskenin BİLİNÇLİ
-// olarak DIŞINDADIR: READY girişi yalnız bu maskeyi kapatır, S1 açık kalır
-// (şartname 8.2.a.vii). S1, RELAY_CONTACTOR_BANK_MASK'ın İÇİNDEDİR ki
-// allOff güvenlik açması S1'i de açsın (8.2.a.vi).
+// Roller atandı: kontaktör bankı = flaşör + fan + far HARİÇ tüm kanallar
+// (S1 + S2 + HV- + boş yedekler 3-6). allOff bu maskeyi açar → şartname
+// 8.2.a.vi (güvenlik probleminde S1 ve S2 dahil hepsi açılır) sağlanır;
+// flaşör (uyarı), fan (soğutma) ve far kanallarının son yazılan durumu
+// shadow'da KORUNUR — güvenlik açması bunları söndürmez (sıcak batarya
+// soğutması ve uyarı ikazı kesilmez, far sürücü kontrolünde kalır).
+#define RELAY_CONTACTOR_BANK_MASK                     \
+    (((1u << RELAY_TOTAL_CHANNELS) - 1u)              \
+     & ~(1u << RELAY_CH_FLASHER)                      \
+     & ~(1u << RELAY_CH_FAN)                          \
+     & ~(1u << RELAY_CH_HEADLIGHT))  // 0x17B
+// Sürüş hattı bankı = S2 (kanal 0) + HV- (kanal 1) + boş yedekler 3-6. S1,
+// fan ve far bu maskenin DIŞINDADIR (far/fan zaten kontaktör bankının da
+// dışında; S1 bilinçli olarak dışarıda): READY girişi yalnız bu maskeyi
+// kapatır, S1 açık kalır (şartname 8.2.a.vii). S1, RELAY_CONTACTOR_BANK_
+// MASK'ın İÇİNDEDİR ki allOff güvenlik açması S1'i de açsın (8.2.a.vi).
 #define RELAY_DRIVE_BANK_MASK \
-    (RELAY_CONTACTOR_BANK_MASK & ~(1u << RELAY_CH_S1_CHARGE))  // 0x0FF
+    (RELAY_CONTACTOR_BANK_MASK & ~(1u << RELAY_CH_S1_CHARGE))  // 0x07B
 #ifdef __cplusplus
 static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_FLASHER)) == 0,
               "Flasor kanali kontaktor bank maskesinin DISINDA olmali — "
               "allOff uyari flasorunu sondurmemeli (sartname 6.e.ii).");
+static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_FAN)) == 0 &&
+                  (RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_HEADLIGHT)) == 0,
+              "Fan ve far kanallari kontaktor bank maskesinin DISINDA olmali — "
+              "allOff (guvenlik acmasi/READY) sogutma fanini ve fari "
+              "sondurmemeli (sartname B3 7.a-b / B2 9.19.c).");
 static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S1_CHARGE)) != 0 &&
                   (RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S2_DRIVE)) != 0,
               "S1 ve S2 kontaktor bank maskesinin ICINDE olmali — guvenlik "
               "acmasi (allOff) ikisini de acmali (sartname 8.2.a.vi).");
+static_assert((RELAY_DRIVE_BANK_MASK & (1u << RELAY_CH_S2_DRIVE)) != 0 &&
+                  (RELAY_DRIVE_BANK_MASK & (1u << RELAY_CH_HVNEG)) != 0,
+              "S2 ve HV- (HVNEG) surus bankinin (RELAY_DRIVE_BANK_MASK) uyesi "
+              "olmali — READY girisinde birlikte kapanir, allOff birlikte acar.");
 #endif
 #endif  // RELAY_ROLES_ASSIGNED
 
@@ -533,6 +561,28 @@ static_assert(BMS_CRITICAL_MAX_TEMP_C - BMS_WARN_MAX_TEMP_C == 15,
               "Sartname Bolum 3, 6.e.iii: uyari (55) ile kapanma (70) arasinda "
               "15 C sabit aralik korunmali — esiklerden biri tek tarafli "
               "degistirilemez.");
+#endif
+
+// --- Soğutma Fanı Sıcaklık Eşikleri (şartname B3 7.a-b) ---
+// Fan, doğrulanmış en yüksek BMS hücre sıcaklığından (TEL_bmsTempHighestC)
+// histerezisli sürülür (flaşörün ikizi, bkz. VcuLogic.h::fanDesiredState):
+//   * sıcaklık >= FAN_ON_TEMP_C   → ON
+//   * sıcaklık <= FAN_OFF_TEMP_C  → OFF
+//   * arada (36..39)              → mevcut durum korunur
+// Yalnız RELAY_ROLES_ASSIGNED=1 iken derlenen fan mantığı kullanır. Fan,
+// uyarı flaşöründen (55 °C) ÖNCE devreye girmeli ki batarya uyarı bandına
+// gelmeden soğutulsun — aşağıdaki static_assert bunu kilitler.
+// CONFIG — hücre datasheet + ekip onayı bekliyor (şartname B3 7.a-b).
+#define FAN_ON_TEMP_C 40
+#define FAN_OFF_TEMP_C 35
+#ifdef __cplusplus
+static_assert(FAN_ON_TEMP_C > FAN_OFF_TEMP_C,
+              "Fan ON esigi OFF esiginden buyuk olmali (histerezis) — aksi "
+              "halde esik sinirinda ON/OFF cirpinmasi olur.");
+static_assert(FAN_ON_TEMP_C < BMS_WARN_MAX_TEMP_C,
+              "Fan uyari flasorundan (BMS_WARN_MAX_TEMP_C=55) ONCE devreye "
+              "girmeli — batarya uyari bandina gelmeden sogutulmali "
+              "(sartname B3 7.a-b).");
 #endif
 // Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
 // TEL_bmsCurrentCentiA ile AYNI birim (raw 0.1A × 10 = centi-A). Böylece
