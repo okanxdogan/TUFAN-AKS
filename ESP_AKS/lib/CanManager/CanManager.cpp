@@ -5,6 +5,20 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+// G2 derleme-zamanı emniyeti: MOTOR_DRIVER_PRESENT=1 yapılıp motor torque CAN
+// frame formatı (ID/DLC/byte düzeni) HENÜZ doğrulanmadan (MOTOR_TORQUE_FRAME_
+// DEFINED tanımlanmadan) biri yanlışlıkla boş/uydurma bir frame göndermeye
+// başlamasın diye buradaki derleme BİLEREK kırılır. Entegrasyon günü: motor
+// sürücü spec'inden formatı DOĞRULA (UYDURMA YOK), aşağıdaki
+// drainTorqueQueue() içindeki TODO'yu gerçek frame ile doldur, SONRA
+// SystemConfig.h'ye `#define MOTOR_TORQUE_FRAME_DEFINED 1` ekle. Bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md madde 3.
+#if MOTOR_DRIVER_PRESENT
+#ifndef MOTOR_TORQUE_FRAME_DEFINED
+#error "MOTOR_DRIVER_PRESENT=1 ama motor torque CAN frame formati henuz dogrulanmadi (MOTOR_TORQUE_FRAME_DEFINED tanimli degil). CanManager.cpp::drainTorqueQueue() icindeki TODO'yu gercek, DOGRULANMIS frame ile doldurmadan bu bayragi acmayin — bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md madde 3."
+#endif
+#endif
+
 static constexpr const char* TAG = "CanManager";
 
 CanManager::CanManager(gpio_num_t tx_pin, gpio_num_t rx_pin)
@@ -18,6 +32,17 @@ void CanManager::setEventCallback(CAN_EventCallback CAN_callback,
     CAN_eventContext = CAN_context;
 }
 
+// Boot'ta 500/125/250 kbps'i sırayla dener (her hızda en fazla 1 sn
+// twai_receive bekler). Üçü de başarısız olursa 500 kbps'e fallback yapar —
+// ANCAK bu fallback ARTIK KALICI DEĞİLDİR (eskiden bir daha asla yeniden
+// denenmezdi; BMS boot anında sessizse veya bus gerçekte 125/250 kbps ise AKS
+// kalıcı sağır kalıyordu, bkz. Documents/BRING_UP_CHECKLIST.md bölüm 4).
+// Auto-detect burada başarılı olursa (veya sonradan bir retry bitrate
+// bulursa) CAN_bitrateVerified=true olur. Başarısız olup fallback'e
+// düşülürse CAN_bitrateVerified=false kalır ve CAN task döngüsü
+// (retryAutobaudIfNeeded, bkz. AutobaudPolicy.h) bitrate doğrulanana veya
+// pasif olarak ilk geçerli frame alınana kadar CAN_AUTOBAUD_RETRY_INTERVAL_MS
+// aralıklarla yeniden dener.
 bool CanManager::begin() {
     if (isInitialized)
         return true;
@@ -51,6 +76,8 @@ bool CanManager::begin() {
                     ESP_LOGI(TAG, "CAN bitrate BASARIYLA bulundu: %s", t_names[i]);
                     t_config = t_configs[i];
                     baudFound = true;
+                    CAN_bitrateVerified = true;
+                    CAN_hasReceivedAnyFrame = true;
                     break;
                 }
                 twai_stop();
@@ -77,35 +104,128 @@ bool CanManager::begin() {
             s_mutex = nullptr;
             return false;
         }
+
+        // CAN_bitrateVerified=false (varsayılan) — retryAutobaudIfNeeded bu
+        // andan CAN_AUTOBAUD_RETRY_INTERVAL_MS sonra ilk yeniden denemeyi
+        // tetikleyecek.
+        CAN_lastAutobaudAttemptTick = xTaskGetTickCount();
     }
 
     isInitialized = true;
     return true;
 }
 
+// Bitrate henüz doğrulanmamışken (CAN_bitrateVerified=false) VE hiçbir
+// geçerli frame alınmamışken (CAN_hasReceivedAnyFrame=false) — yani yalnızca
+// pre-reception durumda — CAN_AUTOBAUD_RETRY_INTERVAL_MS'te bir TEK hız
+// (rotasyonla) yeniden denenir. 3 hızın tümü tek tikte denenmez (task
+// döngüsünü 3×1 sn kilitlemesin diye durum makinesine bölünmüştür — her
+// çağrıda yalnızca bir sonraki hız denenir).
+//
+// Re-detect penceresi boyunca isInitialized=false tutulur: processRxMessages
+// (bu fonksiyondan hemen sonra erken döner) ve sendTorqueCommand (VCU
+// task'ten) bu sürede güvenle no-op kalır — yarım kurulu driver'a twai_*
+// çağrısı GİTMEZ. Post-reception bayatlama (BmsFreshness/TEL_bmsTimeoutActive)
+// bu mekanizmadan TAMAMEN bağımsızdır, buraya DOKUNULMAZ.
+void CanManager::retryAutobaudIfNeeded() {
+    if (s_mutex == nullptr)
+        return;
+
+    const TickType_t CAN_nowTick = xTaskGetTickCount();
+
+    if (!autobaud_should_retry(CAN_bitrateVerified, CAN_hasReceivedAnyFrame,
+                               (uint32_t)CAN_nowTick,
+                               (uint32_t)CAN_lastAutobaudAttemptTick,
+                               pdMS_TO_TICKS(CAN_AUTOBAUD_RETRY_INTERVAL_MS))) {
+        if (!CAN_bitrateVerified && !CAN_hasReceivedAnyFrame &&
+            (TickType_t)(CAN_nowTick - CAN_lastAutobaudWarnLogTick) >=
+                pdMS_TO_TICKS(CAN_AUTOBAUD_WARN_LOG_INTERVAL_MS)) {
+            ESP_LOGW(TAG, "CAN bitrate hala dogrulanamadi (fallback 500kbps) "
+                          "— retry devam ediyor");
+            CAN_lastAutobaudWarnLogTick = CAN_nowTick;
+        }
+        return;
+    }
+
+    CAN_lastAutobaudAttemptTick = CAN_nowTick;
+
+    const twai_timing_config_t t_configs[] = {
+        TWAI_TIMING_CONFIG_500KBITS(),
+        TWAI_TIMING_CONFIG_125KBITS(),
+        TWAI_TIMING_CONFIG_250KBITS()
+    };
+    const char* t_names[] = {"500kbps", "125kbps", "250kbps"};
+
+    const uint8_t CAN_candidateIdx = CAN_autobaudRetryBaudIndex;
+    CAN_autobaudRetryBaudIndex =
+        (uint8_t)((CAN_autobaudRetryBaudIndex + 1) % 3);
+
+    // G2 benzeri güvenlik: yarım kurulu driver'a twai_* çağrısı gitmesin diye
+    // isInitialized'ı re-detect penceresi boyunca false tut.
+    isInitialized = false;
+
+    twai_stop();
+    twai_driver_uninstall();
+
+    bool CAN_found = false;
+    if (twai_driver_install(&g_config, &t_configs[CAN_candidateIdx],
+                            &f_config) == ESP_OK) {
+        if (twai_start() == ESP_OK) {
+            twai_message_t msg;
+            if (twai_receive(&msg, pdMS_TO_TICKS(1000)) == ESP_OK) {
+                CAN_found = true;
+            } else {
+                twai_stop();
+            }
+        }
+        if (!CAN_found)
+            twai_driver_uninstall();
+    }
+
+    if (CAN_found) {
+        t_config = t_configs[CAN_candidateIdx];
+        CAN_bitrateVerified = true;
+        CAN_hasReceivedAnyFrame = true;
+        ESP_LOGI(TAG, "CAN bitrate GEC de olsa bulundu: %s",
+                 t_names[CAN_candidateIdx]);
+        isInitialized = true;
+        return;
+    }
+
+    // Bulunamadı — çalışmaya devam edebilmek için fallback'e (mevcut
+    // t_config, her zaman 500kbps) geri dön; bir sonraki retry'de rotasyon
+    // devam eder.
+    esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
+    if (err == ESP_OK)
+        err = twai_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Autobaud retry: fallback surucusu yeniden kurulamadi: %s",
+                 esp_err_to_name(err));
+        // isInitialized false kalir; s_mutex hala gecerli oldugundan bir
+        // sonraki interval'da tekrar denenecek (kalici sagirlik yok).
+        return;
+    }
+    isInitialized = true;
+}
+
 // Motor sürücüsü torque komutu. Motor sürücüsü henüz araca entegre DEĞİL
 // (MOTOR_DRIVER_PRESENT=0): bu fazda GERÇEK FRAME GÖNDERİLMEZ. E-STOP/FAULT
-// güvenli kapanış sırası (VcuLogic) bu fonksiyonu torque(0) ile çağırır;
-// bayrak 0 iken yalnızca bir kez uyarı loglanır (E-STOP yolunda spam yok) ve
-// false döner (frame üretilmedi). Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md.
+// güvenli kapanış sırası (VcuLogic) bu fonksiyonu torque(0) ile çağırır —
+// ÇAĞIRAN TARAF VCU TASK'İDİR, CAN task DEĞİL. Bayrak 1 iken bile
+// twai_transmit BURADAN DOĞRUDAN YAPILMAZ (G2 thread-safety): istek yalnızca
+// s_torqueQueue'ya yazılır (push, thread-safe/atomic), gerçek gönderim CAN
+// task döngüsünde drainTorqueQueue() ile yapılır (bkz. processRxMessages()).
+// Bayrak 0 iken yalnızca bir kez uyarı loglanır (E-STOP yolunda spam yok) ve
+// false döner (frame üretilmedi, kuyruğa da yazılmaz). Bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md.
 bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
     if (!isInitialized)
         return false;
 
 #if MOTOR_DRIVER_PRESENT
-    // TODO(motor entegrasyonu): GERÇEK torque frame'i burada kurulacak.
-    // CAN ID ve frame formatı motor sürücü spec'i gelince tanımlanacak
-    // (UYDURMA YOK). Fonksiyon imzası, çağrı noktaları ve E-STOP/FAULT
-    // sıralaması ŞİMDİ hazır; yalnızca frame içeriği ve twai_transmit çağrısı
-    // eksik:
-    //   twai_message_t msg = {};
-    //   msg.identifier = CAN_ID_TORQUE_CMD;              // ID doğrulanacak
-    //   msg.data_length_code = /* spec */;               // format doğrulanacak
-    //   ...
-    //   return twai_transmit(&msg, pdMS_TO_TICKS(10)) == ESP_OK;
-    (void)torqueValue;
-    ESP_LOGW(TAG, "sendTorqueCommand: MOTOR_DRIVER_PRESENT=1 ama frame TODO");
-    return false;
+    s_torqueQueue.push(torqueValue);
+    return true;  // istek kuyruklandi; gercek gonderim CAN task'inde (asagida)
 #else
     (void)torqueValue;
     if (!CAN_torqueSkipLogged) {
@@ -117,6 +237,32 @@ bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
 #endif
 }
 
+// G2: CAN task döngüsünde (processRxMessages ile aynı yerde) her tik
+// çağrılır. s_torqueQueue'da bekleyen bir istek varsa gerçek twai_transmit'i
+// BURADAN (CAN task'inden) yapar — twai_transmit hiçbir zaman VCU task'inden
+// doğrudan çağrılmaz. MOTOR_DRIVER_PRESENT=0 iken hiçbir şey yapmaz (kuyruğa
+// zaten yazılmıyor, bkz. sendTorqueCommand).
+void CanManager::drainTorqueQueue() {
+#if MOTOR_DRIVER_PRESENT
+    // Bu satıra ulaşılması, dosya başındaki #error guard'ının (MOTOR_
+    // TORQUE_FRAME_DEFINED) geçtiği — yani frame formatının DOĞRULANDIĞI
+    // anlamına gelir.
+    uint16_t torqueValue = 0;
+    if (!s_torqueQueue.drainPending(torqueValue))
+        return;
+
+    // TODO(motor entegrasyonu): GERÇEK torque frame'i burada kurulacak.
+    // CAN ID ve frame formatı motor sürücü spec'i gelince tanımlanacak
+    // (UYDURMA YOK):
+    //   twai_message_t msg = {};
+    //   msg.identifier = CAN_ID_TORQUE_CMD;              // ID doğrulanacak
+    //   msg.data_length_code = /* spec */;               // format doğrulanacak
+    //   ...
+    //   twai_transmit(&msg, pdMS_TO_TICKS(10));
+    (void)torqueValue;
+#endif
+}
+
 // G6 test notu: Bu fonksiyonun drain-döngüsü + RTR filtresi native'de test
 // EDİLMİYOR. CanManager platformio.ini'de native `lib_ignore` altındadır ve
 // idf_stubs twai_message_t yalnız `flags` alanına sahiptir (rtr/extd union'ı
@@ -125,6 +271,11 @@ bool CanManager::sendTorqueCommand(uint16_t torqueValue) {
 // CanManager orkestrasyon testi KAPSAMINDADIR (bu değişiklikte bilinçli olarak
 // yapılmadı). Değişiklik esp32dev derlemesi ile doğrulanır.
 void CanManager::processRxMessages() {
+    // Bitrate henüz doğrulanmamışken (pre-reception) periyodik yeniden-deneme
+    // — isInitialized'ı kısa süreliğine false'a çekebilir (bkz. yorum
+    // bloğu). Bu yüzden isInitialized kontrolünden ÖNCE, her tikte çağrılır.
+    retryAutobaudIfNeeded();
+
     if (!isInitialized)
         return;
 
@@ -174,6 +325,15 @@ void CanManager::processRxMessages() {
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "RX error: %s", esp_err_to_name(err));
             break;
+        }
+
+        // İlk geçerli frame (RTR/bilinmeyen ID dahil, ID'den BAĞIMSIZ —
+        // twai_receive'in ESP_OK dönmesi bitrate'in doğru olduğunun kanıtıdır)
+        // fallback hızında bile bitrate'i doğrular ve autobaud retry'yi
+        // KALICI OLARAK durdurur (bkz. AutobaudPolicy.h).
+        if (!CAN_bitrateVerified) {
+            CAN_bitrateVerified = true;
+            CAN_hasReceivedAnyFrame = true;
         }
 
         // G6: Remote frame (RTR) — data alanı TANIMSIZ; DLC≥4 olsa bile parse
@@ -246,6 +406,11 @@ void CanManager::processRxMessages() {
     updateBmsValidity();
     updateCellVoltageValidity();
     updateChargerValidity();
+
+    // G2: bekleyen tork isteği varsa gerçek gönderimi BURADA (CAN task'i,
+    // bu fonksiyonun çağrıldığı yer) yap — twai_transmit VCU task'inden
+    // asla doğrudan çağrılmaz. Bkz. sendTorqueCommand/drainTorqueQueue.
+    drainTorqueQueue();
 }
 
 MotorStatus CanManager::getMotorStatus() const {
@@ -266,6 +431,9 @@ TelemetryData CanManager::getTelemetryData() const {
     TelemetryData CAN_telemetryCopy = {};
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     CAN_telemetryCopy = s_telemetryData;
+    // Charger freshness (updateChargerValidity) → dahili S1/S2 mod girdisi.
+    // Wire formatına serialize edilmez (bkz. VehicleData.h TEL_chargerActive).
+    CAN_telemetryCopy.TEL_chargerActive = CAN_chargerValid;
     xSemaphoreGive(s_mutex);
 
     return CAN_telemetryCopy;

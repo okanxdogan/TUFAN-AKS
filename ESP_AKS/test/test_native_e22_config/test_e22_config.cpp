@@ -8,7 +8,7 @@ void test_contract_regs_match_ortak_blok(void) {
     TEST_ASSERT_EQUAL_HEX8(0x00, E22_CONTRACT_REGS.addh);
     TEST_ASSERT_EQUAL_HEX8(0x00, E22_CONTRACT_REGS.addl);
     TEST_ASSERT_EQUAL_HEX8(0x00, E22_CONTRACT_REGS.netid);
-    TEST_ASSERT_EQUAL_HEX8(0x64, E22_CONTRACT_REGS.reg0);
+    TEST_ASSERT_EQUAL_HEX8(0x63, E22_CONTRACT_REGS.reg0);
     TEST_ASSERT_EQUAL_HEX8(0x00, E22_CONTRACT_REGS.reg1);
     TEST_ASSERT_EQUAL_HEX8(0x17, E22_CONTRACT_REGS.reg2);
     TEST_ASSERT_EQUAL_HEX8(0x00, E22_CONTRACT_REGS.reg3);
@@ -41,7 +41,7 @@ void test_build_write_command(void) {
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[3]);  // ADDH
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[4]);  // ADDL
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[5]);  // NETID
-    TEST_ASSERT_EQUAL_HEX8(0x64, buf[6]);  // REG0
+    TEST_ASSERT_EQUAL_HEX8(0x63, buf[6]);  // REG0
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[7]);  // REG1
     TEST_ASSERT_EQUAL_HEX8(0x17, buf[8]);  // REG2
     TEST_ASSERT_EQUAL_HEX8(0x00, buf[9]);  // REG3
@@ -81,7 +81,7 @@ void test_build_write_crypt_temp_command_buffer_too_small(void) {
 void test_parse_valid_response_accepted(void) {
     const uint8_t resp[12] = {
         0xC1, 0x00, 0x09,
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,  // ADDH..REG3
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,  // ADDH..REG3
         0xAB, 0xCD,  // CRYPT_H/L — herhangi bir değer olabilir
     };
     E22RegValues out = {};
@@ -100,7 +100,7 @@ void test_is_error_response_detects_ff_ff_ff(void) {
 void test_is_error_response_false_for_valid(void) {
     const uint8_t resp[12] = {
         0xC1, 0x00, 0x09,
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x00, 0x00,
     };
     TEST_ASSERT_FALSE(e22_isErrorResponse(resp, sizeof(resp)));
@@ -120,7 +120,7 @@ void test_parse_rejects_ff_ff_ff_error_frame(void) {
 void test_parse_rejects_wrong_header_byte(void) {
     const uint8_t resp[12] = {
         0xC0, 0x00, 0x09,  // yazma başlığı, okuma yanıtında beklenmez
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x00, 0x00,
     };
     E22RegValues out = {};
@@ -130,7 +130,7 @@ void test_parse_rejects_wrong_header_byte(void) {
 void test_parse_rejects_wrong_start_addr(void) {
     const uint8_t resp[12] = {
         0xC1, 0x01, 0x09,  // yanlış başlangıç adresi
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x00, 0x00,
     };
     E22RegValues out = {};
@@ -140,7 +140,7 @@ void test_parse_rejects_wrong_start_addr(void) {
 void test_parse_rejects_wrong_len_field(void) {
     const uint8_t resp[12] = {
         0xC1, 0x00, 0x05,  // yanlış uzunluk alanı
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x00, 0x00,
     };
     E22RegValues out = {};
@@ -165,12 +165,12 @@ void test_parse_rejects_null_buffer(void) {
 void test_crypt_bytes_excluded_from_comparison(void) {
     const uint8_t respA[12] = {
         0xC1, 0x00, 0x09,
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x11, 0x22,  // CRYPT set A
     };
     const uint8_t respB[12] = {
         0xC1, 0x00, 0x09,
-        0x00, 0x00, 0x00, 0x64, 0x00, 0x17, 0x00,
+        0x00, 0x00, 0x00, 0x63, 0x00, 0x17, 0x00,
         0x99, 0xEE,  // CRYPT set B — farklı
     };
     E22RegValues outA = {}, outB = {};

@@ -14,13 +14,12 @@
 // Motor sürücüsünden CAN üzerinden gelen anlık motor durumu.
 // MSTest/mock_motor ile doğrulanmış bayt dizilimi:
 //   data[0:1] = RPM (big-endian int16)
-//   data[2]   = Rezerve (kullanılmıyor)
-//   data[3]   = Voltaj (raw * 0.1 = V, ör: 240 → 24.0 V)
+//   data[2:3] = Voltaj (big-endian uint16, raw * 0.1 = V, ör: 240 → 24.0 V)
 //   data[4:6] = Rezerve (kullanılmıyor)
 //   data[7]   = Hata bayrakları / motor durumu (0x01=çalışıyor, 0x00=durdu)
 struct MotorStatus {
     int16_t  rpm;
-    uint16_t motorVoltageDeciV;   // raw * 0.1 = V (720 = 72.0 V, 16-bit olmalı)
+    uint16_t motorVoltageDeciV;   // raw * 0.1 = V (720 = 72.0 V, 16-bit — data[2:3])
     uint8_t  errorFlags;          // data[7] & 0xFE: sadece gerçek hata bayrakları
     bool     isRunning;           // data[7] & 0x01: motor çalışma durumu
     bool     isValid;
@@ -37,7 +36,11 @@ struct ChargerCommand {
 
 namespace CanParse {
 
-// Motor status frame (CAN ID 0x123, 11-bit STD — MSTest/mock_motor ile doğrulandı).
+// Motor status frame (CAN ID 0x200 = CAN_ID_MOTOR_STATUS, 11-bit STD).
+// Kaynak: motor sürücüsü (MOTOR_DRIVER_PRESENT=1 olduğunda) VEYA
+// hall-effect hız sensörü ünitesi (esp32-canbus-speed-sensor, yalnızca
+// data[0:1]=RPM doldurur, data[2:7]=0x00 — bkz.
+// Documents/MOTOR_ENTEGRASYON_NOTU.md).
 // DLC ≥ 8 olmalı; aksi halde false döner ve `out` değiştirilmez.
 //   data[0:1] = RPM (big-endian uint16)
 //   data[2:3] = Voltaj (big-endian uint16, raw * 0.1 = V)

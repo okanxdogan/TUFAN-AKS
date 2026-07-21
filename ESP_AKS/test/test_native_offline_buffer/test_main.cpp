@@ -10,7 +10,7 @@ extern void test_drop_front_removes_front(void);
 extern void test_peek_without_drop_keeps_packet_for_retry(void);
 extern void test_empty_peek(void);
 extern void test_reset_clears_peek(void);
-extern void test_capacity_is_75(void);
+extern void test_capacity_is_600(void);
 extern void test_offline_should_sample_first_sample_is_immediate(void);
 extern void test_offline_should_sample_within_period_is_false(void);
 extern void test_offline_should_sample_at_period_is_true(void);
@@ -35,7 +35,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_peek_without_drop_keeps_packet_for_retry);
     RUN_TEST(test_empty_peek);
     RUN_TEST(test_reset_clears_peek);
-    RUN_TEST(test_capacity_is_75);
+    RUN_TEST(test_capacity_is_600);
     RUN_TEST(test_offline_should_sample_first_sample_is_immediate);
     RUN_TEST(test_offline_should_sample_within_period_is_false);
     RUN_TEST(test_offline_should_sample_at_period_is_true);

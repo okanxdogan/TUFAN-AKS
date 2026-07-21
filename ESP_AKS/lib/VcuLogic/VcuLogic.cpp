@@ -1,6 +1,7 @@
 #include <atomic>
 
 #include "VcuLogic.h"
+#include "DeratingPolicy.h"
 #include "IRelayActuator.h"
 #include "SystemConfig.h"
 #include "esp_log.h"
@@ -57,6 +58,20 @@ static uint32_t s_lastReadyRejectLogMs = 0;
 // bağlı değilse istek sessizce yok sayılır.
 static TorqueSink s_torqueSink = nullptr;
 
+#if RELAY_ROLES_ASSIGNED
+// Flaşör gölge durumu (şartname 6.e.ii) — kenar-tetikli setRelay için son
+// komut edilen durum. Karar mantığı saf flasherDesiredState'te (VcuLogic.h);
+// FAULT/E-STOP dahil HER tick çalışır (allOff bank maskesini açtığından
+// flaşör kanalına dokunmaz — sıcaklık eşikte kaldıkça yanık kalır).
+static bool s_flasherOn = false;
+
+// IDLE'daki S1 (şarj hattı kontaktörü) son komutu: -1 = bilinmiyor (IDLE'a
+// her girişte sıfırlanır → ilk IDLE tick'i S1'i deterministik olarak charger
+// durumuna göre yazar), 0/1 = son setRelay komutu. Kenar-tetikli: her tick
+// SPI yazmamak için yalnız istenen durum değişince setRelay çağrılır.
+static int8_t s_s1LastCmdInIdle = -1;
+#endif
+
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
@@ -102,6 +117,29 @@ void init(IRelayActuator& relays) {
 void run() {
     s_stateTimer += TASK_PERIOD_MS;
     s_uptimeMs += TASK_PERIOD_MS;
+
+#if RELAY_ROLES_ASSIGNED
+    // Flaşör (şartname 6.e.ii): sıcaklık uyarısına bağlı sesli+ışıklı ikaz.
+    // run()'ın EN BAŞINDA, tüm erken-return'lardan ÖNCE — FAULT/E-STOP dahil
+    // her durumda ve her tick'te çalışır. Karar saf flasherDesiredState'te:
+    // 55 °C'de ON, (55−FLASHER_HYSTERESIS_C)=53 °C altına inince OFF; bayat
+    // veri/timeout'ta son durum korunur. handleFault/handleEmergencyStop'un
+    // periyodik allOff re-assert'i bank maskesi dışındaki flaşör kanalına
+    // dokunmadığından bu mantıkla çakışmaz.
+    {
+        const TelemetryData VCU_snap = getTelemetrySnapshot();
+        const bool desired = flasherDesiredState(
+            s_flasherOn, VCU_snap.TEL_bmsDataValid,
+            VCU_snap.TEL_bmsTimeoutActive, VCU_snap.TEL_bmsTempHighestC);
+        if (desired != s_flasherOn) {
+            s_relays->setRelay(RELAY_CH_FLASHER, desired);
+            ESP_LOGW(TAG, "Sicaklik uyari flasoru %s (temp=%d C)",
+                     desired ? "YANDI" : "SONDU",
+                     (int)VCU_snap.TEL_bmsTempHighestC);
+            s_flasherOn = desired;
+        }
+    }
+#endif
 
     if (s_eStopPending.exchange(false, std::memory_order_acquire)) {
         if (s_state.load(std::memory_order_relaxed) != VcuState::EMERGENCY_STOP) {
@@ -154,14 +192,28 @@ void run() {
     }
 
     // AÇIK İŞ (B12): Warning bandında derating (tork/güç sınırlama) politikası
-    // henüz UYGULANMADI — şimdilik yalnız kenar-tetikli WARN loglanır, araç
-    // davranışı değişmez. Warning READY girişini isReadyEntryPermitted
-    // üzerinden zaten bloklar; sürüş sırasındaki derating, motor sürücüsü
-    // tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye başlayınca
-    // tasarlanacak. Bkz. SystemConfig.h "Phase 2 Safety Thresholds" notu.
+    // — İSKELET KURULDU (bkz. lib/VcuLogic/DeratingPolicy.h). WARN aktifken
+    // 0..100 bir tork-izin yüzdesi hesaplanıp kenar-tetikli loglanır, ama
+    // ARAÇ DAVRANIŞI HALA DEĞİŞMEZ: bu yüzde hiçbir tork komutuna/CanManager
+    // çağrısına bağlanmıyor (motor sürücüsü elimizde yok — bkz. KAPSAM KİLİDİ,
+    // DeratingPolicy.h başlık yorumu). Warning READY girişini
+    // isReadyEntryPermitted üzerinden zaten bloklar.
+    //
+    // ENTEGRASYON NOKTASI (motor sürücüsü geldiğinde): aşağıdaki
+    // `deratingPercent` değeri, tork komut yolu (setTorqueSink/G2) gerçek
+    // frame üretmeye başladığında torku sınırlamak için BURADA kullanılacak
+    // (ör. VcuLogic'in DRIVE'da hesapladığı hedef torku bu yüzdeyle çarpıp
+    // sink'e onu göndermek) — bugün böyle bir tork komut ÜRETİMİ yok, bu
+    // yüzden bağlanacak bir şey de yok. Bkz. SystemConfig.h "B12: Derating
+    // Policy" notu (kademe değerleri CONFIG, ekip kalibrasyonu bekliyor).
     if (hasWarningCondition()) {
         if (!s_VCU_warningLogged) {
-            ESP_LOGW(TAG, "Warning threshold active, derating policy pending");
+            const uint8_t deratingPercent =
+                DeratingPolicy::computeTorqueAllowPercent(getTelemetrySnapshot());
+            ESP_LOGW(TAG,
+                     "Warning threshold active, derating onerisi %%%u "
+                     "(tork komutuna henuz baglanmadi — motor surucusu yok)",
+                     (unsigned)deratingPercent);
             s_VCU_warningLogged = true;
         }
     } else {
@@ -307,15 +359,48 @@ void setTorqueSink(TorqueSink sink) {
 // State handlers
 // ---------------------------------------------------------------------------
 static void handleIdle() {
-    // All relays off — safe resting state
+    // All contactors off — safe resting state
     // Waiting for START_REQUEST from LoRa/UKS
+#if RELAY_ROLES_ASSIGNED
+    // Şartname 8.2.a.iii: şarjda S1 KAPALI + S2 AÇIK. IDLE'da sürüş bankı
+    // (S2 dahil) zaten açık; burada yalnız S1, charger freshness'ına
+    // (TEL_chargerActive — CAN_chargerValid'den, bayatlama dahil) göre
+    // sürülür. Kenar-tetikli: istenen durum değişmedikçe SPI yazılmaz.
+    // Charger aktifken START_REQUEST zaten reddedilir (isReadyEntryPermitted).
+    const TelemetryData VCU_snap = getTelemetrySnapshot();
+    const int8_t desired = VCU_snap.TEL_chargerActive ? 1 : 0;
+    if (desired != s_s1LastCmdInIdle) {
+        s_relays->setRelay(RELAY_CH_S1_CHARGE, desired == 1);
+        ESP_LOGI(TAG, "IDLE: S1 (sarj hatti) %s (chargerActive=%d)",
+                 desired == 1 ? "KAPATILDI" : "ACILDI", (int)desired);
+        s_s1LastCmdInIdle = desired;
+    }
+#endif
 }
 
 static void handleReady() {
-    // Close all positive contactors on entry (runs once via stateTimer guard)
+    // Close the drive-side contactors on entry (runs once via stateTimer guard)
     if (s_stateTimer <= TASK_PERIOD_MS) {
+#if RELAY_ROLES_ASSIGNED
+        // Şartname 8.2.a.vii: sürüşte S1 AÇIK + S2 KAPALI. READY girişi
+        // allOn KULLANMAZ (allOn bank maskesini — S1 dahil — kapatırdı);
+        // bunun yerine yalnız SÜRÜŞ bankı (RELAY_DRIVE_BANK_MASK = S2 +
+        // kanal 1-7; S1 bilinçli olarak bu maskenin DIŞINDA) kapatılır.
+        // S1 savunma amaçlı açık komutlanır: IDLE'da charger aktifken READY
+        // zaten reddedildiğinden S1 normalde açıktır; bu yazım sırayı
+        // şartname durumuna deterministik kilitler.
+        s_relays->setRelay(RELAY_CH_S1_CHARGE, false);
+        for (uint8_t ch = 0; ch < RELAY_TOTAL_CHANNELS; ++ch) {
+            if (RELAY_DRIVE_BANK_MASK & (1u << ch))
+                s_relays->setRelay(ch, true);
+        }
+        ESP_LOGI(TAG, "Surus banki kapatildi (S1 acik) — system READY");
+#else
+        // Roller atanmadı: eski tek-bank davranışı — bank maskesi (10 kanalın
+        // tamamı) kapatılır, bayt-bayt bugünkü allOn ile aynı.
         s_relays->allOn();
         ESP_LOGI(TAG, "All contactors closed — system READY");
+#endif
     }
     // DRIVE is entered only after an explicit DRIVE_ENABLE command.
     // Future interlocks should be added here before propulsion is allowed.
@@ -416,6 +501,15 @@ static void transitionTo(VcuState next) {
         s_relaysOpenedInFault = false;
         s_lastFaultLogMs = (uint32_t)-1000;
     }
+
+#if RELAY_ROLES_ASSIGNED
+    if (next == VcuState::IDLE) {
+        // IDLE'a her girişte S1 komut izini "bilinmiyor" yap: FAULT/E-STOP
+        // yolunda allOff S1'i açmış olabilir — ilk IDLE tick'i S1'i charger
+        // durumuna göre deterministik olarak yeniden yazar (bkz. handleIdle).
+        s_s1LastCmdInIdle = -1;
+    }
+#endif
 }
 
 static bool pollEvent(VcuEvent& out) {
@@ -453,6 +547,11 @@ static bool hasCriticalCondition() {
 static const char* readyRejectReason(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return "bmsDataValid=0";
+#if RELAY_ROLES_ASSIGNED
+    // Şartname 8.2.a.iii — sıralama isReadyEntryPermitted ile birebir aynı.
+    if (VCU_data.TEL_chargerActive)
+        return "charger aktif — sarj modunda READY yasak";
+#endif
     if (hasCriticalCondition(VCU_data, VcuState::IDLE))
         return "kritik kosul aktif";
     if (hasWarningCondition(VCU_data))
@@ -487,6 +586,10 @@ void resetForTest() {
     s_lastReadyRejectReason = nullptr;
     s_lastReadyRejectLogMs = 0;
     s_torqueSink = nullptr;
+#if RELAY_ROLES_ASSIGNED
+    s_flasherOn = false;
+    s_s1LastCmdInIdle = -1;
+#endif
 
     // Olay kuyruğunu (queue) boşalt
     if (s_eventQueue != nullptr) {

@@ -27,8 +27,12 @@ class RelayManager {
 
     bool begin();
     void setRelay(uint8_t channel, bool state);
-    void allOn();   // Close all 10 positive contactors
-    void allOff(bool silent = false);  // Open all — SAFETY
+    // allOn/allOff KONTAKTÖR BANK maskesini (RELAY_CONTACTOR_BANK_MASK,
+    // SystemConfig.h) sürer. RELAY_ROLES_ASSIGNED=0 iken maske 10 kanalın
+    // tamamıdır (eski davranışla birebir aynı); roller atandığında flaşör
+    // kanalı maskenin dışındadır ve son yazılan durumu shadow'da korunur.
+    void allOn();   // Close contactor bank (mask)
+    void allOff(bool silent = false);  // Open contactor bank — SAFETY (8.2.a.vi)
 
     // Read back current relay state for diagnostics
     bool getRelayState(uint8_t channel) const;

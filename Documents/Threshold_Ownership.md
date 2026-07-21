@@ -43,8 +43,29 @@ Kaynak: `include/SystemConfig.h`, "Phase 2 Safety Thresholds" bölümü (satır 
 | `BMS_CRITICAL_MAX_CHARGE_CURRENT_CENTI_A` | 329 | 1300 (13.0 A) — CONFIG, ekip onayı bekliyor | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` (READY girişini ve reset'i de bloklar) | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
 | `BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A` | 330 | 900 (9.0 A) | centi-A | `VcuLogic::isCurrentWarning` ← `hasWarningCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI (deşarjda −0.1…−1.5 A gözlendi) | ✅ CANLI |
 | `BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A` | 331 | 1500 (15.0 A) | centi-A | `VcuLogic::isCurrentCritical` ← `hasCriticalCondition` | `TEL_bmsCurrentCentiA` | ✅ DOĞRULANDI | ✅ CANLI |
-| `BMS_CRITICAL_MIN_CELL_VOLTAGE_MV` | 200 | 2500 | mV | `VcuLogic::hasCriticalCondition` | `TEL_bmsCellVoltageMinDeciMv` | ✅ DOĞRULANDI (0xE001 byte[0:1]) | ✅ CANLI |
-| `BMS_CRITICAL_MAX_CELL_VOLTAGE_MV` | 201 | 3650 | mV | `VcuLogic::hasCriticalCondition` | `TEL_bmsCellVoltageMaxDeciMv` | ✅ DOĞRULANDI (0xE001 byte[2:3]) | ✅ CANLI |
+> **ŞARTNAME KİLİDİ (sıcaklık, Bölüm 3 6.e.iii):** `BMS_WARN_MAX_TEMP_C=55` /
+> `BMS_CRITICAL_MAX_TEMP_C=70` şartname idealinin birebir kendisidir ve
+> derleme-zamanı kilitlidir: `SystemConfig.h` içindeki `static_assert`
+> (CRIT − WARN == 15 °C sabit aralık) + `VcuLogic.h` içindeki `static_assert`
+> (BmsAlgo.h HMI eşikleri `BMS_TEMP_OVERTEMP_WARN_C/CRIT_C` == SystemConfig
+> değerleri). Ayrıca 55 °C uyarısı, `RELAY_ROLES_ASSIGNED=1` iken uyarı
+> flaşörüne bağlıdır (şartname 6.e.ii — bkz.
+> `Documents/RELAY_CHANNEL_TABLE.md` ve `VcuLogic.h::flasherDesiredState`,
+> `FLASHER_HYSTERESIS_C=2` histerezisli).
+
+> **DÜZELTME (2026-07-13):** Bu tabloda önceden `BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`
+> (`SystemConfig.h`) diye iki satır vardı, "CANLI" ve `VcuLogic::hasCriticalCondition`
+> tüketicisi olarak işaretliydi — bu **yanlıştı**. `VcuLogic::hasCriticalCondition`
+> hücre voltajı için bu makroları HİÇ kullanmıyordu; gerçek eşik seti her zaman
+> `BmsAlgo.h`'deki `BMS_CELL_UNDERVOLT_CRIT_MV`/`BMS_CELL_OVERVOLT_CRIT_MV`
+> idi (bkz. bölüm 3 tablosu). `SystemConfig.h`'deki iki makro aynı değerlerle
+> (2500/3650 mV) hiçbir yerden referans edilmeyen kullanılmayan bir kopyaydı;
+> grep ile doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğinin TEK doğruluk
+> kaynağı `BmsAlgo.h`'dir (bölüm 3). NOT (2026-07-13 GÜVENLİK-EŞİĞİ
+> DÜZELTMESİ): `VcuLogic::hasCriticalCondition`/`hasWarningCondition` bu
+> makroların **mV** değil, bunlardan türetilen **`_DECI_MV`** eşdeğerini
+> kullanır (`TEL_bmsCellVoltageMin/MaxDeciMv` alanının ölçeğiyle uyumlu —
+> bkz. bölüm 3 altındaki "GÜVENLİK-EŞİĞİ DÜZELTMESİ" alt bölümü).
 
 > **Birim kararı (G5):** Akım için tek birim **centi-Amper (0.01 A)**'dir — parser
 > çıktısı (`TEL_bmsCurrentCentiA` = ham 0.1A × 10), eşikler ve `isCurrentWarning/
@@ -65,7 +86,7 @@ da pack/paket seviyesinde VCU kararını besler:
 | --- | --- | --- | --- | --- | --- |
 | `CAN_MOTOR_STATUS_TIMEOUT_MS` | 208 | 500 ms | `CanManager::updateMotorStatusValidity` → `TEL_motorTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (frame varlığı, ölçeğe bağlı değil) | ✅ CANLI |
 | `CAN_BMS_STATUS_TIMEOUT_MS` | 209 | 500 ms | `CanManager::updateBmsValidity` → `bms_evaluate_freshness` (G12: E000 **ve** E001 ID bazında ayrı izlenir; biri bayatlarsa timeout) → `TEL_bmsTimeoutActive` → `VcuLogic::hasCriticalCondition` (IDLE dışında critical) | ✅ DOĞRULANDI (E000+E001 frame varlığı) | ✅ CANLI |
-| `CAN_CHARGER_TIMEOUT_MS` | 213 | 2000 ms | Yalnızca charger setpoint'lerini "bayat" işaretler | ✅ DOĞRULANDI | ⚠️ KISMİ — `CAN_Event`/FAULT ÜRETMEZ (bilinçli tasarım, opsiyonel akış) |
+| `CAN_CHARGER_TIMEOUT_MS` | 213 | 2000 ms | Charger setpoint'lerini "bayat" işaretler; freshness sonucu (`CAN_chargerValid`) `getTelemetryData()` üzerinden `TEL_chargerActive` olarak yayınlanır → `VcuLogic` S1/S2 mod anahtarlaması girdisi (`RELAY_ROLES_ASSIGNED=1`, şartname 8.2.a.iii: charger aktifken S1 kapalı + READY reddi) | ✅ DOĞRULANDI | ⚠️ S1/S2 mod girdisi, yine `CAN_Event`/FAULT ÜRETMEZ (bilinçli tasarım, opsiyonel akış) |
 
 ---
 
@@ -88,18 +109,55 @@ VCU karar mantığına hiç girmiyor.
 | `BMS_CELL_UNDERVOLT_WARN_MV` | 75 | 2800 | mV | Hücre WARNING alt sınır — CRIT'e 300 mV marj |
 | `BMS_CELL_OVERVOLT_WARN_MV` | 76 | 3550 | mV | Hücre WARNING üst sınır — CRIT'e 100 mV marj |
 | `BMS_TEMP_OVERTEMP_WARN_C` | 84 | 55 | °C | Hücre WARNING sıcaklık — sistem politikasıyla (55 °C UYARI) hem değer hem semantik (>=) olarak hizalı |
+| `BMS_CELL_UNDERVOLT_CRIT_DECI_MV` | 107 | 25000 | deci-mV | = yukarıdaki `_CRIT_MV` × 10 — VcuLogic.h/DeratingPolicy.h için (bkz. GÜVENLİK-EŞİĞİ DÜZELTMESİ altbölümü) |
+| `BMS_CELL_OVERVOLT_CRIT_DECI_MV` | 108 | 36500 | deci-mV | = yukarıdaki `_CRIT_MV` × 10 |
+| `BMS_CELL_UNDERVOLT_WARN_DECI_MV` | 109 | 28000 | deci-mV | = yukarıdaki `_WARN_MV` × 10 |
+| `BMS_CELL_OVERVOLT_WARN_DECI_MV` | 110 | 35500 | deci-mV | = yukarıdaki `_WARN_MV` × 10 |
 
 Değerler 24S LiFePO4 spec'ine (2.50–3.65 V/hücre) uyarlanmıştır — bkz. bölüm 5.
+
+### GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13) — hücre voltajı deci-mV/mV birim uyumsuzluğu
+
+**Bulgu:** `BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_MV` (yukarıdaki tablo) tek bir
+sabit seti olarak İKİ farklı karşılaştırma bağlamında kullanılıyordu:
+
+1. `BmsAlgo.cpp::computePack` — `BmsPackData::cellVoltageMv[]` ile karşılaştırır.
+   Bu dizi GERÇEKTEN mV (main.cpp, `TEL_bmsCellVoltages[]`'ten kopyalar — o da
+   `CanParse::parseLbBmsE015..E020`'de ham CAN byte'ının `/10`'a bölünmesiyle
+   üretilir). **Bu kullanım her zaman DOĞRUYDU, DEĞİŞTİRİLMEDİ.**
+2. `VcuLogic.h::hasWarningCondition/hasCriticalCondition` ve
+   `DeratingPolicy.h::computeTorqueAllowPercent` — `TEL_bmsCellVoltageMin/
+   MaxDeciMv` ile karşılaştırır. Bu alanlar `CanParse::parseLbBmsE001`'de HİÇ
+   `/10` YAPILMADAN doğrudan yazılır — gerçekte **deci-mV** (~28000-40000).
+
+**Önceki (hatalı) davranış:** (2) numaralı yol mV-ölçekli eşiklerle (2500-3650)
+karşılaştırıyordu. Gerçekçi bir hücre voltajı (deci-mV, ör. 33500) bu
+eşiklerin çok üzerinde olduğundan **overvolt WARN/CRITICAL her zaman
+tetiklenir**, **undervolt WARN/CRITICAL ise neredeyse hiç tetiklenmezdi**.
+`hasCriticalCondition` READY/DRIVE'da FAULT'a geçişi de tetiklediğinden
+(`VcuLogic.cpp run()`), olası saha belirtisi yalnızca "BMS canlıyken araç
+READY'ye giremiyor" değil, **DRIVE sırasında beklenmedik FAULT'a geçiş**
+olabilirdi.
+
+**Düzeltme:** `BmsAlgo.h`'ye yukarıdaki mV sabitlerinden TÜRETİLEN
+(`× 10`) yeni `_DECI_MV` sabitleri eklendi (aynı fiziksel eşik, doğru
+ölçek). `VcuLogic.h` ve `DeratingPolicy.h` artık bu `_DECI_MV` sabitlerini
+kullanır. `BmsAlgo.cpp`'nin kendi kullanımı (mV sabitler, mV alan) DOKUNULMADI.
+Wire formatı (`cellVMax`/`cellVMin` ×0.1 mV) ve CAN parse mantığı (`CanParse.cpp`)
+DEĞİŞMEDİ — bu yalnızca dahili karşılaştırma eşiklerinin düzeltilmesidir.
 CRITICAL uçları (2500/3650 mV) SystemConfig.h pack CRITICAL eşikleriyle
 (600/876 deciV) hücre×24 ilişkisiyle birebir örtüşür; WARN bandı bu katmana
 özgüdür (SystemConfig.h WARN eşikleriyle 1:1 eşleşmesi gerekmez).
 
 Bu eşikler kod yolunda "ölü" değildir — `computePack()` her HMI tick'inde
-çalışır ve `warningLevel`i gerçekten hesaplar. Ancak girdi (`BmsPackData`),
-`src/main.cpp`'de gerçek 24-hücre verisi yerine tek bir doğrulanmış pack
-voltajının 24 hücreye bölünmüş ortalamasıyla ad-hoc dolduruluyor (ayrı bir
-boşluk — bkz. önceki BMS keşif raporu, madde 4). Yani bu eşikler çalışıyor
-ama gerçek hücre verisi üzerinde değil.
+çalışır ve `warningLevel`i gerçekten hesaplar. Girdi (`BmsPackData`) artık
+gerçek veriyle doldurulur: hücre voltajları E015-E020'den (`TEL_bmsCellVoltages`,
+DOĞRULANDI), paket sıcaklığı ise `packTempMaxC/MinC` alanlarından
+(`TEL_bmsTempHighestC/LowestC`, 0xE001, DOĞRULANDI — `src/main.cpp` HMI task
+doldurur). Eskiden `cellTempC[i]=0` yazıldığından ekranın sıcaklık uyarısı
+HİÇ tetiklenmiyordu; `computePack` tMax/tMin'i artık hücre dizisinden DEĞİL
+bu paket-seviyesi alanlardan alır (per-hücre sahte sıcaklık kopyalama yok) —
+55/70 eşikleri ve >= semantiği ekranda da fiilen canlıdır.
 
 ---
 
@@ -117,7 +175,12 @@ mantığına bağlandı ve artık CANLI —
 
 (Bkz. bölüm 2 tablosu.)
 
-**Tamamen Ölü**: Artık tamamen ölü hiçbir eşik kalmamıştır. Önceden ölü olan hücre voltajı eşikleri (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`), 0xE015-E020 ve 0xE001 mesajlarının çözülmesi ile `VcuLogic`'e bağlanmış ve CANLI statüsüne geçmiştir.
+**Tamamen Ölü**: `SystemConfig.h`'de artık tamamen ölü hiçbir eşik kalmamıştır
+— tek gerçek ölü kopya (`BMS_CRITICAL_MIN_/MAX_CELL_VOLTAGE_MV`, bkz. bölüm 2
+düzeltme notu) 2026-07-13'te silindi. Hücre voltajı için karar mantığına
+BAĞLI olan eşikler zaten hep `BmsAlgo.h`'de yaşıyordu (`BMS_CELL_UNDERVOLT_/
+OVERVOLT_CRIT_MV`, bölüm 3) — 0xE015-E020 ve 0xE001 mesajlarının çözülmesiyle
+CANLI hale gelen bunlardır, `SystemConfig.h`'deki silinen kopya DEĞİL.
 
 **Canlı**: pack voltajı eşikleri (`TEL_bmsPackVoltageDeciV`, DOĞRULANDI),
 sıcaklık eşikleri (`TEL_bmsTempHighestC`, DOĞRULANDI, 55/70 °C), akım

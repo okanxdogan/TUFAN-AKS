@@ -5,6 +5,19 @@
 #include "VehicleData.h"  // TelemetryData (M3)
 #include "BmsAlgo.h"
 
+// --- Görev 1: Sıcaklık eşiği derleme-zamanı kilitleri ---
+// Şartname Bölüm 3, 6.e.iii: 55 uyarı / 70 kapanma, 15°C sabit aralık.
+// Bu başlık hem SystemConfig.h'yi (VCU karar eşikleri) hem BmsAlgo.h'yi
+// (HMI/ekran eşikleri) gördüğünden iki setin birbirinden kopmadığı kilit
+// BURADA doğrulanır (BmsAlgo.h saf kalsın diye SystemConfig.h'yi include
+// etmez; 15 °C aralık kilidi SystemConfig.h'nin kendisindedir).
+static_assert(BMS_TEMP_OVERTEMP_WARN_C == BMS_WARN_MAX_TEMP_C,
+              "HMI uyari sicaklik esigi (BmsAlgo.h) SystemConfig.h "
+              "BMS_WARN_MAX_TEMP_C=55 ile ayni olmali (sartname 6.e.iii).");
+static_assert(BMS_TEMP_OVERTEMP_CRIT_C == BMS_CRITICAL_MAX_TEMP_C,
+              "HMI kritik sicaklik esigi (BmsAlgo.h) SystemConfig.h "
+              "BMS_CRITICAL_MAX_TEMP_C=70 ile ayni olmali (sartname 6.e.iii).");
+
 namespace VcuLogic {
 
 enum class VcuState : uint8_t {
@@ -35,10 +48,12 @@ enum class VcuEvent : uint8_t {
 // EK B GÜVEN KURALI: hasWarningCondition/hasCriticalCondition YALNIZCA
 // doğrulanmış sinyallere bakar — pack voltajı (0xE000 byte[2:3], DOĞRULANDI),
 // akım (0xE000 byte[0:1], DOĞRULANDI — saha gözlemi Temmuz 2026), en yüksek
-// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI) + BMS/motor freshness
-// (BMS freshness G12 ile E000+E001 ID bazında ayrı ayrı izlenir).
-// AÇIK İŞLER: hücre voltajı kontrolleri kaynak sinyal bilinmediği için hâlâ
-// dışarıda; TEL_bmsSystemState==4 kontrolü kodda durur ama alan hiçbir CAN
+// hücre sıcaklığı (0xE001 byte[6:7], DOĞRULANDI), 24 hücre voltajı (E015-E020,
+// DOĞRULANDI — yalnızca TEL_cellVoltageDataValid iken degerlendirilir) +
+// BMS/motor freshness (BMS freshness G12 ile E000+E001 ID bazında ayrı ayrı
+// izlenir; hücre voltajı freshness'ı CAN_cellVoltageSeenMask/E015-E020 ile
+// ayrı izlenir, bkz. TEL_cellVoltageTimeoutActive).
+// AÇIK İŞ: TEL_bmsSystemState==4 kontrolü kodda durur ama alan hiçbir CAN
 // ID'den parse edilmediği için kaynak bağlanana kadar ETKİSİZDİR (aşağıya bkz.).
 
 // Akım sinyali DOĞRULANDI (0xE000 byte[0:1], ×0.1A → centi-A, işaret: + şarj
@@ -69,17 +84,43 @@ inline bool isTempWarning(int8_t bmsTempHighestC) {
     return bmsTempHighestC >= BMS_WARN_MAX_TEMP_C;
 }
 
+#if RELAY_ROLES_ASSIGNED
+// Flaşör (şartname 6.e.ii) durum kararı — SAF: mevcut flaşör durumu + taze
+// telemetriden yeni istenen durumu döndürür. Histerezisli:
+//   * sıcaklık >= 55 (BMS_WARN_MAX_TEMP_C)                → ON
+//   * sıcaklık < 53 (55 − FLASHER_HYSTERESIS_C)           → OFF
+//   * 53..54 bandı                                        → mevcut durum korunur
+// BAYAT VERİ KURALI: bmsDataValid=false veya BMS timeout iken flaşöre
+// DOKUNULMAZ (son durum korunur) — bayat veriyle ne yakma ne söndürme.
+inline bool flasherDesiredState(bool currentOn, bool bmsDataValid,
+                                bool bmsTimeoutActive, int8_t bmsTempHighestC) {
+    if (!bmsDataValid || bmsTimeoutActive)
+        return currentOn;
+    if (isTempWarning(bmsTempHighestC))
+        return true;
+    if (bmsTempHighestC < BMS_WARN_MAX_TEMP_C - FLASHER_HYSTERESIS_C)
+        return false;
+    return currentOn;
+}
+#endif  // RELAY_ROLES_ASSIGNED
+
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
 
-    // Hücre voltaj WARN kontrolü (kaynak doğrulandı — E015-E020)
-    // Yalnızca tüm 24 hücre verisi tazeyse
+    // Hücre voltaj WARN kontrolü (freshness E015-E020 mask'ından, değerler
+    // 0xE001'den — bkz. TEL_cellVoltageDataValid tanımı VehicleData.h).
+    // Yalnızca tüm 24 hücre verisi tazeyse. TEL_bmsCellVoltageMin/MaxDeciMv
+    // deci-mV ölçeğindedir — eşikler de deci-mV (BMS_CELL_*_DECI_MV, bkz.
+    // BmsAlgo.h). GÜVENLİK-EŞİĞİ DÜZELTMESİ (2026-07-13): önceden mV-ölçekli
+    // makrolarla (BMS_CELL_*_MV) karşılaştırılıyordu — gerçekçi bir hücre
+    // voltajıyla (deci-mV ~28000-40000) bu, overvolt dalının HER ZAMAN,
+    // undervolt dalının ise NEREDEYSE HİÇ tetiklenmemesi anlamına geliyordu.
     if (VCU_data.TEL_cellVoltageDataValid) {
         // Min hücre WARN altında mı?
-        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_WARN_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_WARN_DECI_MV) return true;
         // Max hücre WARN üstünde mı?
-        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_WARN_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_WARN_DECI_MV) return true;
     }
 
     // Yalnızca DOĞRULANMIŞ sinyaller: pack voltajı (WARN bandı) + en yüksek
@@ -116,10 +157,11 @@ inline bool hasCriticalCondition(const TelemetryData& VCU_data,
     // LiFePO4 spec) + en yüksek hücre sıcaklığı (≥70 °C FAULT) + akım
     // (şarj ≥13 A / deşarj ≥15 A FAULT). Kritik koşullar
     // isReadyEntryPermitted üzerinden READY girişini de bloklar.
-    // Hücre voltaj CRITICAL kontrolü (kaynak doğrulandı — E015-E020)
+    // Hücre voltaj CRITICAL kontrolü — deci-mV alan, deci-mV eşik (bkz.
+    // hasWarningCondition yorumu ve BmsAlgo.h "deci-mV ESDEĞERLERİ").
     if (VCU_data.TEL_cellVoltageDataValid) {
-        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_CRIT_MV) return true;
-        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_CRIT_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMinDeciMv < BMS_CELL_UNDERVOLT_CRIT_DECI_MV) return true;
+        if (VCU_data.TEL_bmsCellVoltageMaxDeciMv > BMS_CELL_OVERVOLT_CRIT_DECI_MV) return true;
     }
 
     return VCU_data.TEL_bmsPackVoltageDeciV <=
@@ -152,6 +194,15 @@ inline bool isResetInterlockSatisfied(const TelemetryData& VCU_data,
 inline bool isReadyEntryPermitted(const TelemetryData& VCU_data) {
     if (!VCU_data.TEL_bmsDataValid)
         return false;
+
+#if RELAY_ROLES_ASSIGNED
+    // Şartname 8.2.a.iii: şarj modunda (charger CAN akışı taze) S1 kapalı /
+    // S2 açıktır — charger aktifken READY (sürüş bankını kapatma) YASAK.
+    // TEL_chargerActive, CAN_chargerValid'den türetilir (freshness dahil);
+    // charger bağlı değilken/bayatken false olur ve READY serbest kalır.
+    if (VCU_data.TEL_chargerActive)
+        return false;
+#endif
 
     if (hasCriticalCondition(VCU_data, VcuState::IDLE))
         return false;

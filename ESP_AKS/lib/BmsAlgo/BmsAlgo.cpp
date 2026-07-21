@@ -15,13 +15,17 @@ BmsComputed makeSafeInvalid() {
     return c;
 }
 
-// G8/M4: Paket geçerli (isValid=true) AMA per-hücre kaynağı DOĞRULANMADI
-// (cellDataValid=false). Bu durumda dengeleme/uyarı/min-max hücre gerçek
-// veriye dayanamaz — pack ortalamasından fabrike per-hücre değere GÜVENMEK
-// gerçek dengesizliği maskeler (bir hücre 2.3 V'a düşse bile ekran sağlıklı
-// görünürdü). Bu yüzden "veri yok" döndürülür: hiçbir hücre dengelenmez,
-// uyarı NO_DATA (nötr). makeSafeInvalid'den FARKI: burada pack bayat/arızalı
-// DEĞİL, yalnız hücre görünürlüğü yok → CRITICAL yalancı alarmı üretilmez.
+// Paket geçerli (isValid=true) AMA bu anlık görüntüde 24 hücrenin TAMAMI
+// henüz taze/tam değil (cellDataValid=false — kaynak mapping'i DOĞRULANDI,
+// E015-E020, G8/M4 FIX; false burada yalnız "boot sonrası tüm CAN ID'leri
+// henüz gelmedi / freshness timeout" anlamına gelir). Bu durumda
+// dengeleme/uyarı/min-max hücre gerçek veriye dayanamaz — pack
+// ortalamasından fabrike per-hücre değere GÜVENMEK gerçek dengesizliği
+// maskeler (bir hücre 2.3 V'a düşse bile ekran sağlıklı görünürdü). Bu
+// yüzden "veri yok" döndürülür: hiçbir hücre dengelenmez, uyarı NO_DATA
+// (nötr). makeSafeInvalid'den FARKI: burada pack bayat/arızalı DEĞİL,
+// yalnız hücre görünürlüğü henüz tam değil → CRITICAL yalancı alarmı
+// üretilmez.
 BmsComputed makeNoCellData() {
     BmsComputed c{};                   // tüm alanlar 0 / balanceFlag tümü false
     c.warningLevel = BMS_WARN_NO_DATA;
@@ -57,24 +61,24 @@ BmsComputed computePack(const BmsPackData& in) {
 
     BmsComputed c{};  // balanceFlag[] dahil her şey 0/false başlar
 
-    // --- Min/Max/toplam gerilim ve min/max sıcaklık tek geçişte ---
+    // --- Min/Max/toplam gerilim tek geçişte ---
+    // Sıcaklık ARTIK hücre dizisinden TARANMAZ: BMS per-hücre sıcaklık
+    // yayınlamıyor (cellTempC[] fiilen hep 0'dı ve sıcaklık uyarısı HİÇ
+    // tetiklenmiyordu). Gerçek paket sıcaklığı packTempMaxC/MinC alanlarından
+    // gelir (0xE001 → TEL_bmsTempHighestC/LowestC, main.cpp doldurur).
     uint32_t sumMv = 0;
     uint16_t maxMv = in.cellVoltageMv[0];
     uint16_t minMv = in.cellVoltageMv[0];
     uint8_t maxIdx = 0;
     uint8_t minIdx = 0;
-    int16_t tMax = in.cellTempC[0];
-    int16_t tMin = in.cellTempC[0];
+    const int16_t tMax = in.packTempMaxC;
+    const int16_t tMin = in.packTempMinC;
 
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         const uint16_t v = in.cellVoltageMv[i];
         sumMv += v;
         if (v > maxMv) { maxMv = v; maxIdx = i; }
         if (v < minMv) { minMv = v; minIdx = i; }
-
-        const int16_t t = in.cellTempC[i];
-        if (t > tMax) tMax = t;
-        if (t < tMin) tMin = t;
     }
 
     // packVoltageMv uint32 olduğundan tüm aralık (24*4200=100800 mV) sığar;

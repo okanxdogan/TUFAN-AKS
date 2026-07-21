@@ -70,6 +70,21 @@
 // her olayda değil, en fazla bu sürede bir WARN.
 #define CAN_RX_STATS_LOG_INTERVAL_MS 1000U
 
+// --- CAN Autobaud Yeniden-Deneme (Kalıcı Sağırlık Düzeltmesi) ---
+// CanManager::begin() üçü de başarısız olursa 500 kbps'e fallback yapardı ve
+// BİR DAHA ASLA yeniden denemezdi — BMS boot anında sessizse (uykuda/geç
+// açılıyor) veya bus gerçekte 125/250 kbps ise AKS kalıcı olarak sağır
+// kalıyordu (saha olayı, bkz. Documents/BRING_UP_CHECKLIST.md bölüm 4).
+// Bitrate doğrulanmamışken VE henüz hiçbir geçerli frame alınmamışken (saf
+// karar mantığı: lib/CanManager/AutobaudPolicy.h::autobaud_should_retry) CAN
+// task döngüsünden bu aralıkta bir yeniden algılama denenir. Tek tikte 3
+// hızın TÜMÜ denenmez (task döngüsünü 3×1 sn kilitler) — her retry tikinde
+// rotasyonla TEK hız denenir (bkz. CanManager::retryAutobaudIfNeeded).
+#define CAN_AUTOBAUD_RETRY_INTERVAL_MS 5000U
+// Fallback'te doğrulanamamış kaldığı sürece görünürlük: en fazla 1 WARN / bu
+// süre (spam önleme, RX_QUEUE_FULL loglamasıyla aynı desen).
+#define CAN_AUTOBAUD_WARN_LOG_INTERVAL_MS 60000U
+
 // --- Nextion HMI (UART) ---
 #define HMI_UART_NUM UART_NUM_1
 // Not: J8 konnektöründe screen_TX'in ekranın mı yoksa ESP'nin mi TX'i olduğuna
@@ -77,6 +92,89 @@
 // 33'tür.
 #define HMI_TX_PIN GPIO_NUM_33  // Şemadaki screen_RX (ESP TX -> Ekran RX)
 #define HMI_RX_PIN GPIO_NUM_32  // Şemadaki screen_TX (Ekran TX -> ESP RX)
+// Nextion seri hızı (8N1 → ham ~960 B/s) — aşağıdaki resync bütçe
+// static_assert'ı bunu kullanır. DİKKAT: DisplayHMI::begin() UART config'i
+// baud'u ayrıca literal (9600) yazar; orası değişirse bu sabit de AYNI
+// commit'te güncellenmeli, yoksa bütçe kanıtı eski hıza göre doğrular.
+#define HMI_UART_BAUD 9600
+
+// --- Nextion Reset (brown-out) Algılama ---
+// readTouchCommand RX yoluna paralel bağlı dedektör (lib/DisplayHMI/
+// NextionResetDetect.h) Nextion Startup event'ini (00 00 00 FF FF FF)
+// yakalayınca bkcmd=0 yeniden gönderilir ve ekran cache'leri geçersiz kılınır
+// (bkz. DisplayHMI::HMI_handleNextionReset). WARN logu oran-sınırlıdır
+// (CAN_RX_STATS_LOG_INTERVAL_MS deseni): en fazla 1 WARN / bu süre — ekran
+// güç hattı sürekli brown-out yapıyorsa log spam'i önlenir, toplam sayaç
+// logda görünür kalır.
+#define HMI_RESET_WARN_LOG_INTERVAL_MS 5000U
+
+// --- HMI Round-Robin Resync (reset dedektörünün emniyet katmanı) ---
+// Startup event'i brown-out sırasında RX hattında bozulup KAYBOLABİLİR —
+// o durumda yukarıdaki dedektör hiç tetiklenmez ve ekran kalıcı yarı-dolu
+// kalırdı. Bu katman olaydan bağımsızdır: her bu aralıkta bir, 11 skalar
+// alandan yalnızca SIRADAKİ TEKİ cache'e bakılmaksızın zorla gönderilir
+// (saf karar mantığı: lib/DisplayHMI/ResyncPolicy.h::hmi_resync_due_field).
+//
+// TOPARLANMA SÜRESİ: tam tur = HMI_RESYNC_FIELD_COUNT × bu aralık
+// = 11 × 500 ms ≈ 5.5 sn — ekran, tespit edilemeyen bir reset sonrası en
+// geç bu süre içinde kendini onarır (insan/gösterge zaman ölçeğinde kabul
+// edilebilir; daha agresif değerler UART bütçesinden yer).
+#define HMI_RESYNC_INTERVAL_MS 500U
+
+// Tek resync komutunun KÖTÜ-DURUM bayt boyutu (0xFF×3 end-byte DAHİL).
+// En uzun komut: 'contactor.txt="CLOSED"' = 22 + 3 = 25 B → marjla 26.
+#define HMI_RESYNC_CMD_MAX_BYTES 26U
+
+// BÜTÇE KANITI: 9600 baud 8N1 → ham 960 B/s; HMI_Task 10 Hz → döngü başına
+// ~96 B (buildBmsNextionCommands maxBytes=90 bu bütçeden). Resync tetik
+// başına TEK alan gönderir → tepe ek yük = 26 B / 500 ms = 52 B/s, ham
+// kapasitenin ≤ %10'u (96 B/s) olmalı ki BMS panelinin 90 B/döngü tavanıyla
+// birlikte TX ring (256 B) baskı altında kalmasın. Aralık görev periyodunun
+// (100 ms) altına indirilse bile hmi_resync_due_field çağrı başına tek alan
+// döndürdüğünden fiili tavan 26 B × 10 Hz = 260 B/s'de kendiliğinden doyar;
+// aşağıdaki assert normal yapılandırmayı %10 payın içinde tutar.
+#ifdef __cplusplus
+static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
+                      (unsigned)HMI_RESYNC_INTERVAL_MS
+                  <= ((unsigned)HMI_UART_BAUD / 10u) / 10u,
+              "HMI resync yuku UART butcesinin %10 payini asiyor — "
+              "HMI_RESYNC_INTERVAL_MS'i artirin (bkz. ustteki butce kaniti).");
+#endif
+
+// --- BMS Panel Round-Robin Resync (24 hücre + özet alanlar) ---
+// Skalar resync katmanının 24 hücrelik panele uzantısı: her bu aralıkta bir
+// SIRADAKİ TEK slot'un (27 slot: 24 hücre üçlüsü cell/j/bal + cellmax +
+// cellmin + warn) BmsNextionCache girdileri geçersiz kılınır (saf yardımcı:
+// lib/BmsAlgo/BmsNextionPacket.h::bmsNextionCacheInvalidateSlot); mevcut
+// change-compare + maxBytes=90 yolu slot'u yeniden yayar. Invalidasyon
+// yapışkan olduğundan bütçe tükenmesinde resync kaybolmaz.
+//
+// TOPARLANMA SÜRESİ: tam tur = 27 slot × 1000 ms = 27 sn; hücre slotları
+// updateCells tikini (1 Hz) beklediğinden en kötü ~+1-2 sn kuyruk → ekranın
+// hücre paneli tespit edilemeyen reset sonrası ~29 sn içinde kendini onarır.
+// Kritik bilgiler (state/contactor/pack) zaten skalar katmanda ~5.5 sn'de
+// toparlanır; detay paneli için daha yavaş tur bilinçli tercihtir (bütçe).
+#define BMS_RESYNC_INTERVAL_MS 1000U
+
+// Tek slot'un KÖTÜ-DURUM bayt boyutu (end-byte'lar DAHİL): hücre üçlüsü
+// "cell23.val=65535"(19) + "j23.val=100"(14) + "bal23.val=1"(14) = 47 → 48.
+#define BMS_RESYNC_SLOT_MAX_BYTES 48U
+
+// BİRLEŞİK BÜTÇE KANITI: iki resync katmanının toplam tepe yükü
+//   skalar: 26 B / 500 ms = 52 B/s   +   BMS: 48 B / 1000 ms = 48 B/s
+//   = 100 B/s ≤ ham kapasitenin %15'i (960 × 0.15 = 144 B/s).
+// BMS tarafı ayrıca buildBmsNextionCommands'ın 90 B/döngü sert tavanından
+// geçtiğinden tek döngüde bütçe aşımı zaten mümkün değildir; bu assert
+// ortalama yükün de sınırlı kaldığını derleme zamanında kanıtlar.
+#ifdef __cplusplus
+static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
+                      (unsigned)HMI_RESYNC_INTERVAL_MS
+                      + (unsigned)BMS_RESYNC_SLOT_MAX_BYTES * 1000u /
+                            (unsigned)BMS_RESYNC_INTERVAL_MS
+                  <= ((unsigned)HMI_UART_BAUD / 10u) * 15u / 100u,
+              "Toplam resync yuku (skalar + BMS panel) UART butcesinin %15 "
+              "payini asiyor — resync araliklarindan birini artirin.");
+#endif
 
 // --- HMI Command IDs ---
 #define HMI_CMD_START 1
@@ -95,13 +193,12 @@
 #define LORA_M0_PIN GPIO_NUM_25   // Şemadaki MO (IO25)
 #define LORA_M1_PIN GPIO_NUM_26   // Şemadaki M1 (IO26)
 #define LORA_UART_BAUD 9600       // MCU↔E22 yerel seri hız (config modunda da aynı)
-// 2 Hz telemetry uplink (5 Hz'den düşürüldü — saha loglarında tespit edilen
-// link flapping düzeltmesinin parçası). Tek frekanslı yarım-dubleks E22
-// kanalında 5 Hz sürekli AKS TX'i, UKS'in 1 Hz 0xB0 heartbeat'inin kanala
-// girebileceği boşluğu neredeyse hiç bırakmıyordu; heartbeat AKS'e ancak
-// ~5-6 sn'de bir ulaşıyor, LINK_TIMEOUT_MS bu araliktan kisa oldugundan link
-// surekli DOWN->UP flapping yapiyordu. 2 Hz, kanalda heartbeat'in gecebilecegi
-// duzenli bosluklar yaratir.
+// 2 Hz telemetry uplink (1 Hz'den geri döndürüldü — parkur keşfinde
+// maksimum mesafe 500 m ölçüldü, 2.4 kbps hava hızı bu mesafe için aşırı
+// tedbirdi; hava hızı 4.8 kbps'e çıkarıldı, ekip onaylı kalibrasyon).
+// Gerekçe: ~90 byte'lık bir TEL paketi 4.8 kbps'te ~190 ms havada kalır;
+// 500 ms'lik periyotta canlı doluluk ~%38 — UKS'in 1 Hz 0xB0 heartbeat'inin
+// kanala girebileceği pencere yeterli kalır.
 #define LORA_TX_PERIOD_MS 500
 #define LORA_RX_TIMEOUT_MS 20
 
@@ -163,6 +260,65 @@
 
 #define RELAY_TOTAL_CHANNELS 10
 
+// --- Şartname Bölüm 3, 8.2.a — S1/S2 kontaktör rolleri + uyarı flaşörü ---
+// S1 = şarj hattı kontaktörü, S2 = sürüş hattı kontaktörü (şartname 8.2.a):
+//   (iii) şarjda  S1 KAPALI + S2 AÇIK
+//   (vii) sürüşte S1 AÇIK   + S2 KAPALI
+//   (vi)  güvenlik probleminde İKİSİ DE AÇIK
+// Flaşör (şartname 6.e.ii): sıcaklık uyarısına bağlı sesli+ışıklı ikaz —
+// kontaktör DEĞİLDİR, bank maskesinin DIŞINDA tutulur ki allOff (güvenlik
+// açması) uyarı flaşörünü SÖNDÜRMESİN.
+//
+// Kanal atamaları (yazılım tarafı sabit; fiziksel yük eşlemesi donanım
+// ekibi teyidi BEKLİYOR — bkz. RELAY_ROLES_ASSIGNED):
+#define RELAY_CH_S2_DRIVE 0   // S2 — sürüş hattı kontaktörü (kanal 1-7 sürüş bankının parçası)
+#define RELAY_CH_S1_CHARGE 8  // S1 — şarj hattı kontaktörü
+#define RELAY_CH_FLASHER 9    // Uyarı flaşörü (sesli+ışıklı, şartname 6.e.ii)
+
+// Kanal-yük eşlemesi (yukarıdaki S1/S2/flaşör rolleri) donanım ekibiyle
+// HENÜZ teyit edilmedi. 0 (varsayılan) iken rol mantığının TAMAMI (flaşör,
+// S1/S2 mod anahtarlaması) derleme dışıdır ve araç davranışı eski "tek bank"
+// haliyle BAYT-BAYT aynı kalır. Teyit gelince build flag'i ile 1 yapılır
+// (ör. platformio.ini -D RELAY_ROLES_ASSIGNED=1).
+#ifndef RELAY_ROLES_ASSIGNED
+#define RELAY_ROLES_ASSIGNED 0
+#endif
+
+#if !RELAY_ROLES_ASSIGNED
+#warning "kanal-yük eşlemesi donanım ekibiyle teyit edilmedi — bank davranışı eski haliyle sürüyor"
+// Roller atanmamışken maske 10 kanalın TAMAMI: allOn/allOff bugünkü davranışla
+// birebir aynı kalır (flaşör kanalı diye bir ayrım henüz YOK).
+#define RELAY_CONTACTOR_BANK_MASK ((1u << RELAY_TOTAL_CHANNELS) - 1u)  // 0x3FF
+#else
+// Roller atandı: kontaktör bankı = flaşör HARİÇ tüm kanallar (S1 + S2 +
+// sürüş bankı 1-7). allOff bu maskeyi açar → şartname 8.2.a.vi (güvenlik
+// probleminde S1 ve S2 dahil hepsi açılır) sağlanır, flaşör kanalının son
+// yazılan durumu shadow'da KORUNUR (uyarı sönmez).
+#define RELAY_CONTACTOR_BANK_MASK \
+    (((1u << RELAY_TOTAL_CHANNELS) - 1u) & ~(1u << RELAY_CH_FLASHER))  // 0x1FF
+// Sürüş hattı bankı = S2 (kanal 0) + kanal 1-7. S1 bu maskenin BİLİNÇLİ
+// olarak DIŞINDADIR: READY girişi yalnız bu maskeyi kapatır, S1 açık kalır
+// (şartname 8.2.a.vii). S1, RELAY_CONTACTOR_BANK_MASK'ın İÇİNDEDİR ki
+// allOff güvenlik açması S1'i de açsın (8.2.a.vi).
+#define RELAY_DRIVE_BANK_MASK \
+    (RELAY_CONTACTOR_BANK_MASK & ~(1u << RELAY_CH_S1_CHARGE))  // 0x0FF
+#ifdef __cplusplus
+static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_FLASHER)) == 0,
+              "Flasor kanali kontaktor bank maskesinin DISINDA olmali — "
+              "allOff uyari flasorunu sondurmemeli (sartname 6.e.ii).");
+static_assert((RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S1_CHARGE)) != 0 &&
+                  (RELAY_CONTACTOR_BANK_MASK & (1u << RELAY_CH_S2_DRIVE)) != 0,
+              "S1 ve S2 kontaktor bank maskesinin ICINDE olmali — guvenlik "
+              "acmasi (allOff) ikisini de acmali (sartname 8.2.a.vi).");
+#endif
+#endif  // RELAY_ROLES_ASSIGNED
+
+// Flaşör histerezisi (şartname 6.e.ii/6.e.iii): flaşör 55 °C'de (BMS_WARN_
+// MAX_TEMP_C, >= semantiği) yanar; sıcaklık (55 − bu değer) = 53 °C'nin
+// ALTINA inince söner. Eşik sınırında titremeyi (ON/OFF çırpınması) önler.
+// Yalnız RELAY_ROLES_ASSIGNED=1 iken derlenen flaşör mantığı kullanır.
+#define FLASHER_HYSTERESIS_C 2
+
 // --- MCP23S17 Çıkış Doğrulama (Actuator Verify) Periyodu ---
 // VCU task'i 20 ms'de bir (50 Hz) döner; OLAT/IODIR geri-okuma doğrulamasını
 // HER tick yapmak SPI bara yükünü gereksiz artırır (tick başına 4 register
@@ -218,7 +374,10 @@
 // LORA_TX_PERIOD_MS / REPLAY_BURST_PER_TICK ile ayarlanır. Mevcut değerler
 // (2 Hz, 1 replay + 1 canlı, 120 B): tepe = 2×120×1000/500 = 480 B/s ≤ 768 B/s.
 // (Not: LORA_TX_PERIOD_MS 200'e — 5 Hz — düşürülürse tepe 1200 B/s olur ve
-//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir.)
+//  aşağıdaki static_assert derlemeyi KIRAR; bu kasıtlı bir emniyettir. Bu
+//  bütçe, MCU<->E22 yerel UART hattının (LORA_UART_BAUD, 9600, DEĞİŞMEDİ)
+//  kapasitesini denetler — 4.8 kbps hava hızı ayrı bir darboğazdır ve bu
+//  static_assert'in kapsamında DEĞİLDİR.)
 #ifdef __cplusplus
 static_assert(
     (1u + (unsigned)REPLAY_BURST_PER_TICK) * (unsigned)LORA_TEL_FRAME_MAX_BYTES *
@@ -235,6 +394,16 @@ static_assert(
 // beklemez; telemetri "devre dışı" moduna geçer (araç durmaz — bkz. main.cpp
 // EspLoraHal::begin / vTask_LoRa_UKS + lib/LoraLink/UartInitRetry.h).
 #define LORA_UART_MAX_INIT_ATTEMPTS 5
+
+// --- G11-b: LoRa görev-başı kurulumu KALICI devre dışı kalmasın ---
+// EspLoraHal::begin() (yukarıdaki LORA_UART_MAX_INIT_ATTEMPTS denemesi)
+// başarısız olup "devre dışı" moduna geçtikten SONRA vTask_LoRa_UKS artık
+// SONSUZA DEK boş döngüde kalmaz — bu sabit aralıkla begin()'i (+ E22
+// config'i) yeniden dener; geçici bir UART/donanım aksaklığı reboot
+// beklemeden kendi kendine düzelebilir (araç bu süre boyunca zaten
+// etkilenmiyordu — bkz. Documents/LoRa_Link_Analysis.md "Current
+// Reliability Policy"). Watchdog retry beklemesi sırasında da beslenir.
+#define LORA_INIT_RETRY_INTERVAL_MS 30000U
 
 // --- LoRa RX Tanısı ---
 #define LORA_UNKNOWN_BYTE_WARN_INTERVAL_MS 10000U  // RF gurultu tanisi icin en fazla 1 WARN / 10 sn
@@ -256,6 +425,29 @@ static_assert(
 #ifndef MOTOR_DRIVER_PRESENT
 #define MOTOR_DRIVER_PRESENT 0  // Motor sürücüsü entegre edildiğinde 1 yap — READY interlock'u ve zero-torque yolu bu bayrağa bağlı.
 #endif
+
+// --- HİPOTEZ: Akımdan türetilmiş sysState (bkz. Documents/CAN_Message_Table.md
+// "0x0000E003" ve lib/Telemetry/SysStateDerive.h) ---
+// UKS `sysState` alanı (TEL alan 12) hiçbir CAN ID'den DOĞRULANMIŞ parse
+// almıyor (bkz. Documents/UKS_LoRa_Protocol.md "DOĞRULANACAK") —
+// TelemetrySanitize::sanitizeSystemState(0) bunu FAULT(4) yapar, UKS
+// ekranında BMS her zaman FAULT görünür. Bu bayrak (varsayılan KAPALI),
+// DOĞRULANMIŞ akım sinyalinden (0xE000 byte[0:1]) basit bir Discharge/IDLE/
+// Charge tahmini üretmeyi dener — E003 byte[0:1]'in gerçek sysState olup
+// olmadığı henüz TEYİT EDİLMEDİ (⚠️ HİPOTEZ, bkz. CAN_Message_Table.md).
+// EK B GÜVEN KURALI gereği bu türetilmiş değer YALNIZCA UKS telemetri
+// gösterimi içindir — VCU karar mantığına (FAULT/kontaktör) ASLA BAĞLANMAZ
+// (bkz. SysStateDerive.h "applyIfEnabled" çağrı noktası: yalnız LoRa TX
+// paketleme yolunda, VcuLogic'in okuduğu TelemetryData'ya DOKUNMAZ).
+#ifndef SYSSTATE_DERIVE_FROM_CURRENT
+#define SYSSTATE_DERIVE_FROM_CURRENT 0
+#endif
+
+// CONFIG — akımın "IDLE" sayılacağı simetrik bant (centi-Amper, TEL_bmsCurrentCentiA
+// ile aynı birim). Öneri: 50 (=0.5 A) — 0xE000 byte[0:1] çözünürlüğü 0.1 A
+// (bkz. CAN_Message_Table.md) olduğundan birkaç LSB'lik ölçüm gürültüsüne
+// karşı marj bırakır. Saha kalibrasyonu/ekip onayı BEKLİYOR.
+#define SYSSTATE_CURRENT_IDLE_BAND_CENTI_A 50
 
 // --- Motor Error-Flag Debounce (G9) ---
 // Motor errorFlags → FAULT yolu, geçici/tek-seferlik hata bitine (ör. CAN CRC
@@ -280,18 +472,30 @@ static_assert(
 #define VCU_CONTACTOR_OPEN_DELAY_MS 20
 
 // --- Phase 2 Safety Thresholds ---
-// Warning levels should eventually trigger derating (AÇIK İŞ B12 —
-// bugün yalnız WARN log + READY giriş bloğu; bkz. VcuLogic.cpp run()).
+// Warning levels should eventually trigger derating (AÇIK İŞ B12 — İSKELET
+// KURULDU 2026-07-15: lib/VcuLogic/DeratingPolicy.h WARN sinyallerinden
+// 0..100 bir tork-izin yüzdesi hesaplıyor ve VcuLogic.cpp run() bunu yalnız
+// LOGLUYOR ("derating önerisi %N" — bkz. aşağıdaki DERATING_* sabitleri).
+// KALAN AÇIK İŞ: (1) bu yüzdeleri gerçek bir tork komutuna bağlamak —
+// motor sürücüsü tork komut yolu (setTorqueSink/G2) gerçek frame üretmeye
+// başlayınca tasarlanacak; (2) DERATING_* yüzdelerinin/eşik-yaklaşma
+// oranının saha kalibrasyonu/ekip onayı. Bugün araç davranışı DEĞİŞMEZ.
 // Critical levels should force a transition to FAULT.
 //
 // EK B GÜVEN KURALI: Güvenlik kararı (FAULT/kontaktör) yalnızca DOĞRULANMIŞ
 // sinyallerden türetilir. Şu an DOĞRULANMIŞ olanlar: pack voltajı (0xE000
 // byte[2:3]), akım (0xE000 byte[0:1] + saha gözlemi), SoC (0xE000 byte[4:5]),
-// en yüksek hücre sıcaklığı (0xE001 byte[6:7]) + BMS freshness (G12: E000 ve
-// E001 ID bazında ayrı ayrı izlenir, bms_evaluate_freshness). AÇIK İŞ: hücre
-// voltajı kaynak sinyalleri (E002–E005 adayı) ve TEL_bmsSystemState kaynağı
-// henüz doğrulanmadığı için ilgili eşikler/kontroller YER TUTUCUDUR ve karar
-// mantığına fiilen BAĞLI DEĞİLDİR.
+// en yüksek hücre sıcaklığı (0xE001 byte[6:7]), 24 hücre voltajı (E015-E020)
+// + BMS freshness (G12: E000/E001 ID bazında, hücre voltajı ise
+// CAN_cellVoltageSeenMask ile ayrı izlenir). Hücre voltajı eşikleri artık
+// karar mantığına BAĞLI: VcuLogic::hasWarningCondition/hasCriticalCondition
+// (bkz. VcuLogic.h) BmsAlgo.h'deki BMS_CELL_UNDERVOLT/OVERVOLT_WARN/CRIT_
+// DECI_MV eşiklerini (deci-mV — TEL_bmsCellVoltageMin/MaxDeciMv alanıyla AYNI
+// ölçek; GÜVENLİK-EŞİĞİ DÜZELTMESİ 2026-07-13, önceden mV-ölçekli makrolarla
+// karşılaştırılıyordu, bkz. Documents/Threshold_Ownership.md) TEL_
+// cellVoltageDataValid iken kullanır. AÇIK İŞ: yalnızca TEL_bmsSystemState
+// kaynağı henüz doğrulanmadığı için ilgili kontrol (==4 FAULT) YER
+// TUTUCUDUR ve karar mantığına fiilen BAĞLI DEĞİLDİR.
 
 // Pack voltage thresholds in decivolts (1 deciV = 0.1 V).
 // Kaynak alan: Lithium Balance c-BMS 0xE000 byte[2:3], big-endian uint16,
@@ -316,8 +520,20 @@ static_assert(
 // sıcaklık isReadyEntryPermitted üzerinden READY girişini de bloklar.
 // HMI katmanı (BmsAlgo.h BMS_TEMP_OVERTEMP_WARN_C/CRIT_C) aynı 55/70
 // değerlerine hizalıdır.
+//
+// Şartname Bölüm 3, 6.e.iii: 55 uyarı / 70 kapanma, 15°C sabit aralık.
+// Bu iki değer şartname idealinin BİREBİR kendisidir — DEĞİŞTİRİLMEZ;
+// 15 °C'lik uyarı-kapanma aralığı aşağıdaki static_assert ile derleme
+// zamanında kilitlidir (BmsAlgo.h HMI eşikleriyle eşitlik kilidi de
+// VcuLogic.h'dedir — iki başlığı birden gören ilk karar katmanı orasıdır).
 #define BMS_WARN_MAX_TEMP_C 55
 #define BMS_CRITICAL_MAX_TEMP_C 70
+#ifdef __cplusplus
+static_assert(BMS_CRITICAL_MAX_TEMP_C - BMS_WARN_MAX_TEMP_C == 15,
+              "Sartname Bolum 3, 6.e.iii: uyari (55) ile kapanma (70) arasinda "
+              "15 C sabit aralik korunmali — esiklerden biri tek tarafli "
+              "degistirilemez.");
+#endif
 // Current thresholds in centi-Ampere (0.01 A units) — parser çıktısı
 // TEL_bmsCurrentCentiA ile AYNI birim (raw 0.1A × 10 = centi-A). Böylece
 // eşikler parser ölçeğiyle uçtan uca hizalı; aşırı akım koruması gerçek
@@ -340,11 +556,34 @@ static_assert(
 #define BMS_WARN_MAX_DISCHARGE_CURRENT_CENTI_A    900   // 9.0 A
 #define BMS_CRITICAL_MAX_DISCHARGE_CURRENT_CENTI_A 1500 // 15.0 A
 // Hücre voltajı eşikleri (mV) — 24S LiFePO4 spec'inden türetildi
-// (2.50 V / 3.65 V per hücre).
-// Kaynak sinyal BİLİNMİYOR — TEL_bmsCellVoltageMin/MaxDeciMv hiçbir
-// CAN ID'den parse edilmiyor. BAĞLANMAMALI.
-#define BMS_CRITICAL_MIN_CELL_VOLTAGE_MV 2500
-#define BMS_CRITICAL_MAX_CELL_VOLTAGE_MV 3650
+// (2.50 V / 3.65 V per hücre). TEL_bmsCellVoltageMin/MaxDeciMv DOĞRULANDI ve
+// parse ediliyor (0xE001 byte[0:1]/byte[2:3], bkz. CanParse::parseLbBmsE001)
+// ve karar mantığına BAĞLI — fiilen kullanılan eşik seti burada DEĞİL,
+// BmsAlgo.h'de: BMS_CELL_UNDERVOLT_CRIT_MV/BMS_CELL_OVERVOLT_CRIT_MV
+// (VcuLogic::hasCriticalCondition tarafından çağrılır). Bu dosyada AYNI
+// değerlerle kullanılmayan bir kopya makro seti (BMS_CRITICAL_MIN/MAX_CELL_
+// VOLTAGE_MV) vardı — 2026-07-13'te grep ile hiçbir referans bulunmadığı
+// doğrulanıp SİLİNDİ. Hücre voltajı CRITICAL eşiğini değiştirecekseniz
+// BmsAlgo.h'yi güncelleyin (tek doğruluk kaynağı).
+
+// --- B12: Derating Policy (İSKELET — bkz. lib/VcuLogic/DeratingPolicy.h) ---
+// WARN bandında (hasWarningCondition==true) 0..100 bir tork-izin yüzdesi
+// hesaplanır; ŞU AN yalnızca run() içinde LOGLANIR, gerçek bir tork komutuna
+// BAĞLANMAZ (motor sürücüsü tork yolu hazır olunca, bkz. G2/MOTOR_ENTEGRASYON_
+// NOTU.md). Basit 3 kademeli harita — ekip kalibrasyonu BEKLİYOR (CONFIG):
+//   WARN yok            -> DERATING_TORQUE_PERCENT_NOMINAL
+//   WARN aktif          -> DERATING_TORQUE_PERCENT_WARNING
+//   CRITICAL'e yaklaşma  -> DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL
+// "Yaklaşma" WARN->CRITICAL aralığının DERATING_APPROACHING_CRITICAL_
+// FRACTION_PERCENT kadarının tüketilmesi olarak tanımlanır (bkz.
+// DeratingPolicy.h yorumu — ham eşik değerinin doğrudan yüzdesi DEĞİL: bu,
+// sıfırdan uzak mutlak eşiklerde (ör. pack aşırı gerilim 852/876 deciV)
+// ters sonuç verirdi, WARN->CRITICAL ARALIĞININ yüzdesi fiziksel olarak
+// anlamlıdır).
+#define DERATING_TORQUE_PERCENT_NOMINAL 100
+#define DERATING_TORQUE_PERCENT_WARNING 50
+#define DERATING_TORQUE_PERCENT_APPROACHING_CRITICAL 20
+#define DERATING_APPROACHING_CRITICAL_FRACTION_PERCENT 90
 
 // Task watchdog timing is still using the ESP-IDF default configuration.
 // The shorter LoRa RX timeout below improves scheduling margin, but the global

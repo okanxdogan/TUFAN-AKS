@@ -29,6 +29,7 @@ extern void test_impl_hand_calc_different_wheel_and_gear_ratio(void);
 extern void test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio(void);
 extern void test_impl_motor_rpm_false_applies_gear_ratio(void);
 extern void test_impl_applies_clamp(void);
+extern void test_impl_realistic_range_sweep_stays_within_bounds(void);
 
 // TelemetrySanitize (UKS aralik-disi alan sanitizasyonu) birim testleri
 extern void test_sanitize_system_state_valid_passthrough(void);
@@ -44,10 +45,32 @@ extern void test_sanitize_for_uplink_passthrough_when_all_valid(void);
 extern void test_sanitize_for_uplink_corrects_invalid_system_state(void);
 extern void test_sanitize_for_uplink_corrects_soc_and_current_together(void);
 
+// TelemetrySanitize::sanitizeMotorVoltForTorqueField (torque alanı semantik
+// uyumsuzluk clamp'i — bkz. Documents/TORQUE_ALAN_KARAR_NOTU.md) testleri
+extern void test_sanitize_motor_volt_for_torque_field_within_range_passthrough(void);
+extern void test_sanitize_motor_volt_for_torque_field_at_boundary_passthrough(void);
+extern void test_sanitize_motor_volt_for_torque_field_above_boundary_clamped(void);
+extern void test_sanitize_motor_volt_for_torque_field_uint16_max_clamped(void);
+extern void test_sanitize_for_uplink_clamps_motor_volt_above_torque_range(void);
+extern void test_sendStatus_output_clamps_motor_volt_field_via_sanitize_gate(void);
+
 // Replay sanitize-sırası (S4) ve seq semantiği (madde 4) testleri
 extern void test_replay_output_sanitizes_corrupted_system_state(void);
 extern void test_replay_output_sanitizes_zero_system_state(void);
 extern void test_replay_then_live_seq_is_sequential_and_monotonic(void);
+
+// SysStateDerive (HİPOTEZ — akımdan türetilmiş sysState) çekirdek matematiği
+// + flag=0 (varsayılan) no-op testleri. flag=1 davranışı ayrı bir derleme
+// birimindedir (bkz. test_native_sysstate_derive_enabled).
+extern void test_derive_impl_zero_current_is_idle(void);
+extern void test_derive_impl_at_positive_band_boundary_is_idle(void);
+extern void test_derive_impl_at_negative_band_boundary_is_idle(void);
+extern void test_derive_impl_just_above_positive_band_is_charge(void);
+extern void test_derive_impl_just_below_negative_band_is_discharge(void);
+extern void test_derive_impl_large_positive_current_is_charge(void);
+extern void test_derive_impl_large_negative_current_is_discharge(void);
+extern void test_derive_production_wrapper_matches_impl_at_production_band(void);
+extern void test_apply_is_noop_when_flag_disabled_even_if_sysstate_zero(void);
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -81,6 +104,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_impl_motor_rpm_is_wheel_rpm_skips_gear_ratio);
     RUN_TEST(test_impl_motor_rpm_false_applies_gear_ratio);
     RUN_TEST(test_impl_applies_clamp);
+    RUN_TEST(test_impl_realistic_range_sweep_stays_within_bounds);
 
     RUN_TEST(test_sanitize_system_state_valid_passthrough);
     RUN_TEST(test_sanitize_system_state_zero_becomes_fault);
@@ -95,9 +119,26 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_sanitize_for_uplink_corrects_invalid_system_state);
     RUN_TEST(test_sanitize_for_uplink_corrects_soc_and_current_together);
 
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_within_range_passthrough);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_at_boundary_passthrough);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_above_boundary_clamped);
+    RUN_TEST(test_sanitize_motor_volt_for_torque_field_uint16_max_clamped);
+    RUN_TEST(test_sanitize_for_uplink_clamps_motor_volt_above_torque_range);
+    RUN_TEST(test_sendStatus_output_clamps_motor_volt_field_via_sanitize_gate);
+
     RUN_TEST(test_replay_output_sanitizes_corrupted_system_state);
     RUN_TEST(test_replay_output_sanitizes_zero_system_state);
     RUN_TEST(test_replay_then_live_seq_is_sequential_and_monotonic);
+
+    RUN_TEST(test_derive_impl_zero_current_is_idle);
+    RUN_TEST(test_derive_impl_at_positive_band_boundary_is_idle);
+    RUN_TEST(test_derive_impl_at_negative_band_boundary_is_idle);
+    RUN_TEST(test_derive_impl_just_above_positive_band_is_charge);
+    RUN_TEST(test_derive_impl_just_below_negative_band_is_discharge);
+    RUN_TEST(test_derive_impl_large_positive_current_is_charge);
+    RUN_TEST(test_derive_impl_large_negative_current_is_discharge);
+    RUN_TEST(test_derive_production_wrapper_matches_impl_at_production_band);
+    RUN_TEST(test_apply_is_noop_when_flag_disabled_even_if_sysstate_zero);
 
     return UNITY_END();
 }

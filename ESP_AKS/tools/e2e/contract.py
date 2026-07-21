@@ -104,6 +104,18 @@ def sanitize_current(raw: int) -> int:
     return INT32_MIN + 1 if raw == INT32_MIN else raw
 
 
+# BILINEN SEMANTIK UYUMSUZLUK (torque alani, bkz. Documents/
+# TORQUE_ALAN_KARAR_NOTU.md): sozlesme 4. alani "torque" (int16,
+# -32768..32767) olarak adlandirir; AKS burada FIILEN TEL_motorVoltageDeciV
+# (uint16_t, motor voltaji) gonderir. Bu deger 32767'yi asabilir; asarsa UKS
+# Parse_Int TUM frame'i reddeder. TelemetrySanitize::
+# sanitizeMotorVoltForTorqueField'in Python eslenigi:
+def sanitize_motor_volt_for_torque_field(raw: int) -> int:
+    """TelemetrySanitize::sanitizeMotorVoltForTorqueField — 32767'ye clamp
+    eder (frame reddini engeller, "dogru tork" uretmez)."""
+    return 32767 if raw > 32767 else raw
+
+
 # AKS lib/Telemetry/Telemetry.h: TEL_SPD_X10_MAX — rpmToSpeedKmhX10Impl
 # icinde spd_x10 bu degere clamp'lenir (sanitizeForUplink'in DISINDA, hiz
 # hesaplama zincirinde).
@@ -118,7 +130,7 @@ def clamp_spd_x10(spd_x10: int) -> int:
 # E22-400T30D-V2 config sozlesmesi (UKS e22_regs.h / AKS E22Regs.h)
 # ===========================================================================
 
-E22_REG0 = 0x64
+E22_REG0 = 0x63
 E22_REG1 = 0x00
 E22_REG2 = 0x17
 E22_REG3 = 0x00
@@ -153,12 +165,19 @@ REMOVED_COMMAND_BYTES = [0xA1, 0xA2, 0xA3, 0xA4]
 # P6 offline buffer / replay sabitleri (AKS include/SystemConfig.h)
 # ===========================================================================
 
-LORA_TX_PERIOD_MS = 500          # 2 Hz telemetry uplink tick periyodu (link flapping duzeltmesi — bkz. SystemConfig.h)
+LORA_TX_PERIOD_MS = 500          # 2 Hz telemetry uplink tick periyodu (4.8 kbps hava hizi kalibrasyonu — bkz. SystemConfig.h)
 OFFLINE_SAMPLE_PERIOD_MS = 1000  # kesinti sirasi buffer ornekleme periyodu (1 Hz)
-OB_CAPACITY = 75                 # offline buffer kapasitesi (60 sn x 1 Hz + %25 marj)
+OB_CAPACITY = 600                # offline buffer kapasitesi (600 kayit @ 1 Hz = 10 dk, 5 km parkurda tam tur kapsama)
 REPLAY_BURST_PER_TICK = 1        # link-up sonrasi tik basina en fazla replay
 BOOT_LINK_GRACE_MS = 5000        # boot'tan itibaren ilk heartbeat icin tanina sure
 LINK_TIMEOUT_MS = 9000           # yarim-dubleks kanal tikanikligi nedeniyle ~5-6 sn'lik fiili heartbeat araligina marj (bkz. SystemConfig.h)
+
+# TERS YON: UKS'in TEL frame timeout'u (UKS Core/Inc/telemetry.h). AKS'in
+# LINK_TIMEOUT_MS'i (yukarida) UKS->AKS heartbeat icindir; bu ise AKS->UKS
+# TEL frame'leri icin UKS tarafinda simetrik bir bekci — bkz. Documents/
+# LoRa_Link_Analysis.md "UKS-side TEL Timeout Margin" (nominal 4x marj,
+# 3 ardisik atlanmis TX tik'i tolere edilir, 4.'sunde false LINK,DOWN).
+TEL_LINK_TIMEOUT_MS = 2000
 
 
 def build_tel_line(f: dict) -> str:

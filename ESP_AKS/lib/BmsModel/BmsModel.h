@@ -22,9 +22,22 @@ static constexpr uint8_t BMS_CELL_COUNT = 24;  // Seri hücre sayısı
 struct BmsPackData {
     uint16_t cellVoltageMv[BMS_CELL_COUNT];  // Hücre başına gerilim, milivolt
                                              // (örn. 3700 = 3.700 V)
-    int16_t cellTempC[BMS_CELL_COUNT];       // Hücre başına sıcaklık, °C
+    int16_t cellTempC[BMS_CELL_COUNT];       // Hücre başına sıcaklık, °C —
+                                             // BMS per-hücre sıcaklık YAYINLAMIYOR;
+                                             // gerçek kaynak aşağıdaki packTemp*
+                                             // alanlarıdır. computePack min/max
+                                             // sıcaklığı artık BU DİZİDEN DEĞİL
+                                             // packTempMaxC/MinC'den alır.
     int32_t packCurrentMa;                   // Paket akımı, mA
                                              // (+ şarj / − deşarj)
+
+    // Paket seviyesi sıcaklık (0xE001 byte[6:7] → TEL_bmsTempHighestC/LowestC,
+    // DOĞRULANDI). main.cpp HMI task doldurur; computePack tMax/tMin ve
+    // sıcaklık uyarı kararını (55/70, >= semantiği) buradan hesaplar —
+    // hücre-başına sahte sıcaklık kopyalama YOKTUR.
+    int16_t packTempMaxC = 0;
+    int16_t packTempMinC = 0;
+
     bool isValid;                            // false => taze/geçerli veri yok
 
     // G8/M4 FIX: Hücre kaynağı artık DOĞRULANDI (E015-E020).

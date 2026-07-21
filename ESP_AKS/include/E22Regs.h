@@ -29,11 +29,12 @@
 #define E22_CMD_WRITE_TEMP 0xC2U  // G7-FIX-2: kalici OLMAYAN (RAM) yazma
 
 // --- Register adresleri (E22-400T30D-V2 register haritası) ---
-// DOĞRULAMA: NETID (0x02) ve sonrasındaki REG0..REG3 kaydırması, EBYTE'ın
-// SX126x tabanlı E22 ailesi için yaygın register haritasına dayanır. Bench
-// testinde ilk C1 okuma dump'ı bu adreslerin gerçek donanımla eştiğini
-// (E22_DIAGNOSTIC_MODE / bkz. e22_diagnostic.cpp) teyit etmeden sahaya
-// çıkma.
+// DOĞRULANDI (2026-07-15, bench dump — bkz. Documents/BENCH_E22_TEYIT.md
+// "Sonuç Kaydı"): NETID (0x02) ve sonrasındaki REG0..REG3 kaydırması,
+// EBYTE'ın SX126x tabanlı E22 ailesi için yaygın register haritasına
+// dayanıyordu; bench testinde AKS ve UKS C1 okuma dump'ları
+// (E22_DIAGNOSTIC_MODE / bkz. e22_diagnostic.cpp) bu adreslerin gerçek
+// donanımla ve birbiriyle birebir eştiğini doğruladı.
 #define E22_REG_ADDR_ADDH    0x00U
 #define E22_REG_ADDR_ADDL    0x01U
 #define E22_REG_ADDR_NETID   0x02U
@@ -52,8 +53,12 @@
 #define E22_CFG_ADDH    0x00U  // adres 0x0000: hedefli değil, genel yayın
 #define E22_CFG_ADDL    0x00U
 #define E22_CFG_NETID   0x00U
-// REG0 = 0110 0100: bit[7:5]=011 UART 9600 | bit[4:3]=00 8N1 | bit[2:0]=100 hava hızı 9.6 kbps
-#define E22_CFG_REG0    0x64U
+// REG0 = 0110 0011: bit[7:5]=011 UART 9600 | bit[4:3]=00 8N1 | bit[2:0]=011 hava hızı 4.8 kbps
+// (parkur keşfinde maksimum mesafe 500 m ölçüldü, 2.4 kbps bu mesafe için
+// aşırı tedbirdi; ekip onaylı kalibrasyonla 4.8 kbps'e çıkarıldı — bkz.
+// LORA_TX_PERIOD_MS SystemConfig.h'de aynı commit'te 1000->500 ms'e (2 Hz'e)
+// geri döndürüldü)
+#define E22_CFG_REG0    0x63U
 // REG1 = bit[7:6]=00 alt-paket 240B | bit5=0 RSSI ortam gürültüsü kapalı | bit[1:0]=00 TX gücü EN YÜKSEK (T30D: 30 dBm)
 // DİKKAT: E22'de de 00=maks, 11=min — E32'deki OPTION karışıklığı tekrarlanmasın.
 #define E22_CFG_REG1    0x00U

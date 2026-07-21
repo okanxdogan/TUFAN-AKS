@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "MotorTorque.h"
+#include "TorqueRequestQueue.h"
 #include "VcuLogic.h"
 #include "fake_freertos.h"
 #include "mock_relay_actuator.h"
@@ -109,6 +110,27 @@ void test_idle_start_rejected_when_warning_active(void) {
     TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
                           static_cast<int>(VcuLogic::getState()));
     TEST_ASSERT_EQUAL_UINT(0, g_fake_relay_allOn_count);
+}
+
+// ---------------------------------------------------------------------------
+// RELAY_ROLES_ASSIGNED=0 (varsayılan) regresyonu: TEL_chargerActive alanı SET
+// olsa bile S1/S2 mantığı derleme dışı olduğundan READY girişi ETKİLENMEZ ve
+// eski tek-bank davranışı (allOn) birebir korunur. Bayrak=1 davranışı
+// test_roles_vcu_logic suite'inde ([env:native_roles]) doğrulanır.
+// ---------------------------------------------------------------------------
+void test_idle_to_ready_with_charger_active_when_roles_unassigned(void) {
+    primeIdle();
+
+    TelemetryData d = makeTelemetryDataValid();
+    d.TEL_chargerActive = true;  // bayrak=0'da hiçbir karar yolu okumaz
+    VcuLogic::setTelemetryData(d);
+
+    VcuLogic::postEvent(VcuEvent::START_REQUEST);
+    VcuLogic::run();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::READY),
+                          static_cast<int>(VcuLogic::getState()));
+    TEST_ASSERT_EQUAL_UINT(1, g_fake_relay_allOn_count);
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +571,58 @@ void test_estop_without_torque_sink_still_opens_contactors(void) {
     VcuLogic::run();
 
     TEST_ASSERT_TRUE(g_fake_relay_allOff_count > 0);
+}
+
+// ===========================================================================
+// G2 thread-safety hazırlığı: torque isteği artık CanManager tarafında bir
+// TorqueRequestQueue'ya YAZILIR (VCU task'inden, senkron/anında); gerçek
+// twai_transmit ise CAN task döngüsünde (processRxMessages ile aynı yerde)
+// queue.drainPending() ile ÇEKİLİP yapılacak (bkz.
+// lib/CanManager/TorqueRequestQueue.h, Documents/MOTOR_ENTEGRASYON_NOTU.md
+// madde 4). Bu test, kuyruklama EKLENSE BİLE VcuLogic'in E-STOP sırasının
+// (sıfır-tork isteği ÖNCE, kontaktör açma SONRA) bozulmadığını VE isteğin
+// CAN task'inin drain'ini beklemeden kuyruğa senkron olarak ulaştığını
+// doğrular — CanManager natively test edilemediğinden (lib_ignore, gerçek
+// twai bağımlılığı) burada testteki sink, gerçek CanManager::
+// sendTorqueCommand'ın yapacağı gibi doğrudan bir TorqueRequestQueue'ya push
+// eder.
+// ===========================================================================
+namespace {
+TorqueRequestQueue s_canTorqueQueue;  // CanManager::s_torqueQueue'nun test eşdeğeri
+
+void torqueSinkToCanQueue(uint16_t torque) {
+    s_canTorqueQueue.push(torque);
+    if (s_torqueFirstSeq == 0)
+        s_torqueFirstSeq = ++g_fake_call_seq;
+}
+}  // namespace
+
+void test_estop_zero_torque_reaches_can_queue_before_contactor_open(void) {
+    primeIdle();
+    primeEstopOrder();
+    s_canTorqueQueue.resetForTest();  // temiz kuyruk
+    VcuLogic::setTorqueSink(torqueSinkToCanQueue);
+
+    VcuLogic::postEvent(VcuEvent::EMERGENCY_STOP);
+    VcuLogic::run();  // transitionTo ESTOP (handler bu tick çalışmaz)
+    VcuLogic::run();  // handler: (1) torque(0) -> queue.push -> (2) delay doldu -> (3) allOff
+
+    // (a) İstek queue'ya ULAŞTI — CAN task henüz hiç drain ETMEMİŞKEN bile
+    // (yani "CAN task'i dışından" gelen istek kaybolmadan kuyrukta bekliyor).
+    TEST_ASSERT_TRUE(s_canTorqueQueue.hasPending());
+
+    // (b) SIRA: kuyruğa yazma (VCU task, t=0) kontaktör açmadan (t=delay)
+    // ÖNCE gerçekleşti — kuyruklama EKLENMESİ bu sırayı BOZMADI.
+    TEST_ASSERT_TRUE(s_torqueFirstSeq > 0);
+    TEST_ASSERT_TRUE(g_fake_relay_allOff_firstSeq > 0);
+    TEST_ASSERT_TRUE(s_torqueFirstSeq < g_fake_relay_allOff_firstSeq);
+
+    // (c) CAN task tik'i simülasyonu: drain edilince doğru değer (0) çıkar;
+    // tek-seferlik tüketim sonrası ikinci drain artık bekleyen bulmaz.
+    uint16_t drained = 0xFFFFu;
+    TEST_ASSERT_TRUE(s_canTorqueQueue.drainPending(drained));
+    TEST_ASSERT_EQUAL_UINT16(0, drained);
+    TEST_ASSERT_FALSE(s_canTorqueQueue.hasPending());
 }
 
 // Bayrak 0 (varsayılan native build) iken torque frame'i ÜRETİLMEZ: gate saf

@@ -2,7 +2,8 @@
 
 // Faz 3 — CAN parsing testleri.
 // Tanımlar test_motor_status_parse.cpp, test_bms_config_parse.cpp,
-// test_bms_live_parse.cpp ve test_motor_timeout.cpp içindedir.
+// test_bms_live_parse.cpp, test_motor_timeout.cpp ve test_autobaud_policy.cpp
+// içindedir.
 
 // Motor status (MSTest/mock_motor doğrulanmış 8-byte payload)
 extern void test_motor_status_dlc_too_short(void);
@@ -16,6 +17,12 @@ extern void test_motor_status_error_flags_byte7(void);
 extern void test_motor_status_motor_running_flag(void);
 extern void test_motor_status_motor_stopped_flag(void);
 extern void test_motor_status_invalid_does_not_modify_out(void);
+
+// Hall-effect hız sensörü entegrasyon testleri (esp32-canbus-speed-sensor)
+extern void test_hall_sensor_rpm850_parse_and_speed(void);
+extern void test_hall_sensor_rpm0_speed_zero(void);
+extern void test_hall_sensor_rpm3000_speed_clamp(void);
+extern void test_hall_sensor_is_running_false_does_not_affect_vcu(void);
 
 // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC1/SoC2)
 // Tanımlar test_bms_config_parse.cpp içindedir.
@@ -85,6 +92,18 @@ extern void test_bms_timeout_within_window(void);
 extern void test_bms_timeout_at_threshold(void);
 extern void test_bms_timeout_past_threshold(void);
 
+// CAN Autobaud Retry Policy — kalıcı sağırlık düzeltmesi (bkz.
+// AutobaudPolicy.h / Documents/BRING_UP_CHECKLIST.md bölüm 4)
+extern void test_pre_reception_interval_elapsed_retries(void);
+extern void test_pre_reception_interval_not_elapsed_no_retry(void);
+extern void test_interval_boundary_triggers(void);
+extern void test_verified_never_retries_even_if_interval_elapsed(void);
+extern void test_frame_received_never_retries_even_if_interval_elapsed(void);
+extern void test_both_flags_true_no_retry(void);
+extern void test_tick_wraparound_within_window_no_retry(void);
+extern void test_tick_wraparound_at_threshold_retries(void);
+extern void test_post_reception_timeout_is_out_of_scope(void);
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -103,6 +122,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_motor_status_motor_running_flag);
     RUN_TEST(test_motor_status_motor_stopped_flag);
     RUN_TEST(test_motor_status_invalid_does_not_modify_out);
+
+    // Hall-effect hız sensörü entegrasyon testleri
+    RUN_TEST(test_hall_sensor_rpm850_parse_and_speed);
+    RUN_TEST(test_hall_sensor_rpm0_speed_zero);
+    RUN_TEST(test_hall_sensor_rpm3000_speed_clamp);
+    RUN_TEST(test_hall_sensor_is_running_false_does_not_affect_vcu);
 
     // Lithium Balance c-BMS — CAN ID 0xE000 (DOĞRULANDI: akım/packV/SoC)
     RUN_TEST(test_e000_dlc_too_short);
@@ -169,6 +194,17 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_bms_timeout_within_window);
     RUN_TEST(test_bms_timeout_at_threshold);
     RUN_TEST(test_bms_timeout_past_threshold);
+
+    // CAN Autobaud Retry Policy
+    RUN_TEST(test_pre_reception_interval_elapsed_retries);
+    RUN_TEST(test_pre_reception_interval_not_elapsed_no_retry);
+    RUN_TEST(test_interval_boundary_triggers);
+    RUN_TEST(test_verified_never_retries_even_if_interval_elapsed);
+    RUN_TEST(test_frame_received_never_retries_even_if_interval_elapsed);
+    RUN_TEST(test_both_flags_true_no_retry);
+    RUN_TEST(test_tick_wraparound_within_window_no_retry);
+    RUN_TEST(test_tick_wraparound_at_threshold_retries);
+    RUN_TEST(test_post_reception_timeout_is_out_of_scope);
 
     return UNITY_END();
 }

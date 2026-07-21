@@ -90,24 +90,41 @@ void RelayManager::allOn() {
         ESP_LOGW(TAG, "allOn called before begin()");
         return;
     }
-    const uint16_t cur = (1u << RELAY_TOTAL_CHANNELS) - 1;  // bits 0-9 set
+    // Kontaktör BANK maskesini kapatır (RELAY_CONTACTOR_BANK_MASK,
+    // SystemConfig.h). RELAY_ROLES_ASSIGNED=0 iken maske 10 kanalın tamamı
+    // (0x3FF) — eski davranışla birebir aynı. Roller atandığında flaşör
+    // kanalı (RELAY_CH_FLASHER) maskenin dışındadır: son yazılan durumu
+    // shadow'da korunur, allOn onu YAKMAZ.
+    uint16_t cur = s_relayState.load(std::memory_order_relaxed);
+    cur |= (uint16_t)RELAY_CONTACTOR_BANK_MASK;
     s_relayState.store(cur, std::memory_order_relaxed);
-    // Active-low: all relays ON = all used pins LOW
+    // Active-low: relay ON = pin LOW
     uint16_t hw = ~cur;
     writeRegister(MCP23S17_OLATA, hw & 0xFF);
     writeRegister(MCP23S17_OLATB, (hw >> 8) & 0xFF);
-    ESP_LOGI(TAG, "All %d contactors closed", RELAY_TOTAL_CHANNELS);
+    ESP_LOGI(TAG, "Contactor bank closed (mask=0x%03X)",
+             (unsigned)RELAY_CONTACTOR_BANK_MASK);
 
     verifyOutputs();  // G3: kontaktörler gerçekten kapandı mı geri-oku
 }
 
 void RelayManager::allOff(bool silent) {
-    s_relayState.store(0, std::memory_order_relaxed);
-    // Active-low: all relays OFF = all pins HIGH
-    writeRegister(MCP23S17_OLATA, 0xFF);
-    writeRegister(MCP23S17_OLATB, 0xFF);
+    // Kontaktör BANK maskesini açar (GÜVENLİK — şartname 8.2.a.vi: güvenlik
+    // probleminde S1 ve S2 dahil tüm kontaktörler açılır). Maske dışı kanalın
+    // (roller atandığında flaşör) son yazılan durumu shadow'da KORUNUR —
+    // sıcaklık uyarısı FAULT/E-STOP'ta sönmez (şartname 6.e.ii).
+    // RELAY_ROLES_ASSIGNED=0 iken maske tüm kanallar → eski store(0) + 0xFF
+    // yazımıyla bayt-bayt aynı sonuç.
+    uint16_t cur = s_relayState.load(std::memory_order_relaxed);
+    cur &= (uint16_t)~RELAY_CONTACTOR_BANK_MASK;
+    s_relayState.store(cur, std::memory_order_relaxed);
+    // Active-low: relay OFF = pin HIGH
+    uint16_t hw = ~cur;
+    writeRegister(MCP23S17_OLATA, hw & 0xFF);
+    writeRegister(MCP23S17_OLATB, (hw >> 8) & 0xFF);
     if (!silent) {
-        ESP_LOGW(TAG, "All relays de-energized");
+        ESP_LOGW(TAG, "Contactor bank de-energized (mask=0x%03X)",
+                 (unsigned)RELAY_CONTACTOR_BANK_MASK);
     }
 
     // G3: SAFETY — açma komutunun chip'e oturduğunu geri-okuma ile doğrula.

@@ -35,6 +35,76 @@ def test_uks_tel_field_count_and_version(uks_telemetry_dir):
     assert extract_define_int(header, "TEL_PROTOCOL_VERSION", source="UKS telemetry.h") == contract.VER
 
 
+def test_uks_current_unit_is_centiamp_not_centima(uks_telemetry_dir, uks_root, aks_root):
+    """current alani (TEL 14. alan) birimi centi-Amper (0.01 A)'dir, centi-
+    miliamper DEGIL — AKS TEL_bmsCurrentCentiA = 0xE000 byte[0:1] (0.1 A raw)
+    x 10 (bkz. AKS Telemetry.h sendStatus birim sozlesmesi yorumu,
+    CanParse.cpp). UKS tarafinda telemetry.h/telemetry.c ve iki README'de
+    yanlislikla '0.01 mA' yaziyordu — 1000x birim karisikligi kaynagiydi. Bu
+    bekci yanlis etiketin (yorum/dokuman/dashboard) geri gelmedigini
+    denetler."""
+    header = read(uks_telemetry_dir / "Core/Inc/telemetry.h")
+    assert "0.01 mA" not in header, (
+        "UKS telemetry.h icinde '0.01 mA' hala var — dogru birim centi-"
+        "Amper (0.01 A), AKS TEL_bmsCurrentCentiA ile ayni. Bu geri donus "
+        "1000x birim karisikligina yol acar."
+    )
+
+    dashboard_src = read(uks_telemetry_dir / "Core/Src/telemetry.c")
+    assert "%02ld mA" not in dashboard_src, (
+        "Telemetry_PrintDashboard hala 'mA' etiketiyle basiyor gorunuyor — "
+        "hesaplama (/100, %100) zaten dogru Amper degeri uretiyor, yalnizca "
+        "etiket 'A' olmali (mA degil)."
+    )
+
+    for label, path in (
+        ("UKS kok README.md", uks_root / "README.md"),
+        ("UKS-Telemetry/README.md", uks_telemetry_dir / "README.md"),
+        ("AKS Documents/UKS_LoRa_Protocol.md",
+         aks_root.parent / "Documents/UKS_LoRa_Protocol.md"),
+    ):
+        text = read(path)
+        assert "×0.01 mA" not in text, (
+            f"{label} icinde 'current' alani hala ×0.01 mA olarak yaziyor — "
+            "dogrusu ×0.01 A (centi-Amper)."
+        )
+
+
+def test_uks_tel_link_timeout_matches_contract(uks_telemetry_dir):
+    """contract.TEL_LINK_TIMEOUT_MS, UKS telemetry.h'daki gercek degerden
+    SAPMAMALI (bkz. Documents/LoRa_Link_Analysis.md 'UKS-side TEL Timeout
+    Margin')."""
+    header = read(uks_telemetry_dir / "Core/Inc/telemetry.h")
+    uks_value = extract_define_int(header, "TEL_LINK_TIMEOUT_MS", source="UKS telemetry.h")
+    assert uks_value == contract.TEL_LINK_TIMEOUT_MS, (
+        f"UKS TEL_LINK_TIMEOUT_MS={uks_value} contract.py degerinden "
+        f"({contract.TEL_LINK_TIMEOUT_MS}) sapmis — iki tarafi senkronla."
+    )
+
+
+def test_uks_tel_link_timeout_has_enough_margin_over_tx_period(uks_telemetry_dir):
+    """Invariant: TEL_LINK_TIMEOUT_MS >= 3 x LORA_TX_PERIOD_MS.
+
+    Bkz. Documents/LoRa_Link_Analysis.md 'UKS-side TEL Timeout Margin': bu
+    oran, UKS'in ardisik 3 atlanmis (AUX mesgul / TX ring dolu ertelemesi)
+    TX tik'ini FALSE LINK,DOWN vermeden tolere etmesini garanti eder (4.
+    ardisik atlanmis tik gerekir tetiklenmesi icin). Biri LORA_TX_PERIOD_MS'i
+    (AKS SystemConfig.h) tek tarafli artirirsa ve UKS TEL_LINK_TIMEOUT_MS
+    buna gore yeniden hesaplanmazsa, bu marj sessizce erir — bu bekci CI'da
+    ANINDA yakalar."""
+    header = read(uks_telemetry_dir / "Core/Inc/telemetry.h")
+    uks_timeout = extract_define_int(header, "TEL_LINK_TIMEOUT_MS", source="UKS telemetry.h")
+
+    assert uks_timeout >= 3 * contract.LORA_TX_PERIOD_MS, (
+        f"UKS TEL_LINK_TIMEOUT_MS ({uks_timeout} ms) artik en az 3x AKS "
+        f"LORA_TX_PERIOD_MS'i ({contract.LORA_TX_PERIOD_MS} ms) karsilamiyor "
+        "— ardisik tik atlama toleransi (bkz. Documents/LoRa_Link_Analysis.md "
+        "'UKS-side TEL Timeout Margin' tablosu) 3'un altina dusmus olabilir. "
+        "LORA_TX_PERIOD_MS degistiyse TEL_LINK_TIMEOUT_MS'i (UKS telemetry.h) "
+        "AYNI COMMIT SETINDE yeniden kalibre edin ve analiz tablosunu guncelleyin."
+    )
+
+
 def test_uks_telemetry_c_has_parse_u32(uks_telemetry_dir):
     src = read(uks_telemetry_dir / "Core/Src/telemetry.c")
     assert re.search(r"\bstatic\s+int\s+Parse_U32\s*\(", src), (

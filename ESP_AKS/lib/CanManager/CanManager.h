@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include "AutobaudPolicy.h"  // Saf autobaud retry karar mantığı (autobaud_should_retry)
 #include "CanParse.h"
+#include "TorqueRequestQueue.h"  // G2: VCU task -> CAN task tork isteği kuyruğu
 #include "VehicleData.h"  // TelemetryData (M3: LoRa Telemetry class'ına ihtiyaç yok)
 #include "TelemetrySanitize.h"
 #include "driver/gpio.h"
@@ -26,9 +28,14 @@ class CanManager {
     bool begin();
     void setEventCallback(CAN_EventCallback CAN_callback, void* CAN_context);
 
-    // Motor sürücüsü torque komutu. MOTOR_DRIVER_PRESENT=0 iken GERÇEK FRAME
-    // GÖNDERMEZ (bir kez uyarı loglar, false döner); =1 iken frame gönderimi
-    // TODO. E-STOP/FAULT güvenli kapanış sırasında torque(0) ile çağrılır.
+    // Motor sürücüsü torque komutu. Çağıran taraf (VcuLogic, VCU task) hangi
+    // task'ten çağırırsa çağırsın GÜVENLİDİR — gerçek twai_transmit BURADAN
+    // asla DOĞRUDAN yapılmaz (G2 thread-safety). MOTOR_DRIVER_PRESENT=0 iken
+    // GERÇEK FRAME GÖNDERMEZ (bir kez uyarı loglar, false döner, kuyruğa da
+    // yazmaz); =1 iken isteği TorqueRequestQueue'ya yazar (true döner) —
+    // gerçek gönderim processRxMessages() içinden (CAN task döngüsü)
+    // drainTorqueQueue() ile yapılır. E-STOP/FAULT güvenli kapanış sırasında
+    // torque(0) ile çağrılır. Bkz. Documents/MOTOR_ENTEGRASYON_NOTU.md madde 4.
     bool sendTorqueCommand(uint16_t torqueValue);
 
     // Dispatch one received message — call this in the CAN task loop
@@ -44,9 +51,12 @@ class CanManager {
     // `out` her zaman son görülen setpoint'lerle doldurulur; dönüş değeri
     // verinin taze olup olmadığını söyler (CAN_CHARGER_TIMEOUT_MS içinde
     // frame görüldüyse true). Charger akışı OPSİYONEL — false FAULT değildir.
-    // NOT: Gözlem/test amaçlı API — firmware'de şu an BİLİNÇLİ olarak hiçbir
-    // çağıranı yok (setpoint'ler karar mantığına bağlanmaz); bench/diagnostik
-    // kullanım için tutulur, "ölü kod" diye SİLİNMEMELİ.
+    // NOT: Charger FRESHNESS bilgisinin artık gerçek bir tüketicisi var —
+    // getTelemetryData() aynı CAN_chargerValid bayrağını TEL_chargerActive
+    // olarak yayınlar ve VcuLogic S1/S2 mod anahtarlaması
+    // (RELAY_ROLES_ASSIGNED=1, şartname 8.2.a) bunu girdi alır. Bu
+    // fonksiyonun döndürdüğü SETPOINT değerleri ise hâlâ hiçbir karar
+    // mantığına bağlanmaz (bench/diagnostik API); "ölü kod" diye SİLİNMEMELİ.
     bool getChargerCommand(ChargerCommand& out) const;
 
    private:
@@ -71,6 +81,21 @@ class CanManager {
     void notifyFaultIfNeeded(uint8_t CAN_previousFlags, uint8_t CAN_currentFlags,
                              const char* CAN_faultSource);
 
+    // Bitrate henüz doğrulanmamışken (CAN_bitrateVerified=false) VE hiçbir
+    // geçerli frame alınmamışken (CAN_hasReceivedAnyFrame=false), CAN task
+    // döngüsünden her tik çağrılır — karar (retry zamanı geldi mi?) saf
+    // autobaud_should_retry (AutobaudPolicy.h) ile verilir. Retry-eligible
+    // olduğunda TEK bir hız (rotasyonla) yeniden denenir; processRxMessages()
+    // ve sendTorqueCommand() bu pencerede isInitialized=false ile no-op
+    // kalır (yarım kurulu driver'a twai_* çağrısı gitmez).
+    void retryAutobaudIfNeeded();
+
+    // G2: processRxMessages() (CAN task döngüsü) tarafından her tik çağrılır;
+    // s_torqueQueue'da bekleyen bir istek varsa gerçek twai_transmit'i BURADAN
+    // (CAN task'inden) yapar. MOTOR_DRIVER_PRESENT=0 iken hiçbir şey yapmaz
+    // (kuyruğa zaten yazılmaz — sendTorqueCommand bkz.).
+    void drainTorqueQueue();
+
     twai_general_config_t g_config;
     twai_timing_config_t t_config;
     twai_filter_config_t f_config;
@@ -92,6 +117,18 @@ class CanManager {
     bool CAN_busOffLogged = false;
     bool CAN_busRecoveredLogged = false;
 
+    // Autobaud yeniden-deneme durumu (bkz. AutobaudPolicy.h / BRING_UP_
+    // CHECKLIST.md bölüm 4). CAN_bitrateVerified: begin()'de auto-detect
+    // başarılıysa VEYA bir retry döngüsü bitrate bulduysa true. CAN_
+    // hasReceivedAnyFrame: fallback hızında bile PASİF olarak ilk geçerli
+    // frame alındığında true (processRxMessages ana drain döngüsünde set
+    // edilir) — ikisinden biri true olduğu an retry KALICI OLARAK durur.
+    bool CAN_bitrateVerified = false;
+    bool CAN_hasReceivedAnyFrame = false;
+    uint8_t CAN_autobaudRetryBaudIndex = 0;  // 0=500k,1=125k,2=250k rotasyonu
+    TickType_t CAN_lastAutobaudAttemptTick = 0;
+    TickType_t CAN_lastAutobaudWarnLogTick = 0;
+
     // G6: RX yolu sertleştirme sayaçları (sibling counter'larla aynı CAN_
     // önek konvansiyonu). RX_QUEUE_FULL alarmı ve atılan remote (RTR) frame'ler.
     uint32_t CAN_rxQueueFullCount = 0;
@@ -100,6 +137,11 @@ class CanManager {
 
     // sendTorqueCommand flag-0 yolunda tek-sefer uyarı (E-STOP spam önleme).
     bool CAN_torqueSkipLogged = false;
+
+    // G2: VCU task'ten gelen tork isteğinin CAN task'e ulaştığı kuyruk —
+    // yalnızca sendTorqueCommand() yazar (push), yalnızca drainTorqueQueue()
+    // okur (drainPending). Bkz. TorqueRequestQueue.h.
+    TorqueRequestQueue s_torqueQueue;
 
     // BMS freshness tracking — G12: packV (E000) ve sıcaklık (E001) AYRI
     // mesaj-ID'leri; freshness ID bazına izlenir. TEL_bmsDataValid /
