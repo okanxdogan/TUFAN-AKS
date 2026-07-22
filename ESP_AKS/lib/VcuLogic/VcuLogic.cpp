@@ -2,6 +2,7 @@
 
 #include "VcuLogic.h"
 #include "DeratingPolicy.h"
+#include "HeadlightSwitch.h"
 #include "IRelayActuator.h"
 #include "SystemConfig.h"
 #include "esp_log.h"
@@ -76,12 +77,15 @@ static int8_t s_s1LastCmdInIdle = -1;
 // (fan kanalı bank maskesi DIŞINDA → allOff dokunmaz). Kenar-tetikli setRelay.
 static bool s_fanOn = false;
 
-// Far gölge durumu (şartname B2 9.19.c) — boot'ta OFF. Ekran komutuyla toggle
-// edilir; BMS'ten bağımsız. s_headlightTogglePending, toggleHeadlight() (HMI
-// task) tarafından set edilir ve run() (VCU task) tarafından tüketilir —
-// E-STOP/FAULT atomic-bypass deseniyle aynı (kuyruk yok, düşen komut tuzağı yok).
-static bool s_headlightOn = false;
-static std::atomic<bool> s_headlightTogglePending{false};
+// Far gölge durumu (şartname B2 9.19.c) — boot'ta OFF. ARTIK ekran komutuyla
+// değil, fiziksel düğmeyle sürülür (s_headlightSwitchReader ile okunur, saf
+// karar HeadlightSwitch::update). s_headlightOn, run()'ın (VCU task) far
+// rölesine yazdığı SON komuttur (kenar-tetikli setRelay için gölge) ve HMI
+// task tarafından isHeadlightOn() ile OKUNUR (far.pic göstergesi) → cross-task
+// erişim, atomic. Düğme okuma yolu SPI'dan bağımsızdır (doğrudan GPIO reader).
+static std::atomic<bool> s_headlightOn{false};
+static HeadlightSwitch::State s_headlightSwitch = {};
+static VcuLogic::HeadlightSwitchReader s_headlightSwitchReader = nullptr;
 #endif
 
 // ---------------------------------------------------------------------------
@@ -166,14 +170,23 @@ void run() {
         }
     }
 
-    // Far (şartname B2 9.19.c): ekran butonundan gelen toggle isteğini işle.
-    // BMS'ten bağımsız; her geçerli komutta durum tersine döner. Far kanalı
-    // bank maskesi DIŞINDA → allOff/allOn (FAULT/E-STOP/READY) fari söndürmez.
-    if (s_headlightTogglePending.exchange(false, std::memory_order_acquire)) {
-        const bool hlDesired = headlightDesiredState(s_headlightOn);
-        s_relays->setRelay(RELAY_CH_HEADLIGHT, hlDesired);
-        ESP_LOGI(TAG, "Far %s (ekran butonu)", hlDesired ? "ACILDI" : "KAPANDI");
-        s_headlightOn = hlDesired;
+    // Far (şartname B2 9.19.c): fiziksel düğmeyi oku (debounce + latching/
+    // momentary, saf karar HeadlightSwitch::update) ve far rölesini kenar-
+    // tetikli sür. BMS'ten BAĞIMSIZ; far kanalı bank maskesi DIŞINDA →
+    // allOff/allOn (FAULT/E-STOP/READY) far durumunu DEĞİŞTİRMEZ. s_uptimeMs
+    // monoton zaman damgası olarak kullanılır (debounce). Reader bağlı değilse
+    // (üretimde bayrak=1'de main.cpp bağlar; testler spy takar) far OFF kalır.
+    if (s_headlightSwitchReader != nullptr) {
+        const int hlRaw = s_headlightSwitchReader();
+        const bool hlDesired = HeadlightSwitch::update(
+            s_headlightSwitch, hlRaw, s_uptimeMs, HEADLIGHT_SWITCH_LATCHING,
+            HEADLIGHT_DEBOUNCE_MS);
+        if (hlDesired != s_headlightOn.load(std::memory_order_relaxed)) {
+            s_relays->setRelay(RELAY_CH_HEADLIGHT, hlDesired);
+            ESP_LOGI(TAG, "Far %s (fiziksel dugme)",
+                     hlDesired ? "ACILDI" : "KAPANDI");
+            s_headlightOn.store(hlDesired, std::memory_order_relaxed);
+        }
     }
 #endif
 
@@ -391,12 +404,18 @@ void setTorqueSink(TorqueSink sink) {
     s_torqueSink = sink;
 }
 
+bool isHeadlightOn() {
 #if RELAY_ROLES_ASSIGNED
-void toggleHeadlight() {
-    // HMI task bağlamı: yalnız atomic bayrağı set et (E-STOP/FAULT bypass
-    // deseni). Röle sürüşü + gölge-durum güncellemesi run()'da (VCU task,
-    // tek röle yazarı) yapılır — R3 iş parçacığı sözleşmesi korunur.
-    s_headlightTogglePending.store(true, std::memory_order_release);
+    return s_headlightOn.load(std::memory_order_relaxed);
+#else
+    // Far mantığı derleme dışı — ekranda dürüstçe "kapalı" gösterilir.
+    return false;
+#endif
+}
+
+#if RELAY_ROLES_ASSIGNED
+void setHeadlightSwitchReader(HeadlightSwitchReader reader) {
+    s_headlightSwitchReader = reader;
 }
 #endif
 
@@ -635,8 +654,9 @@ void resetForTest() {
     s_flasherOn = false;
     s_s1LastCmdInIdle = -1;
     s_fanOn = false;
-    s_headlightOn = false;
-    s_headlightTogglePending.store(false, std::memory_order_relaxed);
+    s_headlightOn.store(false, std::memory_order_relaxed);
+    s_headlightSwitch = HeadlightSwitch::State{};
+    s_headlightSwitchReader = nullptr;
 #endif
 
     // Olay kuyruğunu (queue) boşalt

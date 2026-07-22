@@ -18,7 +18,7 @@
 // bütçesi asla aşılmaz (bkz. SystemConfig.h static_assert). Ekran, tespit
 // edilemeyen bir reset sonrasında bile en kötü ihtimalle
 //     HMI_RESYNC_FIELD_COUNT × HMI_RESYNC_INTERVAL_MS
-// içinde kendini toparlar (11 × 500 ms ≈ 5.5 sn).
+// içinde kendini toparlar (12 × 500 ms = 6 sn).
 //
 // Tick birimi agnostiktir (çağıran aynı birimi verir); unsigned çıkarma
 // (now - lastResyncTick) sayaç taşmasında da doğru sonuç verir — bkz.
@@ -44,7 +44,8 @@ enum HMI_ResyncField : uint8_t {
     HMI_RESYNC_MOTOR_ERR,
     HMI_RESYNC_VALID,
     HMI_RESYNC_CONTACTOR,
-    HMI_RESYNC_FIELD_COUNT  // = 11
+    HMI_RESYNC_HEADLIGHT,   // far.pic durum göstergesi (şartname B2 9.19.c)
+    HMI_RESYNC_FIELD_COUNT  // = 12
 };
 
 // Resync vadesi geldiyse zorla gönderilecek alanın indeksini (0..fieldCount-1)

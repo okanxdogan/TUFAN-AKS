@@ -22,6 +22,9 @@ struct HMI_DisplayData {
     int32_t HMI_bmsPackCurrentCentiA;
     bool HMI_contactorClosed;
     HMI_VcuState HMI_vcuState;
+    // Far durumu (şartname B2 9.19.c) — ekran yalnız GÖSTERİR (far.pic), farı
+    // KONTROL ETMEZ. Durumun tek sahibi ESP (VcuLogic::isHeadlightOn).
+    bool HMI_headlightOn;
 };
 
 class DisplayHMI {

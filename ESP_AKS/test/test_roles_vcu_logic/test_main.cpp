@@ -2,6 +2,7 @@
 
 #include "SystemConfig.h"
 #include "VcuLogic.h"
+#include "HeadlightSwitch.h"  // far fiziksel düğmesi — saf karar mantığı
 #include "../test_native_vcu_logic/fake_freertos.h"
 #include "../test_native_vcu_logic/mock_relay_actuator.h"
 #include "test_helpers.h"
@@ -25,12 +26,24 @@ using VcuLogic::VcuState;
 
 namespace {
 
+// Far fiziksel düğmesi spy'ı (VcuLogic reader hook'u). g_fakeSwitchLevel run()
+// içinden okunan HAM pin seviyesidir. Aktif-düşük (INPUT_PULLUP): açık konum/
+// basılı = LOW = HEADLIGHT_SWITCH_ACTIVE_LEVEL (0), kapalı/boşta = HIGH (1).
+constexpr int SWITCH_ON = HEADLIGHT_SWITCH_ACTIVE_LEVEL;         // engaged (far açık konumu)
+constexpr int SWITCH_OFF = HEADLIGHT_SWITCH_ACTIVE_LEVEL ? 0 : 1; // disengaged
+int g_fakeSwitchLevel = SWITCH_OFF;
+int fakeSwitchReader() { return g_fakeSwitchLevel; }
+
 void primeIdle() {
     VcuLogic::resetForTest();
     fake_freertos_reset();
     fake_relay_reset();
     VcuLogic::init(g_mockRelay);
     VcuLogic::setTelemetryData(makeTelemetryDataValid());
+    // Far düğmesi reader'ını bağla, boot'ta "kapalı" konumdan başlat (üretimde
+    // main.cpp gpio_get_level'i bağlar). Testler bunu run()'dan ÖNCE değiştirir.
+    g_fakeSwitchLevel = SWITCH_OFF;
+    VcuLogic::setHeadlightSwitchReader(fakeSwitchReader);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::IDLE),
                           static_cast<int>(VcuLogic::getState()));
 }
@@ -39,6 +52,11 @@ void setTemp(int8_t tempC) {
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_bmsTempHighestC = tempC;
     VcuLogic::setTelemetryData(d);
+}
+
+void runTicks(int n) {
+    for (int i = 0; i < n; ++i)
+        VcuLogic::run();
 }
 
 }  // namespace
@@ -342,32 +360,115 @@ void test_roles_fan_and_flasher_on_in_fault(void) {
 }
 
 // ---------------------------------------------------------------------------
-// (f) Far — şartname B2 9.19.c (ekran butonu toggle; BMS'ten bağımsız).
+// (f) Far — şartname B2 9.19.c (FİZİKSEL düğme; BMS'ten bağımsız).
 // ---------------------------------------------------------------------------
-// Boot OFF → toggle ON → toggle OFF.
-void test_roles_headlight_toggle_off_on_off(void) {
-    primeIdle();
-    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // boot OFF
+// --- (f.1) SAF karar mantığı: HeadlightSwitch::update (native, run() yok) ---
 
-    VcuLogic::toggleHeadlight();
-    VcuLogic::run();
+// Latching: anahtar açık(engaged) → far ON; kapalı → far OFF. Debounce dolunca
+// commit; ara (debounce dolmamış) geçiş yok sayılır alttaki testte.
+void test_headlight_latching_follows_switch(void) {
+    HeadlightSwitch::State st = {};
+    // Boot: anahtar KAPALI konumda → far OFF.
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_OFF, 0, /*latching*/ true,
+                                              HEADLIGHT_DEBOUNCE_MS));
+    // Anahtar AÇIK konuma alındı; debounce dolmadan HENÜZ OFF, dolunca ON.
+    HeadlightSwitch::update(st, SWITCH_ON, 10, true, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON,
+                                             10 + HEADLIGHT_DEBOUNCE_MS, true,
+                                             HEADLIGHT_DEBOUNCE_MS));
+    // Anahtar tekrar KAPALI → debounce dolunca far OFF.
+    HeadlightSwitch::update(st, SWITCH_OFF, 100, true, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_OFF,
+                                              100 + HEADLIGHT_DEBOUNCE_MS, true,
+                                              HEADLIGHT_DEBOUNCE_MS));
+}
+
+// Latching boot senkronu (reset dayanıklılığı): anahtar AÇIK konumdayken boot'ta
+// far ANINDA ON (debounce beklemeden) — ESP reset sonrası desenkronizasyon yok.
+void test_headlight_latching_boot_syncs_to_switch_on(void) {
+    HeadlightSwitch::State st = {};
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON, 0, /*latching*/ true,
+                                             HEADLIGHT_DEBOUNCE_MS));
+}
+
+// Ara (debounce dolmamış) geçişler yok sayılır: kısa bir sıçrama far'ı değiştirmez.
+void test_headlight_latching_intermediate_ignored(void) {
+    HeadlightSwitch::State st = {};
+    HeadlightSwitch::update(st, SWITCH_OFF, 0, true, HEADLIGHT_DEBOUNCE_MS);  // boot OFF
+    // Anahtar AÇIK'a sıçrar (aday) ama debounce dolmadan geri KAPALI'ya döner.
+    HeadlightSwitch::update(st, SWITCH_ON, 10, true, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_OFF, 30, true,
+                                              HEADLIGHT_DEBOUNCE_MS));  // t=30 < 10+40
+    // Uzun süre sonra bile OFF (sıçrama commit edilmedi).
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_OFF, 500, true,
+                                              HEADLIGHT_DEBOUNCE_MS));
+}
+
+// Momentary: basma kenarında (open→closed) toggle; boot OFF; bırakma toggle etmez.
+void test_headlight_momentary_toggle_on_press_edge(void) {
+    HeadlightSwitch::State st = {};
+    // Boot: momentary → OFF (anahtar konumundan bağımsız).
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_OFF, 0, /*latching*/ false,
+                                              HEADLIGHT_DEBOUNCE_MS));
+    // Basma → debounce dolunca toggle → ON.
+    HeadlightSwitch::update(st, SWITCH_ON, 10, false, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON,
+                                             10 + HEADLIGHT_DEBOUNCE_MS, false,
+                                             HEADLIGHT_DEBOUNCE_MS));
+    // Bırakma (closed→open) toggle ETMEZ → ON kalır.
+    HeadlightSwitch::update(st, SWITCH_OFF, 100, false, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_OFF,
+                                             100 + HEADLIGHT_DEBOUNCE_MS, false,
+                                             HEADLIGHT_DEBOUNCE_MS));
+    // İkinci basma → toggle → OFF.
+    HeadlightSwitch::update(st, SWITCH_ON, 200, false, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_FALSE(HeadlightSwitch::update(st, SWITCH_ON,
+                                              200 + HEADLIGHT_DEBOUNCE_MS, false,
+                                              HEADLIGHT_DEBOUNCE_MS));
+}
+
+// Momentary: basılı TUTMAK tekrar toggle ETMEZ.
+void test_headlight_momentary_hold_no_retoggle(void) {
+    HeadlightSwitch::State st = {};
+    HeadlightSwitch::update(st, SWITCH_OFF, 0, false, HEADLIGHT_DEBOUNCE_MS);  // boot OFF
+    HeadlightSwitch::update(st, SWITCH_ON, 10, false, HEADLIGHT_DEBOUNCE_MS);
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON, 60, false,
+                                             HEADLIGHT_DEBOUNCE_MS));  // basma → ON
+    // Uzun süre basılı tut → ON kalır (kenar yok, tekrar toggle yok).
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON, 500, false,
+                                             HEADLIGHT_DEBOUNCE_MS));
+    TEST_ASSERT_TRUE(HeadlightSwitch::update(st, SWITCH_ON, 1000, false,
+                                             HEADLIGHT_DEBOUNCE_MS));
+}
+
+// --- (f.2) Entegrasyon: run() düğmeyi okur ve far rölesini sürer (latching) ---
+
+// Fiziksel düğme run()'dan okunur ve far kanalını (bank DIŞI) sürer.
+void test_roles_headlight_switch_drives_relay(void) {
+    g_fakeSwitchLevel = SWITCH_OFF;
+    primeIdle();
+    runTicks(1);  // init tick — boot OFF
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+
+    g_fakeSwitchLevel = SWITCH_ON;
+    runTicks(5);  // debounce dolar → ON
     TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 
-    VcuLogic::toggleHeadlight();
-    VcuLogic::run();
+    g_fakeSwitchLevel = SWITCH_OFF;
+    runTicks(5);  // debounce dolar → OFF
     TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 }
 
 // FAULT'ta far KORUNUR: far ON iken FAULT'a düş, allOff far'ı söndürmez.
 void test_roles_headlight_preserved_in_fault(void) {
     primeIdle();
-    VcuLogic::toggleHeadlight();
-    VcuLogic::run();
+    g_fakeSwitchLevel = SWITCH_ON;   // anahtar açık → boot'ta far ON (latching)
+    runTicks(3);
     TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 
     setTemp(70);
     VcuLogic::run();  // → FAULT
-    VcuLogic::run();  // t=20 → allOff
+    VcuLogic::run();  // t=20 → allOff (bank)
     TEST_ASSERT_EQUAL_INT(static_cast<int>(VcuState::FAULT),
                           static_cast<int>(VcuLogic::getState()));
     TEST_ASSERT_TRUE(g_fake_relay_allOff_count > 0);
@@ -378,9 +479,8 @@ void test_roles_headlight_preserved_in_fault(void) {
 // kapatılır), far bank dışı olduğundan yanık kalır.
 void test_roles_headlight_unchanged_on_ready_entry(void) {
     primeIdle();
-    VcuLogic::run();  // ilk IDLE tick
-    VcuLogic::toggleHeadlight();
-    VcuLogic::run();
+    g_fakeSwitchLevel = SWITCH_ON;
+    runTicks(3);  // far ON, hâlâ IDLE
     TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 
     VcuLogic::postEvent(VcuEvent::START_REQUEST);
@@ -390,17 +490,20 @@ void test_roles_headlight_unchanged_on_ready_entry(void) {
     TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // değişmez
 }
 
-// BMS bayatken far toggle YİNE çalışır (BMS verisinden bağımsız).
-void test_roles_headlight_toggle_works_when_bms_stale(void) {
+// BMS bayatken far düğmesi YİNE çalışır (BMS verisinden bağımsız).
+void test_roles_headlight_works_when_bms_stale(void) {
+    g_fakeSwitchLevel = SWITCH_OFF;
     primeIdle();
     TelemetryData d = makeTelemetryDataValid();
     d.TEL_bmsDataValid = false;
     d.TEL_bmsTimeoutActive = true;
     VcuLogic::setTelemetryData(d);
+    runTicks(1);  // init far OFF
+    TEST_ASSERT_FALSE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
 
-    VcuLogic::toggleHeadlight();
-    VcuLogic::run();
-    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);
+    g_fakeSwitchLevel = SWITCH_ON;
+    runTicks(5);
+    TEST_ASSERT_TRUE(g_fake_relay_channelState[RELAY_CH_HEADLIGHT]);  // bayat BMS'e rağmen
 }
 
 void setUp(void) {}
@@ -433,10 +536,15 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_roles_fan_unchanged_when_bms_invalid);
     RUN_TEST(test_roles_fan_and_flasher_on_in_fault);
 
-    RUN_TEST(test_roles_headlight_toggle_off_on_off);
+    RUN_TEST(test_headlight_latching_follows_switch);
+    RUN_TEST(test_headlight_latching_boot_syncs_to_switch_on);
+    RUN_TEST(test_headlight_latching_intermediate_ignored);
+    RUN_TEST(test_headlight_momentary_toggle_on_press_edge);
+    RUN_TEST(test_headlight_momentary_hold_no_retoggle);
+    RUN_TEST(test_roles_headlight_switch_drives_relay);
     RUN_TEST(test_roles_headlight_preserved_in_fault);
     RUN_TEST(test_roles_headlight_unchanged_on_ready_entry);
-    RUN_TEST(test_roles_headlight_toggle_works_when_bms_stale);
+    RUN_TEST(test_roles_headlight_works_when_bms_stale);
 
     RUN_TEST(test_roles_allOff_does_not_touch_flasher_channel);
 

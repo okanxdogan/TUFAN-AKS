@@ -27,6 +27,21 @@ void HMI_sendNumericIfChanged(const char* HMI_component, int32_t HMI_value,
     HMI_sendEndBytes();
 }
 
+void HMI_sendPicIfChanged(const char* HMI_component, int32_t HMI_picId,
+                          int32_t HMI_lastPicId, bool HMI_force) {
+    if (!HMI_force && HMI_picId == HMI_lastPicId)
+        return;
+
+    char HMI_command[48];
+    const int HMI_commandLen = HMI_formatPicCommand(
+        HMI_command, sizeof(HMI_command), HMI_component, HMI_picId);
+    if (HMI_commandLen <= 0)
+        return;
+
+    uart_write_bytes(HMI_UART_NUM, HMI_command, HMI_commandLen);
+    HMI_sendEndBytes();
+}
+
 void HMI_sendTextIfChanged(const char* HMI_component, const char* HMI_value,
                            const char* HMI_lastValue, bool HMI_force) {
     if (!HMI_force && std::strcmp(HMI_value, HMI_lastValue) == 0)

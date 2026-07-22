@@ -138,6 +138,17 @@ static void CAN_torqueSink(uint16_t torque) {
     s_canForTorque->sendTorqueCommand(torque);
 }
 
+#if RELAY_ROLES_ASSIGNED
+// Far fiziksel düğmesi (şartname B2 9.19.c) HAM pin okuyucusu — VcuLogic reader
+// hook'una bağlanır. INPUT_PULLUP: boştayken/açık konumda HIGH, basılınca/kapalı
+// konumda LOW (aktif-düşük). Debounce + latching/momentary kararı VcuLogic
+// tarafında saf HeadlightSwitch::update ile verilir. Giriş yolu SPI'dan
+// (MCP23S17) bağımsızdır — doğrudan ESP32 GPIO.
+static int Headlight_readSwitchLevel() {
+  return gpio_get_level(HEADLIGHT_SWITCH_PIN);
+}
+#endif
+
 // M2: VcuLogic → RelayManager köprüsü (kompozisyon kökü adapteri). VcuLogic
 // artık somut RelayManager singleton'ına değil IRelayActuator arayüzüne bağlı;
 // bu ince adapter gerçek RelayManager çağrılarını arayüze uydurur. Böylece
@@ -340,6 +351,10 @@ void vTask_HMI_Display(void *pvParameters) {
 
     HMI_screenData.HMI_vcuState = HMI_mapVcuState(VcuLogic::getState());
     HMI_screenData.HMI_contactorClosed = HMI_areAllContactorsClosed();
+    // Far durumu göstergesi (şartname B2 9.19.c): ekran farı KONTROL ETMEZ,
+    // yalnız GÖSTERİR. Durumun tek sahibi VcuLogic'tir (fiziksel düğmeden sürer);
+    // isHeadlightOn() RELAY_ROLES_ASSIGNED=0 iken DAİMA false döner (dürüst durum).
+    HMI_screenData.HMI_headlightOn = VcuLogic::isHeadlightOn();
 
     HMI_display.updateScreen(HMI_screenData);
 
@@ -475,14 +490,8 @@ void vTask_HMI_Display(void *pvParameters) {
                 ESP_LOGI(TAG, "HMI command: DRIVE ENABLE request");
                 VcuLogic::postEvent(VcuLogic::VcuEvent::DRIVE_ENABLE);
                 break;
-#if RELAY_ROLES_ASSIGNED
-            case HMI_CMD_HEADLIGHT_TOGGLE:
-                // Far toggle (şartname B2 9.19.c) — yalnız roller atandığında.
-                // BMS'ten bağımsız; VcuLogic run()'da işlenip röle sürülür.
-                ESP_LOGI(TAG, "HMI command: HEADLIGHT toggle");
-                VcuLogic::toggleHeadlight();
-                break;
-#endif
+            // Komut 5 (eski far toggle) KALDIRILDI — far artık fiziksel düğmeyle
+            // kontrol edilir (HEADLIGHT_SWITCH_PIN); ekran farı KONTROL ETMEZ.
             default:
                 ESP_LOGW(TAG, "Unknown HMI command received: %d", HMI_incomingCommand);
                 break;
@@ -851,6 +860,22 @@ extern "C" void app_main() {
   // E-STOP/FAULT güvenli kapanış sırasındaki sıfır-tork isteğini CanManager'a
   // yönlendir (G2 iskeleti; flag 0 iken gerçek frame üretmez).
   VcuLogic::setTorqueSink(CAN_torqueSink);
+
+#if RELAY_ROLES_ASSIGNED
+  // Far fiziksel düğmesi (şartname B2 9.19.c): GPIO'yu INPUT_PULLUP yap ve
+  // VcuLogic'in okuyucu hook'una bağla. Düğme pini GND'ye çeker (aktif-düşük).
+  // Yalnız roller atandığında derlenir — bayrak=0 iken far mantığı yoktur.
+  {
+    gpio_config_t hlSwitchCfg = {};
+    hlSwitchCfg.pin_bit_mask = (1ULL << HEADLIGHT_SWITCH_PIN);
+    hlSwitchCfg.mode = GPIO_MODE_INPUT;
+    hlSwitchCfg.pull_up_en = GPIO_PULLUP_ENABLE;
+    hlSwitchCfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    hlSwitchCfg.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&hlSwitchCfg));
+    VcuLogic::setHeadlightSwitchReader(Headlight_readSwitchLevel);
+  }
+#endif
 
   // 3. Create sensor data queue for inter-task communication
   TEL_sensorDataQueue = xQueueCreate(1, sizeof(TelemetryData));
