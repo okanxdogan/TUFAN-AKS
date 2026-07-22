@@ -90,6 +90,7 @@ Sıcaklık eşikleri 55/70 °C (uyarı/kapanma, 15 °C sabit aralık — şartna
 Based on current git history, the repository contributors are:
 
 - Sedat Ali Zevit - Seqat
+- Şebnem Orel - sebnemorel
 - incubation-0
 - Mesalt-f4
 - Order
