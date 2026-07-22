@@ -38,7 +38,16 @@ void test_resync_single_field_per_trigger(void) {
                                                    INTERVAL));
 }
 
-// Ardışık vadelerde alanlar updateScreen sırasıyla (0..10) döner, sonra
+// Alan sayısı 12 (11 sayısal/metin + far.pic durum göstergesi) ve far.pic
+// FIELD_COUNT'tan hemen önceki (son) alandır — enum sırası updateScreen
+// gönderim sırasıyla birebir aynı olmalı (far.pic en sonda gönderilir).
+void test_resync_field_count_is_twelve_headlight_last(void) {
+    TEST_ASSERT_EQUAL_INT(12, (int)HMI_RESYNC_FIELD_COUNT);
+    TEST_ASSERT_EQUAL_INT((int)HMI_RESYNC_FIELD_COUNT - 1,
+                          (int)HMI_RESYNC_HEADLIGHT);
+}
+
+// Ardışık vadelerde alanlar updateScreen sırasıyla (0..11) döner, sonra
 // başa sarar.
 void test_resync_round_robin_order_and_wrap(void) {
     uint32_t last = 0;
@@ -58,9 +67,10 @@ void test_resync_round_robin_order_and_wrap(void) {
 }
 
 // ANA GARANTİ: 10 Hz görev simülasyonunda, tam tur süresi
-// (HMI_RESYNC_FIELD_COUNT × INTERVAL) + 1 aralıklık marj içinde 11 alanın
+// (HMI_RESYNC_FIELD_COUNT × INTERVAL) + 1 aralıklık marj içinde 12 alanın
 // HER BİRİ en az bir kez zorla gönderilir — tespit edilemeyen bir Nextion
-// reset'i sonrasında ekranın kendini toparlama üst sınırı budur (~5.5 sn).
+// reset'i sonrasında ekranın kendini toparlama üst sınırı budur (12 × 500 ms
+// = 6 sn).
 void test_resync_covers_all_fields_within_full_cycle(void) {
     uint32_t last = 0;
     uint8_t next = 0;

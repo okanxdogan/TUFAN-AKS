@@ -100,6 +100,30 @@ da pack/paket seviyesinde VCU kararını besler:
 
 ---
 
+## 2c. Far Fiziksel Düğmesi ve Göstergesi (CONFIG — aktüatör/gösterim, güvenlik eşiği DEĞİL)
+
+Bu satırlar bir FAULT/kontaktör kararı DEĞİLDİR; far (OUT2, bank DIŞI) röle
+aktüatörünü fiziksel bir düğmeden sürer ve durumunu ekranda gösterir (şartname
+B2 9.19.c). Yalnız `RELAY_ROLES_ASSIGNED=1` iken derlenir/etkindir. Saf karar
+mantığı `lib/VcuLogic/HeadlightSwitch.h` (native test edilir).
+
+| Sabit | Değer | Birim | Tüketici | Durum |
+| --- | --- | --- | --- | --- |
+| `HEADLIGHT_SWITCH_PIN` | `GPIO_NUM_27` | GPIO | `main.cpp` `gpio_get_level` → `VcuLogic` reader hook → `HeadlightSwitch::update` | **CONFIG — donanım ekibi teyidi bekliyor** (doğrudan ESP32 GPIO, INPUT_PULLUP, aktif-düşük; SPI'dan bağımsız giriş yolu) |
+| `HEADLIGHT_SWITCH_ACTIVE_LEVEL` | `0` | seviye | `HeadlightSwitch::update` (basılı/kapalı = LOW) | CONFIG (INPUT_PULLUP + düğme GND'ye çeker) |
+| `HEADLIGHT_SWITCH_LATCHING` | `1` (varsayılan) | bayrak | `HeadlightSwitch::update` (1 = kalıcı/anahtarlı — otomotiv normu; 0 = anlık/butonlu) | CONFIG — düğme tipi donanım/ekip kararı |
+| `HEADLIGHT_DEBOUNCE_MS` | `40` | ms | `HeadlightSwitch::update` (VCU task periyodu 20 ms'e uygun okuma) | CONFIG |
+| `HMI_PIC_HEADLIGHT_OFF` | `0` | Nextion resource ID | `DisplayHMI::updateScreen` → `far.pic=<ID>` | **CONFIG — ekran projesi hazırlanınca gerçek ID ile güncellenecek** |
+| `HMI_PIC_HEADLIGHT_ON` | `1` | Nextion resource ID | `DisplayHMI::updateScreen` → `far.pic=<ID>` | **CONFIG — ekran projesi hazırlanınca gerçek ID ile güncellenecek** |
+
+> Far durumunun tek sahibi ESP'dir (`VcuLogic::isHeadlightOn`); ekran farı
+> KONTROL ETMEZ, yalnız GÖSTERİR (`far.pic`) ve yerel durum TUTMAZ — Nextion
+> brown-out reset'inde ikon gerçek durumla ters düşmesin diye (round-robin
+> resync `far`'ı da kapsar, ≤ 6 sn içinde toparlanır). Bkz.
+> `Documents/RELAY_CHANNEL_TABLE.md` ve `Documents/HMI_Field_Map.md`.
+
+---
+
 ## 3. `lib/BmsAlgo/BmsAlgo.h` — Hücre-Bazlı Eşikler (Gösterim/Uyarı Katmanı)
 
 Kaynak: `lib/BmsAlgo/BmsAlgo.h`. Tüketici tek fonksiyon: `computePack()`

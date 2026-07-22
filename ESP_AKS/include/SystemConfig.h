@@ -111,14 +111,19 @@
 // --- HMI Round-Robin Resync (reset dedektörünün emniyet katmanı) ---
 // Startup event'i brown-out sırasında RX hattında bozulup KAYBOLABİLİR —
 // o durumda yukarıdaki dedektör hiç tetiklenmez ve ekran kalıcı yarı-dolu
-// kalırdı. Bu katman olaydan bağımsızdır: her bu aralıkta bir, 11 skalar
-// alandan yalnızca SIRADAKİ TEKİ cache'e bakılmaksızın zorla gönderilir
-// (saf karar mantığı: lib/DisplayHMI/ResyncPolicy.h::hmi_resync_due_field).
+// kalırdı. Bu katman olaydan bağımsızdır: her bu aralıkta bir, 12 skalar
+// alandan (11 sayısal/metin + far.pic durum göstergesi) yalnızca SIRADAKİ
+// TEKİ cache'e bakılmaksızın zorla gönderilir (saf karar mantığı:
+// lib/DisplayHMI/ResyncPolicy.h::hmi_resync_due_field).
 //
 // TOPARLANMA SÜRESİ: tam tur = HMI_RESYNC_FIELD_COUNT × bu aralık
-// = 11 × 500 ms ≈ 5.5 sn — ekran, tespit edilemeyen bir reset sonrası en
+// = 12 × 500 ms = 6 sn — ekran, tespit edilemeyen bir reset sonrası en
 // geç bu süre içinde kendini onarır (insan/gösterge zaman ölçeğinde kabul
 // edilebilir; daha agresif değerler UART bütçesinden yer).
+//
+// NOT: static_assert FORMÜLÜ (aşağıda) alan sayısından BAĞIMSIZDIR — tetik
+// başına TEK alan gönderildiğinden tepe UART yükü alan sayısı 11→12 olsa da
+// değişmez; yalnız toparlanma turu bir alan kadar uzar.
 #define HMI_RESYNC_INTERVAL_MS 500U
 
 // Tek resync komutunun KÖTÜ-DURUM bayt boyutu (0xFF×3 end-byte DAHİL).
@@ -181,11 +186,13 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define HMI_CMD_RESET 2
 #define HMI_CMD_EMERGENCY_STOP 3
 #define HMI_CMD_DRIVE_ENABLE 4
-// Far toggle (şartname B2 9.19.c): 1..4 START/RESET/EMERGENCY_STOP/DRIVE_ENABLE
-// dolu → çakışmayan ilk boş değer 5. Ekran 0x5A CMD ~CMD çerçevesiyle gönderir
-// (headlight: 0x5A 0x05 0xFA). Yalnız RELAY_ROLES_ASSIGNED=1 iken işlenir
-// (bkz. main.cpp HMI switch + VcuLogic::toggleHeadlight, HMI_Field_Map.md).
-#define HMI_CMD_HEADLIGHT_TOGGLE 5
+// Komut 5: KULLANIM DIŞI — REZERVE (bir daha ATANMAMALI). Eskiden
+// HMI_CMD_HEADLIGHT_TOGGLE idi (far ekran butonuyla toggle, çerçeve
+// 0x5A 0x05 0xFA). Far kontrolü fiziksel düğmeye taşındı (HEADLIGHT_SWITCH_PIN,
+// şartname B2 9.19.c) — ekran artık farı KONTROL ETMEZ, yalnız durumunu
+// GÖSTERİR (far.pic). Bu numara ileride başka bir komuta atanırsa, eski ekran
+// projelerinin hâlâ gönderdiği 0x5A 0x05 0xFA çerçevesiyle karışır; o yüzden
+// KALICI OLARAK boş bırakılır (bkz. Documents/HMI_Field_Map.md).
 
 // --- LoRa E22-400T30D-V2 (SX1268, UART & Kontrol) ---
 // Pin-uyumlu E32-433T30D yerine geçti; pin atamaları DEĞİŞMEDİ. Config
@@ -346,6 +353,54 @@ static_assert((RELAY_DRIVE_BANK_MASK & (1u << RELAY_CH_S2_DRIVE)) != 0 &&
 // ALTINA inince söner. Eşik sınırında titremeyi (ON/OFF çırpınması) önler.
 // Yalnız RELAY_ROLES_ASSIGNED=1 iken derlenen flaşör mantığı kullanır.
 #define FLASHER_HYSTERESIS_C 2
+
+// --- Far Fiziksel Düğmesi (şartname B2 9.19.c) ---
+// Far ARTIK ekran butonuyla değil, sürücünün basacağı FİZİKSEL bir düğmeyle
+// açılıp kapanır (9.19.c: "farlar sürücünün basacağı bir düğme ile açılıp
+// kapanabilmeli"). Ekran yalnız durumu GÖSTERİR (far.pic), farı KONTROL ETMEZ.
+// Yalnız RELAY_ROLES_ASSIGNED=1 iken bu giriş okunur ve far mantığı derlenir;
+// bayrak=0 iken davranış bugünküyle bayt-bayt aynı kalır.
+//
+// PİN SEÇİMİ — GPIO27 (doğrudan ESP32 GPIO, INPUT_PULLUP). Gerekçe: doğrudan
+// bir ESP32 GPIO'su TERCİH edildi çünkü giriş yolu SPI'dan (MCP23S17) tamamen
+// BAĞIMSIZ olur — röle expander'ı reset/brown-out atsa bile düğme okunmaya
+// devam eder. GPIO27 boştur (kullanılan pinler: CAN 4/5, HMI 32/33, LoRa
+// 16/17/25/26/35, SPI 14/18/19/23), strapping pini DEĞİLDİR ve dahili pull-up
+// destekler (giriş-yalnız 34-39 grubunun aksine — o grup düğme için pull-up'sız
+// kalırdı). Böylece MCP23S17 J22 header'ının boş GPB4-GPB7 fallback'ine GEREK
+// KALMADI (uygun bir ESP32 GPIO bulundu). Düğme, pini GND'ye çeker: dahili
+// pull-up ile boştayken/açık konumda HIGH, basılınca/kapalı konumda LOW
+// (aktif-düşük, HEADLIGHT_SWITCH_ACTIVE_LEVEL=0).
+// CONFIG — donanım ekibi teyidi bekliyor (kabloyu bu pine çekecek).
+#define HEADLIGHT_SWITCH_PIN GPIO_NUM_27
+// INPUT_PULLUP + düğme GND'ye çeker → far açık konumu/basılı = LOW = 0.
+#define HEADLIGHT_SWITCH_ACTIVE_LEVEL 0
+
+// Düğme tipi — VARSAYILAN 1 (kalıcı/anahtarlı, otomotiv normu, ÖNERİLEN):
+//   1 (latching): far durumu doğrudan anahtar KONUMUNU takip eder. ESP reset
+//     atsa bile anahtar hâlâ "açık" konumundaysa far boot'ta geri yanar —
+//     reset sonrası desenkronizasyon İMKÂNSIZ.
+//   0 (momentary): basma kenarında (open→closed) toggle. Bu modda boot'ta OFF.
+#ifndef HEADLIGHT_SWITCH_LATCHING
+#define HEADLIGHT_SWITCH_LATCHING 1
+#endif
+
+// Debounce: kararsız (bounce) geçişler bu süre boyunca kararlı kalmadıkça yok
+// sayılır. Okuma VCU task periyoduna (TASK_PERIOD_MS=20) uygun yapılır; 40 ms
+// ≈ 2 tik. Saf karar mantığı: lib/VcuLogic/HeadlightSwitch.h (native test edilir).
+#define HEADLIGHT_DEBOUNCE_MS 40
+
+// --- Far Durum Göstergesi (Nextion "far" Picture bileşeni) ---
+// Ekran farı KONTROL ETMEZ, yalnız DURUMUNU gösterir: firmware "far.pic"i farın
+// GERÇEK durumuna (VcuLogic) göre günceller. Durumun tek sahibi ESP'dir; ekran
+// kendi durumunu TUTMAZ — Nextion brown-out reset'inde yerel durum gerçek
+// durumla ters düşerdi (round-robin resync bunu HMI_RESYNC_HEADLIGHT ile de
+// onarır, bkz. lib/DisplayHMI/ResyncPolicy.h). Bileşen: Picture, objname="far",
+// komut "far.pic=<ID>".
+// CONFIG — Nextion resource ID'leri; ekran projesi hazırlanınca gerçek
+// değerlerle güncellenecek. Şimdilik 0 ve 1.
+#define HMI_PIC_HEADLIGHT_OFF 0
+#define HMI_PIC_HEADLIGHT_ON 1
 
 // --- MCP23S17 Çıkış Doğrulama (Actuator Verify) Periyodu ---
 // VCU task'i 20 ms'de bir (50 Hz) döner; OLAT/IODIR geri-okuma doğrulamasını

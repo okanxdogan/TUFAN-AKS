@@ -1,8 +1,10 @@
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "HMIHelpers.h"
+#include "SystemConfig.h"  // HMI_PIC_HEADLIGHT_ON/OFF
 #include "fake_uart.h"
 
 namespace {
@@ -77,6 +79,61 @@ void test_text_terminated_with_end_bytes(void) {
     TEST_ASSERT_EQUAL_UINT8(END[0], static_cast<uint8_t>(buf[sz - 3]));
     TEST_ASSERT_EQUAL_UINT8(END[1], static_cast<uint8_t>(buf[sz - 2]));
     TEST_ASSERT_EQUAL_UINT8(END[2], static_cast<uint8_t>(buf[sz - 1]));
+}
+
+// ---------------------------------------------------------------------------
+// sendPicIfChanged / formatPicCommand — far.pic durum göstergesi (şartname
+// B2 9.19.c). Ekran farı KONTROL ETMEZ, yalnız durumunu GÖSTERİR.
+// ---------------------------------------------------------------------------
+void test_pic_format_builds_command(void) {
+    char buf[48];
+    const int n = HMI_formatPicCommand(buf, sizeof(buf), "far",
+                                       HMI_PIC_HEADLIGHT_ON);
+    TEST_ASSERT_TRUE(n > 0);
+    char expected[32];
+    snprintf(expected, sizeof(expected), "far.pic=%d", HMI_PIC_HEADLIGHT_ON);
+    TEST_ASSERT_EQUAL_STRING(expected, buf);
+}
+
+void test_pic_on_id_writes_command(void) {
+    fake_uart_reset();
+    HMI_sendPicIfChanged("far", HMI_PIC_HEADLIGHT_ON, HMI_PIC_HEADLIGHT_OFF,
+                         /*force*/ false);
+    char expected[32];
+    snprintf(expected, sizeof(expected), "far.pic=%d", HMI_PIC_HEADLIGHT_ON);
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), expected));
+
+    // 3 byte 0xFF terminatör
+    const size_t sz = fake_uart_get_size();
+    const char* buf = fake_uart_get_buffer();
+    TEST_ASSERT_TRUE(sz >= 3);
+    TEST_ASSERT_EQUAL_UINT8(END[0], static_cast<uint8_t>(buf[sz - 3]));
+    TEST_ASSERT_EQUAL_UINT8(END[2], static_cast<uint8_t>(buf[sz - 1]));
+}
+
+void test_pic_off_id_writes_command(void) {
+    fake_uart_reset();
+    HMI_sendPicIfChanged("far", HMI_PIC_HEADLIGHT_OFF, HMI_PIC_HEADLIGHT_ON,
+                         /*force*/ false);
+    char expected[32];
+    snprintf(expected, sizeof(expected), "far.pic=%d", HMI_PIC_HEADLIGHT_OFF);
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), expected));
+}
+
+void test_pic_same_value_no_force_skips_write(void) {
+    fake_uart_reset();
+    HMI_sendPicIfChanged("far", HMI_PIC_HEADLIGHT_ON, HMI_PIC_HEADLIGHT_ON,
+                         /*force*/ false);
+    TEST_ASSERT_EQUAL_size_t(0, fake_uart_get_size());
+}
+
+void test_pic_force_writes_even_when_unchanged(void) {
+    fake_uart_reset();
+    HMI_sendPicIfChanged("far", HMI_PIC_HEADLIGHT_ON, HMI_PIC_HEADLIGHT_ON,
+                         /*force*/ true);
+    char expected[32];
+    snprintf(expected, sizeof(expected), "far.pic=%d", HMI_PIC_HEADLIGHT_ON);
+    TEST_ASSERT_NOT_NULL(strstr(fake_uart_get_buffer(), expected));
 }
 
 // ---------------------------------------------------------------------------

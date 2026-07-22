@@ -14,7 +14,7 @@ Current software meaning:
 | --- | --- | --- |
 | OUT0 | **S2 — drive-line contactor** | Drive bank + contactor bank |
 | OUT1 | **HV− contactor** — opens/closes together with S2 in the drive bank | Drive bank + contactor bank |
-| OUT2 | **Headlight (far)** — toggled by a screen button, BMS-independent | **Out of bank** |
+| OUT2 | **Headlight (far)** — controlled by a **physical switch** (`HEADLIGHT_SWITCH_PIN` = GPIO27, INPUT_PULLUP), BMS-independent; the screen only **shows** its status (`far.pic`) | **Out of bank** |
 | OUT3–OUT6 | empty / spare | Contactor bank (drive bank) |
 | OUT7 | **Cooling fan** — automatic, temperature-driven | **Out of bank** |
 | OUT8 | **S1 — charge-line contactor** | Contactor bank (not drive bank) |
@@ -39,7 +39,7 @@ The channel→physical-load mapping has **not** been confirmed by the hardware t
 | --- | --- | --- | --- | --- |
 | `RELAY_CH_S2_DRIVE` (`RELAY_CH_POS_0`) | 0 | **S2 — drive-line contactor** | 8.2.a.vii: closed in drive; 8.2.a.iii: open while charging; 8.2.a.vi: open on safety problem | TBD during harness validation |
 | `RELAY_CH_HVNEG` (`RELAY_CH_POS_1`) | 1 | **HV− contactor** — drive-bank member; opens/closes together with S2 | 8.2.a | TBD during harness validation |
-| `RELAY_CH_HEADLIGHT` (`RELAY_CH_POS_2`) | 2 | **Headlight (far)** — toggled by the screen button (`HMI_CMD_HEADLIGHT_TOGGLE=5`, frame `0x5A 0x05 0xFA`). Boot OFF, BMS-independent. **Outside** the bank mask — `allOff`/`allOn` (FAULT/E-STOP/READY) never change it. | B2 9.19.c | TBD during harness validation |
+| `RELAY_CH_HEADLIGHT` (`RELAY_CH_POS_2`) | 2 | **Headlight (far)** — driven by `VcuLogic` from a **physical switch** on `HEADLIGHT_SWITCH_PIN` (**GPIO27**, direct ESP32 GPIO with INPUT_PULLUP; active-low, switch to GND). Debounce `HEADLIGHT_DEBOUNCE_MS`=40 ms; switch type `HEADLIGHT_SWITCH_LATCHING` (default **1** = latching/maintained). Latching → far follows the switch **position** (survives ESP reset — if the switch is still "on", far comes back on). BMS-independent. **Outside** the bank mask — `allOff`/`allOn` (FAULT/E-STOP/READY) never change it. The screen no longer controls the headlight; it only **shows** the state (`far.pic`). Pure decision logic: `lib/VcuLogic/HeadlightSwitch.h`. | B2 9.19.c | TBD during harness validation |
 | `RELAY_CH_POS_3` … `RELAY_CH_POS_6` | 3-6 | empty / spare (drive bank) | — | Boş/yedek |
 | `RELAY_CH_FAN` (`RELAY_CH_POS_7`) | 7 | **Cooling fan** — driven by `VcuLogic` from the verified BMS max temperature: ON at ≥40 °C (`FAN_ON_TEMP_C`), OFF at ≤35 °C (`FAN_OFF_TEMP_C`). **Outside** the bank mask — stays on through FAULT/E-STOP so a hot pack keeps cooling. Stale/timed-out BMS data leaves it untouched. | B3 7.a-b | TBD during harness validation |
 | `RELAY_CH_S1_CHARGE` (`RELAY_CH_POS_8`) | 8 | **S1 — charge-line contactor** (closed in IDLE while charger CAN stream is fresh; open in READY/DRIVE; open on FAULT/E-STOP) | 8.2.a.iii / 8.2.a.vii / 8.2.a.vi | TBD during harness validation |
@@ -55,7 +55,20 @@ With `RELAY_ROLES_ASSIGNED=0` all ten channels are plain positive-contactor bank
 | READY / DRIVE | OPEN | CLOSED (`RELAY_DRIVE_BANK_MASK`, not `allOn`) | 8.2.a.vii |
 | FAULT / EMERGENCY_STOP | OPEN | OPEN (`allOff` over `RELAY_CONTACTOR_BANK_MASK`) | 8.2.a.vi |
 
-Fan (OUT7) and headlight (OUT2) are **independent of the S1/S2 mode** — they are outside the bank mask, so none of the transitions above changes them. The fan tracks the verified BMS max temperature (40 °C ON / 35 °C OFF, hysteresis) in every state including FAULT/E-STOP; the headlight only changes on a screen-button toggle.
+Fan (OUT7) and headlight (OUT2) are **independent of the S1/S2 mode** — they are outside the bank mask, so none of the transitions above changes them. The fan tracks the verified BMS max temperature (40 °C ON / 35 °C OFF, hysteresis) in every state including FAULT/E-STOP; the headlight follows the driver's physical switch (`HEADLIGHT_SWITCH_PIN`), independent of BMS and vehicle state.
+
+## Headlight physical switch (`HEADLIGHT_SWITCH_PIN`, `RELAY_ROLES_ASSIGNED=1`)
+
+The headlight (OUT2) is controlled by a **physical driver switch**, not the touchscreen (şartname B2 9.19.c: "farlar sürücünün basacağı bir düğme ile açılıp kapanabilmeli"). The screen now only **displays** the state (`far.pic`), it never controls the light.
+
+| Setting | Value | Notes |
+| --- | --- | --- |
+| `HEADLIGHT_SWITCH_PIN` | **GPIO27** | Direct ESP32 GPIO, INPUT_PULLUP. Chosen over the MCP23S17 J22 GPB4-GPB7 fallback so the input path is **independent of SPI** (works even if the relay expander resets). Free pin, not a strapping pin, supports internal pull-up. **CONFIG — awaiting hardware-team confirmation** (they route the switch wiring to this pin). |
+| `HEADLIGHT_SWITCH_ACTIVE_LEVEL` | `0` | Active-low: switch to GND → LOW = "on" position / pressed. |
+| `HEADLIGHT_SWITCH_LATCHING` | `1` (default) | `1` = maintained/latching (automotive norm, recommended): far follows the switch **position**; after an ESP reset the far comes back on if the switch is still on → post-reset desync impossible. `0` = momentary: toggle on the press edge, far OFF at boot. |
+| `HEADLIGHT_DEBOUNCE_MS` | `40` | Read at the VCU task period (20 ms); unstable transitions are ignored. |
+
+Wiring: connect the switch between GPIO27 and GND. The pure decision logic (debounce + latching/momentary) lives in `lib/VcuLogic/HeadlightSwitch.h` (native-tested); `main.cpp` binds `gpio_get_level(HEADLIGHT_SWITCH_PIN)` to the `VcuLogic` reader hook.
 
 `TEL_chargerActive` is derived from the charger CAN stream freshness (`CanManager::updateChargerValidity`, `CAN_CHARGER_TIMEOUT_MS`) and is internal-only — it is never serialized into the LoRa TEL frame (19 fields, v2).
 

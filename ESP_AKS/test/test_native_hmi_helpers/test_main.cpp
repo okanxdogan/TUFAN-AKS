@@ -38,6 +38,13 @@ extern void test_text_force_writes_even_when_unchanged(void);
 extern void test_text_terminated_with_end_bytes(void);
 extern void test_sendEndBytes_writes_three_ff(void);
 
+// far.pic durum göstergesi (Picture bileşeni)
+extern void test_pic_format_builds_command(void);
+extern void test_pic_on_id_writes_command(void);
+extern void test_pic_off_id_writes_command(void);
+extern void test_pic_same_value_no_force_skips_write(void);
+extern void test_pic_force_writes_even_when_unchanged(void);
+
 // "Veri yok" gösterimi (UNVERIFIED SOC/sıcaklık sentinelleri)
 extern void test_battery_unverified_source_returns_no_data(void);
 extern void test_temp_unverified_source_returns_no_data(void);
@@ -62,6 +69,7 @@ extern void test_reset_detect_mixed_with_touch_frame(void);
 extern void test_reset_detect_manual_reset_clears_progress(void);
 
 // Round-robin resync politikası — ResyncPolicy.h
+extern void test_resync_field_count_is_twelve_headlight_last(void);
 extern void test_resync_not_due_returns_no_field(void);
 extern void test_resync_single_field_per_trigger(void);
 extern void test_resync_round_robin_order_and_wrap(void);
@@ -106,6 +114,12 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_text_terminated_with_end_bytes);
     RUN_TEST(test_sendEndBytes_writes_three_ff);
 
+    RUN_TEST(test_pic_format_builds_command);
+    RUN_TEST(test_pic_on_id_writes_command);
+    RUN_TEST(test_pic_off_id_writes_command);
+    RUN_TEST(test_pic_same_value_no_force_skips_write);
+    RUN_TEST(test_pic_force_writes_even_when_unchanged);
+
     RUN_TEST(test_battery_unverified_source_returns_no_data);
     RUN_TEST(test_temp_unverified_source_returns_no_data);
     RUN_TEST(test_production_source_verified_flags_are_true);
@@ -126,6 +140,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_reset_detect_mixed_with_touch_frame);
     RUN_TEST(test_reset_detect_manual_reset_clears_progress);
 
+    RUN_TEST(test_resync_field_count_is_twelve_headlight_last);
     RUN_TEST(test_resync_not_due_returns_no_field);
     RUN_TEST(test_resync_single_field_per_trigger);
     RUN_TEST(test_resync_round_robin_order_and_wrap);

@@ -125,14 +125,11 @@ inline bool fanDesiredState(bool currentOn, bool bmsDataValid,
     return currentOn;
 }
 
-// Far (şartname B2 9.19.c) durum kararı — SAF: her geçerli ekran komutunda
-// TOGGLE. BMS verisinden tamamen BAĞIMSIZ (yalnız mevcut duruma bakar); fan/
-// flaşörden farklı olarak sıcaklık/telemetri okumaz. Far kanalı bank maskesi
-// DIŞINDA olduğundan FAULT/E-STOP/READY girişindeki allOff/allOn far durumunu
-// DEĞİŞTİRMEZ; boot'ta OFF (s_headlightOn=false).
-inline bool headlightDesiredState(bool currentOn) {
-    return !currentOn;
-}
+// Far (şartname B2 9.19.c) durum kararı: ARTIK ekran komutuyla değil, sürücünün
+// basacağı FİZİKSEL düğmeyle kontrol edilir. Saf karar mantığı (debounce +
+// latching/momentary) lib/VcuLogic/HeadlightSwitch.h'dedir (native test edilir);
+// BMS verisinden tamamen BAĞIMSIZ. Far kanalı bank maskesi DIŞINDA olduğundan
+// FAULT/E-STOP/READY girişindeki allOff/allOn far durumunu DEĞİŞTİRMEZ.
 #endif  // RELAY_ROLES_ASSIGNED
 
 inline bool hasWarningCondition(const TelemetryData& VCU_data) {
@@ -264,13 +261,21 @@ void postEvent(VcuEvent event);
 VcuState getState();
 void setTelemetryData(const TelemetryData& TEL_data);
 
+// Far durumu göstergesi (şartname B2 9.19.c). HMI task, far.pic göstergesini
+// bu değerden doldurur (ekran farı KONTROL ETMEZ, yalnız GÖSTERİR; durumun tek
+// sahibi ESP'dir). Cross-task okunur (VCU task yazar, HMI task okur) → atomic.
+// RELAY_ROLES_ASSIGNED=0 iken DAİMA false döner (far mantığı derleme dışı;
+// dürüst durum — ekranda far kapalı gösterilir).
+bool isHeadlightOn();
+
 #if RELAY_ROLES_ASSIGNED
-// Far toggle isteği (şartname B2 9.19.c). Ekran HMI_CMD_HEADLIGHT_TOGGLE
-// komutunu gönderince main.cpp bunu çağırır (HMI task bağlamı). E-STOP/FAULT
-// bypass deseniyle aynı: yalnız atomic "toggle beklemede" bayrağını set eder;
-// gerçek TOGGLE + röle sürüşü run() içinde (VCU task, tek röle yazarı) yapılır.
-// Böylece far durumu FAULT/E-STOP dahil her durumda korunur (bank dışı kanal).
-void toggleHeadlight();
+// Far fiziksel düğmesinin HAM pin seviyesini döndüren okuyucu hook'u. VcuLogic
+// donanıma (gpio) doğrudan bağlı olmasın diye (native testler GPIO linklemez)
+// function-pointer kullanılır — TorqueSink deseniyle aynı. main.cpp gerçek
+// gpio_get_level(HEADLIGHT_SWITCH_PIN)'i bağlar; native testler bir spy takar.
+// Bağlı değilse run() far düğmesini okumaz (far OFF kalır).
+using HeadlightSwitchReader = int (*)();
+void setHeadlightSwitchReader(HeadlightSwitchReader reader);
 #endif
 
 // Torque komut yolu (motor sürücüsü entegrasyon iskeleti). E-STOP/FAULT

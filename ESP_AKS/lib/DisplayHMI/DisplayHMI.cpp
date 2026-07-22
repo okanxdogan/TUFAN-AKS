@@ -186,6 +186,17 @@ void DisplayHMI::updateScreen(const HMI_DisplayData& HMI_data) {
                               HMI_lastScreenData.HMI_contactorClosed),
                           HMI_force(HMI_RESYNC_CONTACTOR));
 
+    // Far durumu göstergesi (şartname B2 9.19.c): "far.pic=<ID>" — bool durum
+    // Nextion resource ID'sine eşlenir (HMI_PIC_HEADLIGHT_ON/OFF, SystemConfig.h).
+    // change-compare + resync deseni diğer alanlarla birebir aynı; enum sırası
+    // (HMI_RESYNC_HEADLIGHT, ResyncPolicy.h) bu gönderimle SON sırada eşleşir.
+    HMI_sendPicIfChanged(
+        "far",
+        HMI_data.HMI_headlightOn ? HMI_PIC_HEADLIGHT_ON : HMI_PIC_HEADLIGHT_OFF,
+        HMI_lastScreenData.HMI_headlightOn ? HMI_PIC_HEADLIGHT_ON
+                                           : HMI_PIC_HEADLIGHT_OFF,
+        HMI_force(HMI_RESYNC_HEADLIGHT));
+
     HMI_lastScreenData = HMI_data;
     HMI_hasCachedScreen = true;
 }

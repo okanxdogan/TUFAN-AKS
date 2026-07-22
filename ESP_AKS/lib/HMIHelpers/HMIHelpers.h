@@ -109,6 +109,21 @@ inline int32_t HMI_packCurrentToXfloat(int32_t HMI_packCurrentCentiA) {
     return HMI_packCurrentCentiA;
 }
 
+// --- Nextion Picture bileşeni komut üreticisi (far.pic durum göstergesi) ---
+//
+// Far (şartname B2 9.19.c) durumu ekranda bir Picture bileşeniyle (objname
+// "far") gösterilir; komut biçimi "<component>.pic=<picId>" (ör. "far.pic=1").
+// picId = HMI_PIC_HEADLIGHT_ON / HMI_PIC_HEADLIGHT_OFF (SystemConfig.h, CONFIG).
+//
+// HMI_formatPicCommand SAF'tır: yalnız out buffer'a formatlar, UART'a DOKUNMAZ
+// (native testler doğrudan doğrular). snprintf dönüşünü (yazılacak karakter
+// sayısı) döndürür; <=0 veya >=outSize hata/kesme demektir (end-byte'lar HARİÇ).
+inline int HMI_formatPicCommand(char* HMI_out, size_t HMI_outSize,
+                                const char* HMI_component, int32_t HMI_picId) {
+    return snprintf(HMI_out, HMI_outSize, "%s.pic=%ld", HMI_component,
+                    static_cast<long>(HMI_picId));
+}
+
 // Nextion UART tarafı — implementasyonu HMIHelpers.cpp içindedir.
 void HMI_sendEndBytes(void);
 
@@ -120,3 +135,9 @@ void HMI_sendNumericIfChanged(const char* HMI_component, int32_t HMI_value,
 // Aynı şekilde text varyantı: "{component}.txt=\"{value}\"\xFF\xFF\xFF".
 void HMI_sendTextIfChanged(const char* HMI_component, const char* HMI_value,
                            const char* HMI_lastValue, bool HMI_force);
+
+// Picture varyantı: yalnızca picId önceki cache'ten farklıysa (veya force=true)
+// "{component}.pic={picId}\xFF\xFF\xFF" yazar (sendNumericIfChanged ikizi;
+// komut üretimi saf HMI_formatPicCommand'a delege edilir).
+void HMI_sendPicIfChanged(const char* HMI_component, int32_t HMI_picId,
+                          int32_t HMI_lastPicId, bool HMI_force);
