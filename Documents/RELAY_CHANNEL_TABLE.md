@@ -72,6 +72,46 @@ Wiring: connect the switch between GPIO27 and GND. The pure decision logic (debo
 
 `TEL_chargerActive` is derived from the charger CAN stream freshness (`CanManager::updateChargerValidity`, `CAN_CHARGER_TIMEOUT_MS`) and is internal-only — it is never serialized into the LoRa TEL frame (19 fields, v2).
 
+## Faz 1 — kanal↔klemens doğrulaması (DOĞRULANDI, 2026-07-22)
+
+**Yöntem:** Çıplak kartta (klemensler boş, HV ayrık), her yazılım kanalı sırayla tek tek sürüldü ve kartın durum LED'i ile eşlendi. **10 kanalın 10'u da şemayla BİREBİR uyuştu** — kart çizildiği gibi üretilmiş, sapma yok.
+
+| Kanal | Klemens | Röle ref. | Durum LED'i | Test noktası |
+| --- | --- | --- | --- | --- |
+| ch0 | OUT0 | K1 | D8 | TP3 |
+| ch1 | OUT1 | K3 | D13 | TP5 |
+| ch2 | OUT2 | K6 | D19 | TP9 |
+| ch3 | OUT3 | K9 | D24 | TP11 |
+| ch4 | OUT4 | K2 | D9 | TP4 |
+| ch5 | OUT5 | K4 | D14 | TP6 |
+| ch6 | OUT6 | K7 | D20 | TP8 |
+| ch7 | OUT7 | K10 | D25 | TP12 |
+| ch8 | OUT8 | K5 | D15 | TP7 |
+| ch9 | OUT9 | K8 | D23 | TP10 |
+
+**⚠️ UYARI:** Röle referansları (K1, K3, K6 …) klemens sırasıyla **KARIŞIK** (ör. OUT0=K1 ama OUT4=K2, OUT8=K5). Kablo bağlarken röle numarasına (Kx) **DEĞİL**, klemens **OUT etiketine** bakılacak.
+
+## Faz 2 — kablolama talimatı (yük atamaları, henüz çekilmedi)
+
+Donanım ekibi harness'i çekerken her klemense aşağıdaki yük bağlanacak (klemens = **OUT etiketi**, röle numarası değil):
+
+| Klemens | Fiziksel yük |
+| --- | --- |
+| OUT0 | S2 sürüş kontaktörü |
+| OUT1 | HV− kontaktörü |
+| OUT2 | Far |
+| OUT3–OUT6 | boş / yedek |
+| OUT7 | Soğutma fanı |
+| OUT8 | S1 şarj kontaktörü |
+| OUT9 | Flaşör |
+
+Ayrıca **far düğmesi**: `HEADLIGHT_SWITCH_PIN` = **GPIO27** ile **GND** arasına bağlanacak (INPUT_PULLUP, aktif-düşük).
+
 ## Note
 
-The physical output-to-load mapping still requires validation against the electrical drawing. Keep `RELAY_ROLES_ASSIGNED=0` until the hardware team confirms the harness; the S1/S2/flasher roles above are the software-side contract that will be enabled at that point.
+Doğrulama iki aşamalıdır; bu ikisi ayrı tutulmalıdır:
+
+- **DOĞRULANDI (Faz 1, bu test — 2026-07-22):** yazılım kanalı `N` ↔ kart klemensi `OUT N` eşlemesi. Çıplak kartta LED tablosuyla 10/10 birebir uyuştu (yukarı).
+- **HENÜZ DEĞİL (Faz 2, donanım ekibi):** kart klemensi ↔ fiziksel yük kablolaması. Harness çekilene kadar açık.
+
+Bu nedenle **`RELAY_ROLES_ASSIGNED=0` KALIR** — bayrak Faz 1 ile açılmaz; yalnızca Faz 2 kablolaması tamamlandıktan sonra 1 yapılacak. Yukarıdaki S1/S2/flaşör rolleri, o noktada etkinleşecek yazılım tarafı sözleşmedir.

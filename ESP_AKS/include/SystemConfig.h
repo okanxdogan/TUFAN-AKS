@@ -245,10 +245,11 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 
 // --- MCP23S17 Relay Channel Assignments ---
 // All relay outputs are active-low and currently reserved for the positive
-// contactor bank. The software mapping is stable, but the final harness /
-// physical load assignment for each channel still needs hardware validation.
-// Keep this table synchronized with the wiring document before replacing the
-// placeholder descriptions below.
+// contactor bank. The software channel -> board terminal mapping is now
+// VERIFIED (Faz 1, 2026-07-22 — 10/10 channels matched the drawing on the bare
+// board). The final harness / physical load wiring per terminal (Faz 2) still
+// needs hardware validation. Keep this table synchronized with the wiring
+// document before replacing the placeholder descriptions below.
 //
 // Kanal rol sözlüğü (her kanalın FİZİKSEL işlevi; donanım ekibi harness'i
 // netleştirince "role:" etiketleri kesinleştirilecek):
@@ -295,17 +296,22 @@ static_assert((unsigned)HMI_RESYNC_CMD_MAX_BYTES * 1000u /
 #define RELAY_CH_S1_CHARGE 8  // OUT8 — S1 şarj hattı kontaktörü
 #define RELAY_CH_FLASHER 9    // OUT9 — Uyarı flaşörü (sesli+ışıklı, şartname 6.e.ii)
 
-// Kanal-yük eşlemesi (yukarıdaki S1/S2/flaşör rolleri) donanım ekibiyle
-// HENÜZ teyit edilmedi. 0 (varsayılan) iken rol mantığının TAMAMI (flaşör,
+// Kanal-yük eşlemesi iki aşamalı doğrulanır:
+//   FAZ 1 (yazılım kanalı ↔ kart klemensi): DOĞRULANDI — 2026-07-22, çıplak
+//     kartta (klemensler boş, HV ayrık) 10 kanal sırayla sürülüp durum LED'iyle
+//     eşlendi; 10/10 şemayla birebir uyuştu (bkz. RELAY_CHANNEL_TABLE.md).
+//   FAZ 2 (kart klemensi ↔ fiziksel yük kablolaması): HENÜZ DEĞİL — donanım
+//     ekibi harness'i (S2/HV−/far/fan/S1/flaşör yükleri) çekince tamamlanacak.
+// Bu bayrak FAZ 2'ye kadar 0 (varsayılan) KALIR: rol mantığının TAMAMI (flaşör,
 // S1/S2 mod anahtarlaması) derleme dışıdır ve araç davranışı eski "tek bank"
-// haliyle BAYT-BAYT aynı kalır. Teyit gelince build flag'i ile 1 yapılır
-// (ör. platformio.ini -D RELAY_ROLES_ASSIGNED=1).
+// haliyle BAYT-BAYT aynı kalır. Kablolama teyidi gelince build flag'i ile 1
+// yapılır (ör. platformio.ini -D RELAY_ROLES_ASSIGNED=1).
 #ifndef RELAY_ROLES_ASSIGNED
 #define RELAY_ROLES_ASSIGNED 0
 #endif
 
 #if !RELAY_ROLES_ASSIGNED
-#warning "kanal-yük eşlemesi donanım ekibiyle teyit edilmedi — bank davranışı eski haliyle sürüyor"
+#warning "kanal<->klemens eslemesi DOGRULANDI (Faz 1, 2026-07-22); klemens<->yuk kablolamasi (Faz 2) bekliyor — bank davranisi eski haliyle suruyor"
 // Roller atanmamışken maske 10 kanalın TAMAMI: allOn/allOff bugünkü davranışla
 // birebir aynı kalır (flaşör kanalı diye bir ayrım henüz YOK).
 #define RELAY_CONTACTOR_BANK_MASK ((1u << RELAY_TOTAL_CHANNELS) - 1u)  // 0x3FF
