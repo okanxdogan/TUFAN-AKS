@@ -29,10 +29,10 @@ void test_e015_parses_four_cells_correctly(void) {
     bool success = parseLbBmsE015(msg, out);
 
     TEST_ASSERT_TRUE(success);
-    TEST_ASSERT_EQUAL_UINT16(3356, out.TEL_bmsCellVoltages[0]); // 33563 / 10 = 3356
-    TEST_ASSERT_EQUAL_UINT16(3356, out.TEL_bmsCellVoltages[1]); // 33563 / 10 = 3356
-    TEST_ASSERT_EQUAL_UINT16(3355, out.TEL_bmsCellVoltages[2]); // 33550 / 10 = 3355
-    TEST_ASSERT_EQUAL_UINT16(3357, out.TEL_bmsCellVoltages[3]); // 33579 / 10 = 3357
+    TEST_ASSERT_EQUAL_UINT16(3356, out.TEL_bmsCellVoltages[0]); // 33563 -> yuvarla 3356
+    TEST_ASSERT_EQUAL_UINT16(3356, out.TEL_bmsCellVoltages[1]); // 33563 -> yuvarla 3356
+    TEST_ASSERT_EQUAL_UINT16(3355, out.TEL_bmsCellVoltages[2]); // 33550 -> yuvarla 3355
+    TEST_ASSERT_EQUAL_UINT16(3358, out.TEL_bmsCellVoltages[3]); // 33579 -> yuvarla 3358 (kesme 3357 idi)
 }
 
 void test_e015_cells_in_lifepo4_range(void) {

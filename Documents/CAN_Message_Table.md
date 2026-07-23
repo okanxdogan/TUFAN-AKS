@@ -106,6 +106,15 @@ Direction: `BMS → AKS` | DLC: 8 | Status: **Kısmi — byte[6:7] DOĞRULANDI, 
 - `TEL_bmsCellVoltageMaxDeciMv` = byte[2:3]
 - `TEL_bmsCellVoltageAvgDeciMv` = byte[4:5]
 
+**Ekran kaynağı (2026-07-23):** byte[0:3] artık pilot kabinindeki göstergedeki
+ÖZET min/max hücre gerilimidir (şartname B3 6.c: min/max BYS raporundan). Yol:
+`parseLbBmsE001` → `TEL_bmsCellVoltageMin/MaxDeciMv` → main.cpp HMI task
+`deciMvToMv` ile mV'ye YUVARLAR (kesme değil) → `BmsPackData.bmsReportedCellMin/MaxMv`
+→ `computePack` → `BmsComputed.cellMin/MaxMv` → Nextion `cellmin/cellmax`. İki alan
+da 0 ise computePack 24'lük tarama (E015–E020) FALLBACK'ine döner. 24'lük bar
+paneli (cell0..23/j0..23) her zaman taramadan beslenir. LoRa wire formatı
+(deci-mV) DEĞİŞMEDİ.
+
 ---
 
 ### `0x0000E015` – `0x0000E020` — 24 Hücre Voltajı (TAMAMEN ÇÖZÜLDÜ)

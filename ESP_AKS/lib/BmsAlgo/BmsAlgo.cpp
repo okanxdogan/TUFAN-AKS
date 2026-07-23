@@ -32,6 +32,10 @@ BmsComputed makeNoCellData() {
     c.socPercent = 0;                  // ortalamadan SoC tahmini de fabrikasyon olurdu
     // cellMin/Max/delta/temp/packV => 0: anlamlı per-hücre veri yok. Ekran
     // tarafı cellMax/Min'i kendi sentinel'iyle ("--") gösterir.
+    // NOT: cellMin/Max/delta artık KOŞULLU — computePack, BYS'nin kendi min/max
+    // özeti (0xE001) mevcutsa (ikisi de != 0) bu üç alanı çağrı yerinde
+    // doldurur (şartname B3 6.c). Buradaki 0 değerleri yalnızca E001 kaynağı
+    // YOKKEN geçerli fallback'tir.
     return c;
 }
 
@@ -55,8 +59,21 @@ BmsComputed computePack(const BmsPackData& in) {
 
     // Paket geçerli ama hücre kaynağı doğrulanmamış => dengeleme/uyarı hesaplama,
     // "veri yok" döndür (fabrike per-hücre veriye güvenme). Bkz. makeNoCellData.
+    // DAR KAPSAM (şartname B3 6.c): BYS'nin KENDİ min/max özeti (0xE001) İKİSİ DE
+    // 0 değilse ekran ÖZET min/max/delta'sı yine de BYS raporundan doldurulur —
+    // min/max gösterimi 24 hücre tazeliğinden bağımsızdır. warningLevel
+    // (NO_DATA), balanceFlag[] (tümü false), cellMax/MinIndex (0), socPercent,
+    // packVoltageMv, tempMax/MinC makeNoCellData'daki değerinde KALIR: per-hücre
+    // veri olmadan uyarı/dengeleme/indeks hesaplanamaz.
     if (!in.cellDataValid) {
-        return makeNoCellData();
+        BmsComputed c = makeNoCellData();
+        if (in.bmsReportedCellMaxMv != 0 && in.bmsReportedCellMinMv != 0) {
+            c.cellMaxMv = in.bmsReportedCellMaxMv;
+            c.cellMinMv = in.bmsReportedCellMinMv;
+            c.cellDeltaMv = static_cast<uint16_t>(in.bmsReportedCellMaxMv -
+                                                  in.bmsReportedCellMinMv);
+        }
+        return c;
     }
 
     BmsComputed c{};  // balanceFlag[] dahil her şey 0/false başlar
@@ -66,9 +83,14 @@ BmsComputed computePack(const BmsPackData& in) {
     // yayınlamıyor (cellTempC[] fiilen hep 0'dı ve sıcaklık uyarısı HİÇ
     // tetiklenmiyordu). Gerçek paket sıcaklığı packTempMaxC/MinC alanlarından
     // gelir (0xE001 → TEL_bmsTempHighestC/LowestC, main.cpp doldurur).
+    // NOT (regresyon tuzağı): tarama sonucu YALNIZCA yerel scan* değişkenlerinde
+    // tutulur. Dengeleme kararı, lowBound bandı ve warningLevel SADECE bunları
+    // okur — böylece ekrandaki ÖZET min/max'ı BYS raporundan sürsek bile
+    // dengeleme/uyarı davranışı DEĞİŞMEZ. c.cellMax/Min/Delta ise ÇIKTI'dır ve
+    // aşağıda kaynağı (BYS raporu ya da tarama) seçilerek doldurulur.
     uint32_t sumMv = 0;
-    uint16_t maxMv = in.cellVoltageMv[0];
-    uint16_t minMv = in.cellVoltageMv[0];
+    uint16_t scanMaxMv = in.cellVoltageMv[0];
+    uint16_t scanMinMv = in.cellVoltageMv[0];
     uint8_t maxIdx = 0;
     uint8_t minIdx = 0;
     const int16_t tMax = in.packTempMaxC;
@@ -77,19 +99,32 @@ BmsComputed computePack(const BmsPackData& in) {
     for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
         const uint16_t v = in.cellVoltageMv[i];
         sumMv += v;
-        if (v > maxMv) { maxMv = v; maxIdx = i; }
-        if (v < minMv) { minMv = v; minIdx = i; }
+        if (v > scanMaxMv) { scanMaxMv = v; maxIdx = i; }
+        if (v < scanMinMv) { scanMinMv = v; minIdx = i; }
     }
+    const uint16_t scanDeltaMv = static_cast<uint16_t>(scanMaxMv - scanMinMv);
 
     // packVoltageMv uint32 olduğundan tüm aralık (24*4200=100800 mV) sığar;
     // doygunluk/sarma gerekmez.
     c.packVoltageMv = sumMv;
 
-    c.cellMaxMv = maxMv;
-    c.cellMinMv = minMv;
+    // --- ÇIKTI: özet min/max/delta kaynağı seçimi ---
+    // BYS'nin KENDİ raporu (0xE001) İKİSİ DE 0 değilse ekran ÖZETİ ondan gelir
+    // (şartname B3 6.c: min/max BYS raporundan). Aksi halde 24'lük tarama
+    // FALLBACK olur. cellMaxIndex/cellMinIndex HER ZAMAN tarama kaynaklıdır
+    // (E001 indeks taşımaz).
+    if (in.bmsReportedCellMaxMv != 0 && in.bmsReportedCellMinMv != 0) {
+        c.cellMaxMv = in.bmsReportedCellMaxMv;
+        c.cellMinMv = in.bmsReportedCellMinMv;
+        c.cellDeltaMv = static_cast<uint16_t>(in.bmsReportedCellMaxMv -
+                                              in.bmsReportedCellMinMv);
+    } else {
+        c.cellMaxMv = scanMaxMv;
+        c.cellMinMv = scanMinMv;
+        c.cellDeltaMv = scanDeltaMv;
+    }
     c.cellMaxIndex = maxIdx;
     c.cellMinIndex = minIdx;
-    c.cellDeltaMv = static_cast<uint16_t>(maxMv - minMv);
     c.tempMaxC = tMax;
     c.tempMinC = tMin;
 
@@ -101,11 +136,11 @@ BmsComputed computePack(const BmsPackData& in) {
     // delta, BMS_BALANCE_THRESHOLD_MV'i AŞIYORSA (strictly greater): en yüksek
     // hücreye BMS_BALANCE_TOP_MARGIN_MV marjı içindeki tüm hücreleri deşarj et.
     // delta <= eşik ise hiçbir hücre dengelenmez (balanceFlag tümü false kalır).
-    if (c.cellDeltaMv > BMS_BALANCE_THRESHOLD_MV) {
-        // Marj alt sınırını taşmadan hesapla (maxMv >= margin garanti değil).
+    if (scanDeltaMv > BMS_BALANCE_THRESHOLD_MV) {
+        // Marj alt sınırını taşmadan hesapla (scanMaxMv >= margin garanti değil).
         const uint16_t lowBound =
-            (maxMv > BMS_BALANCE_TOP_MARGIN_MV)
-                ? static_cast<uint16_t>(maxMv - BMS_BALANCE_TOP_MARGIN_MV)
+            (scanMaxMv > BMS_BALANCE_TOP_MARGIN_MV)
+                ? static_cast<uint16_t>(scanMaxMv - BMS_BALANCE_TOP_MARGIN_MV)
                 : 0;
         for (uint8_t i = 0; i < BMS_CELL_COUNT; ++i) {
             if (in.cellVoltageMv[i] >= lowBound) {
@@ -120,14 +155,14 @@ BmsComputed computePack(const BmsPackData& in) {
     // CRITICAL gösterir. Hücre voltajı strictly < / > semantiğini korur.
     uint8_t level = BMS_WARN_OK;
     // CRITICAL koşulları
-    if (minMv < BMS_CELL_UNDERVOLT_CRIT_MV ||
-        maxMv > BMS_CELL_OVERVOLT_CRIT_MV ||
+    if (scanMinMv < BMS_CELL_UNDERVOLT_CRIT_MV ||
+        scanMaxMv > BMS_CELL_OVERVOLT_CRIT_MV ||
         tMax >= BMS_TEMP_OVERTEMP_CRIT_C) {
         level = BMS_WARN_CRITICAL;
     }
     // WARNING koşulları (yalnız henüz CRITICAL değilse)
-    else if (minMv < BMS_CELL_UNDERVOLT_WARN_MV ||
-             maxMv > BMS_CELL_OVERVOLT_WARN_MV ||
+    else if (scanMinMv < BMS_CELL_UNDERVOLT_WARN_MV ||
+             scanMaxMv > BMS_CELL_OVERVOLT_WARN_MV ||
              tMax >= BMS_TEMP_OVERTEMP_WARN_C) {
         level = BMS_WARN_WARNING;
     }

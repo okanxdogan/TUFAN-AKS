@@ -50,6 +50,16 @@ extern void test_verified_cell_source_detects_imbalance(void);
 extern void test_cell_data_valid_defaults_true(void);
 extern void test_unverified_pipeline_emits_sentinels_and_no_data_warn(void);
 
+// Ekran ÖZET min/max kaynağı = BYS raporu (0xE001), 24'lük tarama fallback
+extern void test_reported_minmax_overrides_scan_summary(void);
+extern void test_reported_minmax_keeps_scan_indices(void);
+extern void test_reported_minmax_does_not_alter_balancing(void);
+extern void test_zero_reported_falls_back_to_scan(void);
+extern void test_partial_zero_reported_falls_back_to_scan(void);
+extern void test_no_cell_data_but_reported_fills_summary_only(void);
+extern void test_no_cell_data_and_zero_reported_stays_zero(void);
+extern void test_invalid_pack_ignores_reported_minmax(void);
+
 void setUp(void) {
     fake_nextion_reset();
 }
@@ -95,6 +105,15 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_verified_cell_source_detects_imbalance);
     RUN_TEST(test_cell_data_valid_defaults_true);
     RUN_TEST(test_unverified_pipeline_emits_sentinels_and_no_data_warn);
+
+    RUN_TEST(test_reported_minmax_overrides_scan_summary);
+    RUN_TEST(test_reported_minmax_keeps_scan_indices);
+    RUN_TEST(test_reported_minmax_does_not_alter_balancing);
+    RUN_TEST(test_zero_reported_falls_back_to_scan);
+    RUN_TEST(test_partial_zero_reported_falls_back_to_scan);
+    RUN_TEST(test_no_cell_data_but_reported_fills_summary_only);
+    RUN_TEST(test_no_cell_data_and_zero_reported_stays_zero);
+    RUN_TEST(test_invalid_pack_ignores_reported_minmax);
 
     return UNITY_END();
 }

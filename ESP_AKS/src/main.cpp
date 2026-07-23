@@ -30,6 +30,7 @@
 // 24 hücreli BMS gösterge altyapısı (Gerçek veri ile)
 #include "BmsModel.h"
 #include "BmsAlgo.h"
+#include "CanParse.h"  // CanParse::deciMvToMv — E001 deci-mV → mV yuvarlama
 #include "BmsNextionPacket.h"
 #include "HMIHelpers.h"
 #include "ResyncPolicy.h"  // hmi_resync_due_field — BMS panel resync de aynı saf politikayı kullanır
@@ -409,6 +410,16 @@ void vTask_HMI_Display(void *pvParameters) {
             // onu artık okumaz — bkz. BmsModel.h).
             BMS_raw.packTempMaxC = TEL_data.TEL_bmsTempHighestC;
             BMS_raw.packTempMinC = TEL_data.TEL_bmsTempLowestC;
+
+            // BYS'nin KENDİ min/max hücre özeti (0xE001 byte[0:3], deci-mV).
+            // Ekrandaki ÖZET min/max buradan sürülür (şartname B3 6.c). computePack
+            // GİRDİ olarak alır; BMS_comp ELLE EZİLMEZ (regresyon tuzağı — bkz.
+            // BmsAlgo.cpp: dengeleme/uyarı yalnız 24'lük taramadan). İkisi de 0
+            // ise (E001 henüz gelmedi) computePack taramaya fallback yapar.
+            BMS_raw.bmsReportedCellMaxMv =
+                CanParse::deciMvToMv(TEL_data.TEL_bmsCellVoltageMaxDeciMv);
+            BMS_raw.bmsReportedCellMinMv =
+                CanParse::deciMvToMv(TEL_data.TEL_bmsCellVoltageMinDeciMv);
 
             BMS_comp = computePack(BMS_raw);
         } else {

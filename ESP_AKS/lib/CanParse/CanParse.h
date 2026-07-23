@@ -36,6 +36,14 @@ struct ChargerCommand {
 
 namespace CanParse {
 
+// Ham deci-mV (0.1 mV çözünürlük, ör. 33579 = 3357.9 mV) → mV, EN YAKINA
+// YUVARLAYARAK (kesme DEĞİL): 33579 → 3358, 33550 → 3355. Eski `/ 10` kesmesi
+// ekranda ±1 mV delta hatası bırakıyordu. raw uint16 olduğundan +5 taşmasını
+// önlemek için uint32'ye yükseltme ŞART.
+inline uint16_t deciMvToMv(uint16_t raw) {
+    return (uint16_t)(((uint32_t)raw + 5U) / 10U);
+}
+
 // Motor status frame (CAN ID 0x200 = CAN_ID_MOTOR_STATUS, 11-bit STD).
 // Kaynak: motor sürücüsü (MOTOR_DRIVER_PRESENT=1 olduğunda) VEYA
 // hall-effect hız sensörü ünitesi (esp32-canbus-speed-sensor, yalnızca

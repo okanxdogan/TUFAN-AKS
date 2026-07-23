@@ -38,6 +38,15 @@ struct BmsPackData {
     int16_t packTempMaxC = 0;
     int16_t packTempMinC = 0;
 
+    // BYS'nin KENDİ raporladığı hücre min/max özeti (0xE001 byte[0:1]=min,
+    // byte[2:3]=max → mV'ye yuvarlanmış). Ekrandaki ÖZET min/max bundan sürülür
+    // (şartname B3 6.c: min/max BYS raporundan, 24 hücre tazeliğinden bağımsız).
+    // main.cpp HMI task doldurur. İKİSİ DE 0 => kaynak yok, computePack 24'lük
+    // taramaya FALLBACK yapar. 24'lük bar paneli (cell0..23) her zaman
+    // cellVoltageMv[]'den beslenir — buna dokunulmaz.
+    uint16_t bmsReportedCellMaxMv = 0;  // 0xE001 byte[2:3], mV (0 = kaynak yok)
+    uint16_t bmsReportedCellMinMv = 0;  // 0xE001 byte[0:1], mV (0 = kaynak yok)
+
     bool isValid;                            // false => taze/geçerli veri yok
 
     // G8/M4 FIX: Hücre kaynağı artık DOĞRULANDI (E015-E020).

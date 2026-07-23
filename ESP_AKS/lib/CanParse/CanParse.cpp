@@ -148,55 +148,55 @@ bool parseLbBmsE033(const twai_message_t& msg, TelemetryData& out) {
 
 bool parseLbBmsE015(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[0] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[1] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[2] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[3] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[0] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[1] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[2] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[3] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 
 bool parseLbBmsE016(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[4] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[5] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[6] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[7] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[4] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[5] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[6] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[7] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 
 bool parseLbBmsE017(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[8] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[9] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[10] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[11] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[8] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[9] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[10] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[11] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 
 bool parseLbBmsE018(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[12] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[13] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[14] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[15] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[12] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[13] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[14] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[15] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 
 bool parseLbBmsE019(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[16] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[17] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[18] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[19] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[16] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[17] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[18] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[19] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 
 bool parseLbBmsE020(const twai_message_t& msg, TelemetryData& out) {
     if (msg.data_length_code < 8) return false;
-    out.TEL_bmsCellVoltages[20] = ((msg.data[0]<<8)|msg.data[1]) / 10;
-    out.TEL_bmsCellVoltages[21] = ((msg.data[2]<<8)|msg.data[3]) / 10;
-    out.TEL_bmsCellVoltages[22] = ((msg.data[4]<<8)|msg.data[5]) / 10;
-    out.TEL_bmsCellVoltages[23] = ((msg.data[6]<<8)|msg.data[7]) / 10;
+    out.TEL_bmsCellVoltages[20] = deciMvToMv((msg.data[0]<<8)|msg.data[1]);
+    out.TEL_bmsCellVoltages[21] = deciMvToMv((msg.data[2]<<8)|msg.data[3]);
+    out.TEL_bmsCellVoltages[22] = deciMvToMv((msg.data[4]<<8)|msg.data[5]);
+    out.TEL_bmsCellVoltages[23] = deciMvToMv((msg.data[6]<<8)|msg.data[7]);
     return true;
 }
 

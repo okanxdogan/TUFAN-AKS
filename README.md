@@ -106,8 +106,8 @@ ESP-AKS ve Lithium Balance c-BMS entegrasyonu başarıyla devreye alınmıştır
 
 **Doğrulanan Veriler (DOĞRULANDI):**
 - **0xE000**: Pack Voltajı (deciV), Pack Akımı (centiA, deşarjda negatif), SoC1 ve SoC2 (yüzde).
-- **0xE001**: BMS Sıcaklığı (byte[6:7] üzerinden max/min seçimi) ve Hücre Özeti (byte[0:1]=min, byte[2:3]=max, byte[4:5]=avg hücre voltajı).
-- **0xE015–0xE020**: 24 Hücrenin Bireysel Voltajları (her CAN frame 4 hücre barındırır, raw/10=mV).
+- **0xE001**: BMS Sıcaklığı (byte[6:7] üzerinden max/min seçimi) ve Hücre Özeti (byte[0:1]=min, byte[2:3]=max, byte[4:5]=avg hücre voltajı). **Pilot kabinindeki göstergedeki ÖZET min/max hücre gerilimi artık doğrudan bu mesajdan (BYS'nin kendi raporu) sürülür** (şartname B3 6.c); 24 hücre taraması yalnız E001 yokken fallback'tir. Deci-mV → mV çevrimi YUVARLAR (kesme değil).
+- **0xE015–0xE020**: 24 Hücrenin Bireysel Voltajları (her CAN frame 4 hücre barındırır, raw→mV YUVARLAMA). Ekrandaki 24'lük bar paneli bu taramadan beslenir.
 - **0x1806E5F4**: Şarj cihazı gerilim ve akım hedefi (Charger command - Sadece okunuyor).
 
 **Açık İşler ve Bilinmeyenler (BİLİNMİYOR):**
